@@ -204,6 +204,229 @@ func testSession() Session {
 	}
 }
 
+func TestGetSession(t *testing.T) {
+	root := t.TempDir()
+	store := newTestStore(t, root)
+	sess := testSession()
+
+	if err := store.WriteSession(sess, "Implement auth middleware"); err != nil {
+		t.Fatalf("WriteSession failed: %v", err)
+	}
+
+	rec, err := store.GetSession(sess.ID)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+	if rec.ID != sess.ID {
+		t.Errorf("expected ID %q, got %q", sess.ID, rec.ID)
+	}
+	if rec.Author != sess.Author {
+		t.Errorf("expected Author %q, got %q", sess.Author, rec.Author)
+	}
+	if !rec.Started.Equal(sess.Started) {
+		t.Errorf("expected Started %v, got %v", sess.Started, rec.Started)
+	}
+	if rec.Branch != sess.Branch {
+		t.Errorf("expected Branch %q, got %q", sess.Branch, rec.Branch)
+	}
+	if rec.Status != sess.Status {
+		t.Errorf("expected Status %q, got %q", sess.Status, rec.Status)
+	}
+	if rec.Closed {
+		t.Error("expected Closed to be false for active session")
+	}
+}
+
+func TestGetSessionClosed(t *testing.T) {
+	root := t.TempDir()
+	store := newTestStore(t, root)
+	sess := testSession()
+
+	if err := store.WriteSession(sess, "Implement auth middleware"); err != nil {
+		t.Fatalf("WriteSession failed: %v", err)
+	}
+	if err := store.CloseSession(sess.ID); err != nil {
+		t.Fatalf("CloseSession failed: %v", err)
+	}
+
+	rec, err := store.GetSession(sess.ID)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+	if !rec.Closed {
+		t.Error("expected Closed to be true after CloseSession")
+	}
+	if rec.Status != "active" {
+		t.Errorf("expected Status to remain active, got %q", rec.Status)
+	}
+}
+
+func TestGetSessionMissing(t *testing.T) {
+	store := newTestStore(t, t.TempDir())
+
+	_, err := store.GetSession("nonexistent")
+	if err == nil || !strings.Contains(err.Error(), "session file not found") {
+		t.Fatalf("expected not found error, got: %v", err)
+	}
+}
+
+func TestGetSessionInvalidID(t *testing.T) {
+	store := newTestStore(t, t.TempDir())
+
+	if _, err := store.GetSession(""); err == nil || !strings.Contains(err.Error(), "session ID is empty") {
+		t.Fatalf("expected empty ID error, got: %v", err)
+	}
+	if _, err := store.GetSession("../outside"); err == nil || !strings.Contains(err.Error(), "invalid session ID") {
+		t.Fatalf("expected invalid session ID error, got: %v", err)
+	}
+}
+
+func TestListSessions(t *testing.T) {
+	root := t.TempDir()
+	store := newTestStore(t, root)
+
+	sess1 := Session{
+		ID:      "2026-01-15T140000Z",
+		Author:  "Alice",
+		Started: time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC),
+		Branch:  "main",
+		Status:  "active",
+	}
+	sess2 := Session{
+		ID:      "2026-01-15T150000Z",
+		Author:  "Bob",
+		Started: time.Date(2026, 1, 15, 15, 0, 0, 0, time.UTC),
+		Branch:  "feat/widgets",
+		Status:  "active",
+	}
+	sess3 := Session{
+		ID:      "2026-01-15T160000Z",
+		Author:  "Carol",
+		Started: time.Date(2026, 1, 15, 16, 0, 0, 0, time.UTC),
+		Branch:  "fix/bug",
+		Status:  "active",
+	}
+
+	if err := store.WriteSession(sess1, "first"); err != nil {
+		t.Fatalf("WriteSession 1 failed: %v", err)
+	}
+	if err := store.WriteSession(sess2, "second"); err != nil {
+		t.Fatalf("WriteSession 2 failed: %v", err)
+	}
+	if err := store.WriteSession(sess3, "third"); err != nil {
+		t.Fatalf("WriteSession 3 failed: %v", err)
+	}
+
+	records, err := store.ListSessions()
+	if err != nil {
+		t.Fatalf("ListSessions failed: %v", err)
+	}
+	if len(records) != 3 {
+		t.Fatalf("expected 3 records, got %d", len(records))
+	}
+
+	if records[0].ID != sess1.ID {
+		t.Errorf("expected first record %q, got %q", sess1.ID, records[0].ID)
+	}
+	if records[1].ID != sess2.ID {
+		t.Errorf("expected second record %q, got %q", sess2.ID, records[1].ID)
+	}
+	if records[2].ID != sess3.ID {
+		t.Errorf("expected third record %q, got %q", sess3.ID, records[2].ID)
+	}
+}
+
+func TestListSessionsEmpty(t *testing.T) {
+	store := newTestStore(t, t.TempDir())
+
+	records, err := store.ListSessions()
+	if err != nil {
+		t.Fatalf("ListSessions failed: %v", err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("expected 0 records, got %d", len(records))
+	}
+}
+
+func TestListSessionsChronological(t *testing.T) {
+	root := t.TempDir()
+	store := newTestStore(t, root)
+
+	sessEarly := Session{
+		ID:      "2026-01-15T080000Z",
+		Author:  "Alice",
+		Started: time.Date(2026, 1, 15, 8, 0, 0, 0, time.UTC),
+		Branch:  "main",
+		Status:  "active",
+	}
+	sessLate := Session{
+		ID:      "2026-01-15T180000Z",
+		Author:  "Bob",
+		Started: time.Date(2026, 1, 15, 18, 0, 0, 0, time.UTC),
+		Branch:  "feat/z",
+		Status:  "active",
+	}
+
+	if err := store.WriteSession(sessLate, "late"); err != nil {
+		t.Fatalf("WriteSession late failed: %v", err)
+	}
+	if err := store.WriteSession(sessEarly, "early"); err != nil {
+		t.Fatalf("WriteSession early failed: %v", err)
+	}
+
+	records, err := store.ListSessions()
+	if err != nil {
+		t.Fatalf("ListSessions failed: %v", err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("expected 2 records, got %d", len(records))
+	}
+
+	if records[0].ID != sessEarly.ID {
+		t.Errorf("expected first record %q (earlier), got %q", sessEarly.ID, records[0].ID)
+	}
+	if records[1].ID != sessLate.ID {
+		t.Errorf("expected second record %q (later), got %q", sessLate.ID, records[1].ID)
+	}
+}
+
+func TestListSessionsSkipsNonMD(t *testing.T) {
+	root := t.TempDir()
+	store := newTestStore(t, root)
+
+	sess := testSession()
+	if err := store.WriteSession(sess, "start"); err != nil {
+		t.Fatalf("WriteSession failed: %v", err)
+	}
+
+	gitkeep := filepath.Join(root, sessionsDir, ".gitkeep")
+	if err := os.WriteFile(gitkeep, []byte{}, 0644); err != nil {
+		t.Fatalf("write .gitkeep failed: %v", err)
+	}
+
+	records, err := store.ListSessions()
+	if err != nil {
+		t.Fatalf("ListSessions failed: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record (skipping .gitkeep), got %d", len(records))
+	}
+}
+
+func TestParseSessionFileMissingOpeningDelimiter(t *testing.T) {
+	_, err := parseSessionFile([]byte("no delimiter here"))
+	if err == nil || !strings.Contains(err.Error(), "missing opening front-matter delimiter") {
+		t.Fatalf("expected missing opening delimiter error, got: %v", err)
+	}
+}
+
+func TestParseSessionFileMissingClosingDelimiter(t *testing.T) {
+	_, err := parseSessionFile([]byte("---\nid: x\n"))
+	if err == nil || !strings.Contains(err.Error(), "missing closing front-matter delimiter") {
+		t.Fatalf("expected missing closing delimiter error, got: %v", err)
+	}
+}
+
 func readSessionFile(t *testing.T, root, sessionID string) string {
 	t.Helper()
 

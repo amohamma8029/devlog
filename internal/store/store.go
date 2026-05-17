@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -18,6 +19,14 @@ type Session struct {
 	Started time.Time `yaml:"started"`
 	Branch  string    `yaml:"branch"`
 	Status  string    `yaml:"status"`
+}
+
+// SessionRecord wraps a Session with read-time derived state.
+// Closed is derived from the Markdown body (presence of ## Stop event),
+// not from the YAML front-matter.
+type SessionRecord struct {
+	Session
+	Closed bool
 }
 
 const sessionsDir = ".devlog/sessions"
@@ -162,6 +171,88 @@ func (s *Store) appendEvent(op, sessionID, eventType, body string, at time.Time)
 	}
 
 	return nil
+}
+
+// GetSession reads a single session file and returns its metadata plus derived Closed state.
+func (s *Store) GetSession(sessionID string) (SessionRecord, error) {
+	if err := validateSessionID("GetSession", sessionID); err != nil {
+		return SessionRecord{}, err
+	}
+
+	path, err := s.sessionPath(sessionID)
+	if err != nil {
+		return SessionRecord{}, fmt.Errorf("GetSession: resolve session path: %w", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return SessionRecord{}, fmt.Errorf("GetSession: session file not found: %s", path)
+		}
+		return SessionRecord{}, fmt.Errorf("GetSession: read file: %w", err)
+	}
+
+	return parseSessionFile(data)
+}
+
+// ListSessions reads all session files from the sessions directory and returns them
+// in chronological order (ascending Started time).
+func (s *Store) ListSessions() ([]SessionRecord, error) {
+	dir, err := s.sessionsPath()
+	if err != nil {
+		return nil, fmt.Errorf("ListSessions: resolve sessions directory: %w", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []SessionRecord{}, nil
+		}
+		return nil, fmt.Errorf("ListSessions: read directory: %w", err)
+	}
+
+	var records []SessionRecord
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		sessionID := strings.TrimSuffix(entry.Name(), ".md")
+		rec, err := s.GetSession(sessionID)
+		if err != nil {
+			return nil, fmt.Errorf("ListSessions: read %s: %w", sessionID, err)
+		}
+		records = append(records, rec)
+	}
+
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].Started.Before(records[j].Started)
+	})
+
+	return records, nil
+}
+
+// parseSessionFile parses raw session file bytes into a SessionRecord.
+func parseSessionFile(data []byte) (SessionRecord, error) {
+	content := string(data)
+	const delim = "---\n"
+
+	if !strings.HasPrefix(content, delim) {
+		return SessionRecord{}, fmt.Errorf("parseSessionFile: missing opening front-matter delimiter")
+	}
+
+	parts := strings.SplitN(content[len(delim):], delim, 2)
+	if len(parts) < 2 {
+		return SessionRecord{}, fmt.Errorf("parseSessionFile: missing closing front-matter delimiter")
+	}
+
+	var sess Session
+	if err := yaml.Unmarshal([]byte(parts[0]), &sess); err != nil {
+		return SessionRecord{}, fmt.Errorf("parseSessionFile: unmarshal front-matter: %w", err)
+	}
+
+	closed := strings.Contains(parts[1], "## Stop")
+
+	return SessionRecord{Session: sess, Closed: closed}, nil
 }
 
 func (s *Store) sessionsPath() (string, error) {
