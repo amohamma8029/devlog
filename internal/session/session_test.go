@@ -1,6 +1,8 @@
 package session
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -161,4 +163,180 @@ func TestFindActiveSessionNilStore(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "store is nil") {
 		t.Fatalf("expected nil store error, got: %v", err)
 	}
+}
+
+func TestStartSessionSucceeds(t *testing.T) {
+	root := t.TempDir()
+	s := newTestStore(t, root)
+	sess := testSession("2026-01-15T140000Z", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	if err := StartSession(s, sess, "start message"); err != nil {
+		t.Fatalf("StartSession failed: %v", err)
+	}
+
+	active, err := FindActiveSession(s)
+	if err != nil {
+		t.Fatalf("FindActiveSession failed: %v", err)
+	}
+	if active.ID != sess.ID {
+		t.Errorf("expected active session %q, got %q", sess.ID, active.ID)
+	}
+}
+
+func TestStartSessionFailsWhenActiveExists(t *testing.T) {
+	root := t.TempDir()
+	s := newTestStore(t, root)
+	active := testSession("2026-01-15T140000Z", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+	next := testSession("2026-01-15T150000Z", time.Date(2026, 1, 15, 15, 0, 0, 0, time.UTC))
+
+	if err := StartSession(s, active, "active session"); err != nil {
+		t.Fatalf("StartSession active failed: %v", err)
+	}
+
+	err := StartSession(s, next, "new session")
+	if err == nil || !strings.Contains(err.Error(), "another session is already active: "+active.ID) {
+		t.Fatalf("expected active session error, got: %v", err)
+	}
+	if _, err := os.Stat(sessionFilePath(root, next.ID)); !os.IsNotExist(err) {
+		t.Fatalf("expected new session file not to exist, stat error: %v", err)
+	}
+}
+
+func TestStartSessionDuplicateIDFails(t *testing.T) {
+	root := t.TempDir()
+	s := newTestStore(t, root)
+	sess := testSession("2026-01-15T140000Z", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	if err := StartSession(s, sess, "original session"); err != nil {
+		t.Fatalf("StartSession failed: %v", err)
+	}
+	if err := StopActiveSession(s); err != nil {
+		t.Fatalf("StopActiveSession failed: %v", err)
+	}
+	before := readSessionFile(t, root, sess.ID)
+
+	err := StartSession(s, sess, "duplicate session")
+	if err == nil || !strings.Contains(err.Error(), "session file already exists") {
+		t.Fatalf("expected duplicate ID error, got: %v", err)
+	}
+	after := readSessionFile(t, root, sess.ID)
+	if after != before {
+		t.Fatal("expected duplicate StartSession to leave existing session file unchanged")
+	}
+}
+
+func TestAppendEventToActiveSessionSucceeds(t *testing.T) {
+	root := t.TempDir()
+	s := newTestStore(t, root)
+	sess := testSession("2026-01-15T140000Z", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	if err := StartSession(s, sess, "start message"); err != nil {
+		t.Fatalf("StartSession failed: %v", err)
+	}
+	if err := AppendEventToActiveSession(s, "Note", "Refactored JWT package"); err != nil {
+		t.Fatalf("AppendEventToActiveSession failed: %v", err)
+	}
+
+	content := readSessionFile(t, root, sess.ID)
+	if !strings.Contains(content, "## Note - ") {
+		t.Errorf("expected body to contain Note event")
+	}
+	if !strings.Contains(content, "Refactored JWT package") {
+		t.Errorf("expected body to contain note text")
+	}
+}
+
+func TestAppendEventToActiveSessionFailsWhenNoneActive(t *testing.T) {
+	s := newTestStore(t, t.TempDir())
+
+	err := AppendEventToActiveSession(s, "Note", "body")
+	if err == nil || !strings.Contains(err.Error(), "no active session found") {
+		t.Fatalf("expected no active session error, got: %v", err)
+	}
+}
+
+func TestAppendEventToActiveSessionFailsWhenSessionClosed(t *testing.T) {
+	root := t.TempDir()
+	s := newTestStore(t, root)
+	sess := testSession("2026-01-15T140000Z", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	if err := StartSession(s, sess, "start message"); err != nil {
+		t.Fatalf("StartSession failed: %v", err)
+	}
+	if err := StopActiveSession(s); err != nil {
+		t.Fatalf("StopActiveSession failed: %v", err)
+	}
+	before := readSessionFile(t, root, sess.ID)
+
+	err := AppendEventToActiveSession(s, "Note", "body")
+	if err == nil || !strings.Contains(err.Error(), "no active session found") {
+		t.Fatalf("expected no active session error, got: %v", err)
+	}
+	after := readSessionFile(t, root, sess.ID)
+	if after != before {
+		t.Fatal("expected append after close to leave session file unchanged")
+	}
+}
+
+func TestStopActiveSessionFailsWhenNoneActive(t *testing.T) {
+	s := newTestStore(t, t.TempDir())
+
+	err := StopActiveSession(s)
+	if err == nil || !strings.Contains(err.Error(), "no active session found") {
+		t.Fatalf("expected no active session error, got: %v", err)
+	}
+}
+
+func TestStopActiveSessionSucceeds(t *testing.T) {
+	s := newTestStore(t, t.TempDir())
+	sess := testSession("2026-01-15T140000Z", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	if err := StartSession(s, sess, "start message"); err != nil {
+		t.Fatalf("StartSession failed: %v", err)
+	}
+	if err := StopActiveSession(s); err != nil {
+		t.Fatalf("StopActiveSession failed: %v", err)
+	}
+
+	rec, err := s.GetSession(sess.ID)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+	if !rec.Closed {
+		t.Error("expected session to be closed")
+	}
+}
+
+func newTestStore(t *testing.T, root string) *store.Store {
+	t.Helper()
+
+	s, err := store.New(root)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	return s
+}
+
+func testSession(id string, started time.Time) store.Session {
+	return store.Session{
+		ID:      id,
+		Author:  "Test Author",
+		Started: started,
+		Branch:  "main",
+		Status:  "active",
+	}
+}
+
+func readSessionFile(t *testing.T, root, sessionID string) string {
+	t.Helper()
+
+	data, err := os.ReadFile(sessionFilePath(root, sessionID))
+	if err != nil {
+		t.Fatalf("read session file failed: %v", err)
+	}
+	return string(data)
+}
+
+func sessionFilePath(root, sessionID string) string {
+	return filepath.Join(root, ".devlog", "sessions", sessionID+".md")
 }
