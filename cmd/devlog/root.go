@@ -34,6 +34,7 @@ It stores one global devlog per repo using session files under .devlog/sessions/
 
 	cmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Print the version and exit")
 	cmd.AddCommand(newStartCommand())
+	cmd.AddCommand(newNoteCommand())
 
 	return cmd
 }
