@@ -24,3 +24,10 @@ vendor/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Local planning files
+FEATURE_MAP.md
+TASK.md
+
+# Git worktrees
+.worktrees/
