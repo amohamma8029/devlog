@@ -36,6 +36,7 @@ It stores one global devlog per repo using session files under .devlog/sessions/
 	cmd.AddCommand(newStartCommand())
 	cmd.AddCommand(newNoteCommand())
 	cmd.AddCommand(newBlockCommand())
+	cmd.AddCommand(newStatusCommand())
 
 	return cmd
 }
