@@ -1,6 +1,6 @@
 # Binaries
-devlog.exe
-devlog
+/devlog.exe
+/devlog
 
 # Go build artifacts
 *.exe
