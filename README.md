@@ -10,8 +10,8 @@ Record context, notes, blockers, and handoffs as you work so that a partner — 
 # Build
 go build -o devlog.exe ./cmd/devlog
 
-# Start a session
-./devlog.exe start "Implement auth middleware"
+# Open a session
+./devlog.exe open "Implement auth middleware"
 
 # Add a note
 ./devlog.exe note "Refactored JWT package"
@@ -25,8 +25,8 @@ go build -o devlog.exe ./cmd/devlog
 # Generate a handoff artifact
 ./devlog.exe handoff
 
-# Stop the session
-./devlog.exe stop
+# Close the session
+./devlog.exe close
 ```
 
 ## Why devlog?

@@ -10,14 +10,14 @@ import (
 
 var errNoActiveSession = errors.New("no active session found")
 
-// StartSession creates a new session only when no active session exists.
-func StartSession(s *store.Store, sess store.Session, startMessage string) error {
+// OpenSession creates a new session only when no active session exists.
+func OpenSession(s *store.Store, sess store.Session, startMessage string) error {
 	active, err := FindActiveSession(s)
 	if err == nil {
-		return fmt.Errorf("StartSession: another session is already active: %s", active.ID)
+		return fmt.Errorf("OpenSession: another session is already active: %s", active.ID)
 	}
 	if !errors.Is(err, errNoActiveSession) {
-		return fmt.Errorf("StartSession: find active session: %w", err)
+		return fmt.Errorf("OpenSession: find active session: %w", err)
 	}
 
 	if err := s.WriteSession(sess, startMessage); err != nil {
@@ -41,11 +41,11 @@ func AppendEventToActiveSession(s *store.Store, eventType, body string) error {
 	return nil
 }
 
-// StopActiveSession closes the single active session.
-func StopActiveSession(s *store.Store) error {
+// CloseActiveSession closes the single active session.
+func CloseActiveSession(s *store.Store) error {
 	active, err := FindActiveSession(s)
 	if err != nil {
-		return fmt.Errorf("StopActiveSession: find active session: %w", err)
+		return fmt.Errorf("CloseActiveSession: find active session: %w", err)
 	}
 
 	if err := s.CloseSession(active.ID); err != nil {

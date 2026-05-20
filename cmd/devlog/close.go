@@ -9,10 +9,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newStopCommand() *cobra.Command {
+func newCloseCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:          "stop",
-		Short:        "Stop the active devlog session.",
+		Use:          "close",
+		Short:        "Close the active devlog session.",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -31,11 +31,11 @@ func newStopCommand() *cobra.Command {
 				return err
 			}
 
-			if err := session.StopActiveSession(s); err != nil {
+			if err := session.CloseActiveSession(s); err != nil {
 				return err
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Session %s stopped.\n", active.ID)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Session %s closed.\n", active.ID)
 			return err
 		},
 	}

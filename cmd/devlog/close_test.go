@@ -8,19 +8,19 @@ import (
 	"github.com/amo/devlog/internal/store"
 )
 
-func TestStopCommandClosesActiveSession(t *testing.T) {
+func TestCloseCommandClosesActiveSession(t *testing.T) {
 	requireCmdTestGit(t)
 
 	root := initCmdTestRepo(t)
 	sess := writeCmdTestSession(t, root)
 	t.Chdir(root)
 
-	out, err := executeStopCommand()
+	out, err := executeCloseCommand()
 	if err != nil {
-		t.Fatalf("stop command failed: %v", err)
+		t.Fatalf("close command failed: %v", err)
 	}
 
-	wantOut := "Session " + sess.ID + " stopped.\n"
+	wantOut := "Session " + sess.ID + " closed.\n"
 	if out != wantOut {
 		t.Fatalf("expected output %q, got %q", wantOut, out)
 	}
@@ -42,34 +42,34 @@ func TestStopCommandClosesActiveSession(t *testing.T) {
 		t.Fatal("expected session file to contain Stop event")
 	}
 	if !strings.Contains(content, "Session closed.") {
-		t.Fatal("expected session file to contain stop body")
+		t.Fatal("expected session file to contain close body")
 	}
 }
 
-func TestStopCommandFailsWithoutActiveSession(t *testing.T) {
+func TestCloseCommandFailsWithoutActiveSession(t *testing.T) {
 	requireCmdTestGit(t)
 
 	root := initCmdTestRepo(t)
 	t.Chdir(root)
 
-	_, err := executeStopCommand()
+	_, err := executeCloseCommand()
 	if err == nil || !strings.Contains(err.Error(), "no active session found") {
 		t.Fatalf("expected no active session error, got: %v", err)
 	}
 }
 
-func TestRootCommandIncludesStopCommand(t *testing.T) {
-	cmd, _, err := newRootCommand().Find([]string{"stop"})
+func TestRootCommandIncludesCloseCommand(t *testing.T) {
+	cmd, _, err := newRootCommand().Find([]string{"close"})
 	if err != nil {
-		t.Fatalf("find stop command failed: %v", err)
+		t.Fatalf("find close command failed: %v", err)
 	}
-	if cmd == nil || cmd.Name() != "stop" {
-		t.Fatalf("expected root command to include stop, got %v", cmd)
+	if cmd == nil || cmd.Name() != "close" {
+		t.Fatalf("expected root command to include close, got %v", cmd)
 	}
 }
 
-func executeStopCommand(args ...string) (string, error) {
-	cmd := newStopCommand()
+func executeCloseCommand(args ...string) (string, error) {
+	cmd := newCloseCommand()
 	var out bytes.Buffer
 	var errOut bytes.Buffer
 	cmd.SetOut(&out)

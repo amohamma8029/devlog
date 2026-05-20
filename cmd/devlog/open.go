@@ -11,16 +11,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newStartCommand() *cobra.Command {
+func newOpenCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:          "start <message>",
-		Short:        "Start a new devlog session.",
+		Use:          "open <message>",
+		Short:        "Open a new devlog session.",
 		Args:         cobra.MinimumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			message := strings.TrimSpace(strings.Join(args, " "))
 			if message == "" {
-				return fmt.Errorf("start message is empty")
+				return fmt.Errorf("open message is empty")
 			}
 
 			root, err := internalgit.RepoRoot()
@@ -53,11 +53,11 @@ func newStartCommand() *cobra.Command {
 				Status:  "active",
 			}
 
-			if err := session.StartSession(s, sess, message); err != nil {
+			if err := session.OpenSession(s, sess, message); err != nil {
 				return err
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Started devlog session %s on branch %s\n", sess.ID, sess.Branch)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Opened devlog session %s on branch %s\n", sess.ID, sess.Branch)
 			return err
 		},
 	}
