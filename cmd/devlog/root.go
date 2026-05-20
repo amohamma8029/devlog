@@ -16,8 +16,9 @@ func newRootCommand() *cobra.Command {
 	var showVersion bool
 
 	cmd := &cobra.Command{
-		Use:   "devlog",
-		Short: "Record structured coding session journals inside git repos.",
+		Use:           "devlog",
+		Short:         "Record structured coding session journals inside git repos.",
+		SilenceErrors: true,
 		Long: `devlog records structured coding session journals inside a git repository.
 
 It stores one global devlog per repo using session files under .devlog/sessions/.`,
@@ -32,6 +33,7 @@ It stores one global devlog per repo using session files under .devlog/sessions/
 	}
 
 	cmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Print the version and exit")
+	cmd.AddCommand(newStartCommand())
 
 	return cmd
 }
