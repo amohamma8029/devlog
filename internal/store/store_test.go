@@ -43,6 +43,9 @@ func TestWriteSession(t *testing.T) {
 	if !strings.Contains(content, "status: active") {
 		t.Errorf("expected front-matter to contain status active")
 	}
+	if !strings.Contains(content, "email: test@example.com") {
+		t.Errorf("expected front-matter to contain email")
+	}
 	if !strings.Contains(content, "## Start\n\nImplement auth middleware") {
 		t.Errorf("expected body to contain start message")
 	}
@@ -198,6 +201,7 @@ func testSession() Session {
 	return Session{
 		ID:      "2026-01-15T143022Z",
 		Author:  "Test Author",
+		Email:   "test@example.com",
 		Started: time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC),
 		Branch:  "main",
 		Status:  "active",
@@ -222,6 +226,9 @@ func TestGetSession(t *testing.T) {
 	}
 	if rec.Author != sess.Author {
 		t.Errorf("expected Author %q, got %q", sess.Author, rec.Author)
+	}
+	if rec.Email != sess.Email {
+		t.Errorf("expected Email %q, got %q", sess.Email, rec.Email)
 	}
 	if !rec.Started.Equal(sess.Started) {
 		t.Errorf("expected Started %v, got %v", sess.Started, rec.Started)

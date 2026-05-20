@@ -16,6 +16,7 @@ import (
 type Session struct {
 	ID      string    `yaml:"id"`
 	Author  string    `yaml:"author"`
+	Email   string    `yaml:"email,omitempty"`
 	Started time.Time `yaml:"started"`
 	Branch  string    `yaml:"branch"`
 	Status  string    `yaml:"status"`

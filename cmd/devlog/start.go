@@ -46,7 +46,8 @@ func newStartCommand() *cobra.Command {
 			now := time.Now().UTC()
 			sess := store.Session{
 				ID:      now.Format("2006-01-02T150405Z"),
-				Author:  formatAuthor(name, email),
+				Author:  name,
+				Email:   email,
 				Started: now,
 				Branch:  branch,
 				Status:  "active",
@@ -62,14 +63,4 @@ func newStartCommand() *cobra.Command {
 	}
 
 	return cmd
-}
-
-func formatAuthor(name, email string) string {
-	if name == "" {
-		return email
-	}
-	if email == "" {
-		return name
-	}
-	return fmt.Sprintf("%s <%s>", name, email)
 }
