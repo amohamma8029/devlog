@@ -32,7 +32,7 @@ func TestBlockCommandAppendsBlockerWithFlag(t *testing.T) {
 		t.Fatal("expected session file to contain blocker body")
 	}
 
-	wantOut := "Recorded blocker in session " + sess.ID + "\n"
+	wantOut := "Logged blocker in session " + sess.ID + "\n"
 	if out != wantOut {
 		t.Fatalf("expected output %q, got %q", wantOut, out)
 	}

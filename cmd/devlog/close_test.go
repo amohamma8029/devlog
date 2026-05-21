@@ -20,7 +20,7 @@ func TestCloseCommandClosesActiveSession(t *testing.T) {
 		t.Fatalf("close command failed: %v", err)
 	}
 
-	wantOut := "Session " + sess.ID + " closed.\n"
+	wantOut := "Closed session " + sess.ID + ".\n"
 	if out != wantOut {
 		t.Fatalf("expected output %q, got %q", wantOut, out)
 	}
