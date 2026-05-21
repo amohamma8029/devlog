@@ -35,7 +35,7 @@ func CurrentBranch() (string, error) {
 		return "", repoCommandError("CurrentBranch", stderr, err)
 	}
 	if branch == "" {
-		return "", fmt.Errorf("CurrentBranch: unable to determine current branch. devlog requires a named git branch; detached HEAD is not supported")
+		return "", fmt.Errorf("no git branch found. devlog requires a named git branch (detached HEAD is not supported). Run \"git checkout -b <branch>\" to create one.")
 	}
 
 	return branch, nil
@@ -45,12 +45,12 @@ func CurrentBranch() (string, error) {
 func AuthorIdentity() (string, string, error) {
 	name, nameErr := gitConfigValue("user.name")
 	if isGitUnavailable(nameErr) {
-		return "", "", fmt.Errorf("AuthorIdentity: %w", nameErr)
+		return "", "", nameErr
 	}
 
 	email, emailErr := gitConfigValue("user.email")
 	if isGitUnavailable(emailErr) {
-		return "", "", fmt.Errorf("AuthorIdentity: %w", emailErr)
+		return "", "", emailErr
 	}
 
 	if name == "" {
@@ -62,12 +62,12 @@ func AuthorIdentity() (string, string, error) {
 
 	if name == "" && email == "" {
 		if nameErr != nil {
-			return "", "", fmt.Errorf("AuthorIdentity: read git config user.name: %w", nameErr)
+			return "", "", fmt.Errorf("read git config user.name: %w", nameErr)
 		}
 		if emailErr != nil {
-			return "", "", fmt.Errorf("AuthorIdentity: read git config user.email: %w", emailErr)
+			return "", "", fmt.Errorf("read git config user.email: %w", emailErr)
 		}
-		return "", "", fmt.Errorf("AuthorIdentity: author identity is not configured. Set git config user.name/user.email or DEVLOG_AUTHOR_NAME/DEVLOG_AUTHOR_EMAIL")
+		return "", "", fmt.Errorf(`author identity is not configured. Set git config user.name/user.email or set DEVLOG_AUTHOR_NAME and DEVLOG_AUTHOR_EMAIL.`)
 	}
 
 	return name, email, nil
@@ -102,10 +102,10 @@ func runGit(args ...string) (string, string, error) {
 
 func repoCommandError(op, stderr string, err error) error {
 	if unavailable := gitUnavailableError(err); unavailable != nil {
-		return fmt.Errorf("%s: %w", op, unavailable)
+		return unavailable
 	}
 	if isNotRepository(stderr) {
-		return fmt.Errorf("%s: you are not inside a git repository. devlog must be run from within a repo to anchor .devlog/sessions/", op)
+		return fmt.Errorf(`you are not inside a git repository. Run devlog from the root of a git repo to use .devlog/sessions/.`)
 	}
 
 	return fmt.Errorf("%s: git command failed: %s", op, commandFailure(stderr, err))
