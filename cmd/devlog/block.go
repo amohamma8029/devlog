@@ -14,7 +14,7 @@ func newBlockCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:          "block [message]",
-		Short:        "Append a blocker to the active devlog session.",
+		Short:        "Log a blocker in the active session.",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body, err := resolveBody(cmd, message, args, "blocker")
@@ -41,7 +41,7 @@ func newBlockCommand() *cobra.Command {
 				return err
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Recorded blocker in session %s\n", active.ID)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Logged blocker in session %s\n", active.ID)
 			return err
 		},
 	}

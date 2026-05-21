@@ -14,7 +14,7 @@ func newNoteCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:          "note [message]",
-		Short:        "Append a note to the active devlog session.",
+		Short:        "Add a note to the active session.",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body, err := resolveBody(cmd, message, args, "note")
@@ -41,7 +41,7 @@ func newNoteCommand() *cobra.Command {
 				return err
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Recorded note in session %s\n", active.ID)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Added note to session %s\n", active.ID)
 			return err
 		},
 	}

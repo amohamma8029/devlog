@@ -12,7 +12,7 @@ import (
 func newCloseCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "close",
-		Short:        "Close the active devlog session.",
+		Short:        "Close the active session.",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -35,7 +35,7 @@ func newCloseCommand() *cobra.Command {
 				return err
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Session %s closed.\n", active.ID)
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Closed session %s.\n", active.ID)
 			return err
 		},
 	}
