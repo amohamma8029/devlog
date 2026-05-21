@@ -24,12 +24,12 @@ func newStatusCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:          "status",
-		Short:        "Show the active devlog session status.",
+		Short:        "Show active session status.",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if number < 0 {
-				return fmt.Errorf("number must be greater than or equal to 0")
+				return fmt.Errorf(`number must be 0 or greater. Run "devlog status -n <number>" with a non-negative value.`)
 			}
 
 			root, err := internalgit.RepoRoot()

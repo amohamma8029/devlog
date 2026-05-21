@@ -60,7 +60,7 @@ func TestBlockCommandFailsWithoutMessageOrEditor(t *testing.T) {
 	t.Setenv("EDITOR", "")
 
 	_, err := executeBlockCommand()
-	if err == nil || !strings.Contains(err.Error(), "no message provided and $EDITOR not set") {
+	if err == nil || !strings.Contains(err.Error(), "no message provided and $EDITOR") {
 		t.Fatalf("expected missing message error, got: %v", err)
 	}
 }
@@ -72,7 +72,7 @@ func TestBlockCommandFailsWithoutActiveSession(t *testing.T) {
 	t.Chdir(root)
 
 	_, err := executeBlockCommand("-m", "blocked")
-	if err == nil || !strings.Contains(err.Error(), "no active session found") {
+	if err == nil || !strings.Contains(err.Error(), "no active session is in progress") {
 		t.Fatalf("expected no active session error, got: %v", err)
 	}
 }

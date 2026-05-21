@@ -14,13 +14,13 @@ import (
 func newOpenCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "open <message>",
-		Short:        "Open a new devlog session.",
-		Args:         cobra.MinimumNArgs(1),
+		Short:        "Open a new session.",
+		Args:         cobra.ArbitraryArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			message := strings.TrimSpace(strings.Join(args, " "))
 			if message == "" {
-				return fmt.Errorf("open message is empty")
+				return fmt.Errorf(`open requires a message describing what you will work on. Run "devlog open <message>" to start a session.`)
 			}
 
 			root, err := internalgit.RepoRoot()

@@ -22,7 +22,7 @@ func resolveBody(cmd *cobra.Command, flagMsg string, args []string, bodyLabel st
 
 	editor := os.Getenv("EDITOR")
 	if strings.TrimSpace(editor) == "" {
-		return "", fmt.Errorf("no message provided and $EDITOR not set")
+		return "", fmt.Errorf(`no message provided and $EDITOR is not set. Use -m <message> to provide text, or set $EDITOR to launch an editor.`)
 	}
 
 	return openEditor(cmd, strings.TrimSpace(editor), bodyLabel)
