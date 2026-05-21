@@ -47,7 +47,7 @@ func TestFindActiveSessionNone(t *testing.T) {
 	}
 
 	_, err = FindActiveSession(s)
-	if err == nil || !strings.Contains(err.Error(), "no active session found") {
+	if err == nil || !strings.Contains(err.Error(), "no active session is in progress") {
 		t.Fatalf("expected no active session error, got: %v", err)
 	}
 }
@@ -82,7 +82,7 @@ func TestFindActiveSessionMultiple(t *testing.T) {
 	}
 
 	_, err = FindActiveSession(s)
-	if err == nil || !strings.Contains(err.Error(), "multiple active sessions found") {
+	if err == nil || !strings.Contains(err.Error(), "more than one active session exists") {
 		t.Fatalf("expected multiple active sessions error, got: %v", err)
 	}
 }
@@ -109,7 +109,7 @@ func TestFindActiveSessionAllClosed(t *testing.T) {
 	}
 
 	_, err = FindActiveSession(s)
-	if err == nil || !strings.Contains(err.Error(), "no active session found") {
+	if err == nil || !strings.Contains(err.Error(), "no active session is in progress") {
 		t.Fatalf("expected no active session error, got: %v", err)
 	}
 }
@@ -194,7 +194,7 @@ func TestOpenSessionFailsWhenActiveExists(t *testing.T) {
 	}
 
 	err := OpenSession(s, next, "new session")
-	if err == nil || !strings.Contains(err.Error(), "another session is already active: "+active.ID) {
+	if err == nil || !strings.Contains(err.Error(), "a session is already active ("+active.ID+")") {
 		t.Fatalf("expected active session error, got: %v", err)
 	}
 	if _, err := os.Stat(sessionFilePath(root, next.ID)); !os.IsNotExist(err) {
@@ -250,7 +250,7 @@ func TestAppendEventToActiveSessionFailsWhenNoneActive(t *testing.T) {
 	s := newTestStore(t, t.TempDir())
 
 	err := AppendEventToActiveSession(s, "Note", "body")
-	if err == nil || !strings.Contains(err.Error(), "no active session found") {
+	if err == nil || !strings.Contains(err.Error(), "no active session is in progress") {
 		t.Fatalf("expected no active session error, got: %v", err)
 	}
 }
@@ -269,7 +269,7 @@ func TestAppendEventToActiveSessionFailsWhenSessionClosed(t *testing.T) {
 	before := readSessionFile(t, root, sess.ID)
 
 	err := AppendEventToActiveSession(s, "Note", "body")
-	if err == nil || !strings.Contains(err.Error(), "no active session found") {
+	if err == nil || !strings.Contains(err.Error(), "no active session is in progress") {
 		t.Fatalf("expected no active session error, got: %v", err)
 	}
 	after := readSessionFile(t, root, sess.ID)
@@ -282,7 +282,7 @@ func TestCloseActiveSessionFailsWhenNoneActive(t *testing.T) {
 	s := newTestStore(t, t.TempDir())
 
 	err := CloseActiveSession(s)
-	if err == nil || !strings.Contains(err.Error(), "no active session found") {
+	if err == nil || !strings.Contains(err.Error(), "no active session is in progress") {
 		t.Fatalf("expected no active session error, got: %v", err)
 	}
 }

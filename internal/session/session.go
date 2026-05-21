@@ -8,16 +8,16 @@ import (
 	"github.com/amo/devlog/internal/store"
 )
 
-var errNoActiveSession = errors.New("no active session found")
+var errNoActiveSession = errors.New(`no active session is in progress. Run "devlog open <message>" to start one.`)
 
 // OpenSession creates a new session only when no active session exists.
 func OpenSession(s *store.Store, sess store.Session, startMessage string) error {
 	active, err := FindActiveSession(s)
 	if err == nil {
-		return fmt.Errorf("OpenSession: another session is already active: %s", active.ID)
+		return fmt.Errorf(`a session is already active (%s). Run "devlog close" to end it first.`, active.ID)
 	}
 	if !errors.Is(err, errNoActiveSession) {
-		return fmt.Errorf("OpenSession: find active session: %w", err)
+		return err
 	}
 
 	if err := s.WriteSession(sess, startMessage); err != nil {
@@ -31,7 +31,7 @@ func OpenSession(s *store.Store, sess store.Session, startMessage string) error 
 func AppendEventToActiveSession(s *store.Store, eventType, body string) error {
 	active, err := FindActiveSession(s)
 	if err != nil {
-		return fmt.Errorf("AppendEventToActiveSession: find active session: %w", err)
+		return err
 	}
 
 	if err := s.AppendEvent(active.ID, eventType, body); err != nil {
@@ -45,7 +45,7 @@ func AppendEventToActiveSession(s *store.Store, eventType, body string) error {
 func CloseActiveSession(s *store.Store) error {
 	active, err := FindActiveSession(s)
 	if err != nil {
-		return fmt.Errorf("CloseActiveSession: find active session: %w", err)
+		return err
 	}
 
 	if err := s.CloseSession(active.ID); err != nil {
@@ -72,14 +72,14 @@ func FindActiveSession(s *store.Store) (*store.SessionRecord, error) {
 	for i := range records {
 		if !records[i].Closed {
 			if active != nil {
-				return nil, fmt.Errorf("FindActiveSession: multiple active sessions found")
+				return nil, fmt.Errorf("more than one active session exists. This is unexpected — check .devlog/sessions/ for open sessions.")
 			}
 			active = &records[i]
 		}
 	}
 
 	if active == nil {
-		return nil, fmt.Errorf("FindActiveSession: %w", errNoActiveSession)
+		return nil, errNoActiveSession
 	}
 
 	return active, nil
