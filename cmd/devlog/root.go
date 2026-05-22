@@ -30,7 +30,7 @@ stored as Markdown files under .devlog/sessions/.`,
 				return err
 			}
 
-			return cmd.Help()
+			return launchTUI()
 		},
 	}
 
