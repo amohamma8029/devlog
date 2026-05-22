@@ -40,6 +40,7 @@ stored as Markdown files under .devlog/sessions/.`,
 	cmd.AddCommand(newBlockCommand())
 	cmd.AddCommand(newStatusCommand())
 	cmd.AddCommand(newCloseCommand())
+	cmd.AddCommand(newListCommand())
 	cmd.AddCommand(newHandoffCommand())
 
 	return cmd
