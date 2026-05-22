@@ -65,6 +65,9 @@ func newHandoffCommand() *cobra.Command {
 			}
 
 			if output != "" {
+				if err := os.MkdirAll(filepath.Dir(output), 0755); err != nil {
+					return fmt.Errorf("handoff: create output directory: %w", err)
+				}
 				if err := os.WriteFile(output, []byte(handoffText), 0644); err != nil {
 					return fmt.Errorf("handoff: write output file: %w", err)
 				}
