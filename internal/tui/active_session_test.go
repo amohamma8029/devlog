@@ -316,7 +316,7 @@ func TestModelViewSessionList(t *testing.T) {
 	m.Width = 80
 	m.Height = 24
 	v := m.View()
-	if !strings.Contains(v, "<SessionList>") {
-		t.Error("Model.View() should show SessionList stub")
+	if v == "" {
+		t.Error("Model.View() should return non-empty for SessionList")
 	}
 }

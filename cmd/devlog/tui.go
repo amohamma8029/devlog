@@ -18,7 +18,7 @@ var launchTUI = func() error {
 		return err
 	}
 
-	m := tui.NewModel(s)
+	m := tui.NewModel(s, root)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		return err

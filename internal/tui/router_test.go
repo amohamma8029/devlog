@@ -8,11 +8,8 @@ import (
 func TestViewForStateSessionList(t *testing.T) {
 	m := Model{CurrentView: SessionList}
 	v := viewForState(m)
-	if v == nil {
-		t.Fatal("viewForState returned nil for SessionList")
-	}
-	if !strings.Contains(v.View(), "<SessionList>") {
-		t.Errorf("viewForState View = %s, want <SessionList>", v.View())
+	if v != nil {
+		t.Fatalf("viewForState returned non-nil for SessionList after stub removal: %v", v)
 	}
 }
 
@@ -22,9 +19,8 @@ func TestViewForStateActiveSession(t *testing.T) {
 	if v == nil {
 		t.Fatal("viewForState returned nil for ActiveSession")
 	}
-	// Real active session rendering is in model.View(); viewForState delegates to sessionListView
-	if !strings.Contains(v.View(), "<SessionList>") {
-		t.Errorf("viewForState View = %s, want <SessionList>", v.View())
+	if !strings.Contains(v.View(), "<ActiveSession>") {
+		t.Errorf("viewForState View = %s, want <ActiveSession>", v.View())
 	}
 }
 
