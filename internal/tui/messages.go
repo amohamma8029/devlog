@@ -36,3 +36,8 @@ type ActiveSessionLoadedMsg struct {
 }
 
 type CursorTickMsg struct{}
+
+type NavigationMsg struct {
+	Target  View
+	Session *store.SessionRecord
+}

@@ -15,17 +15,21 @@ func TestModelSatisfiesTeaModel(t *testing.T) {
 
 func TestNewModel(t *testing.T) {
 	s := &store.Store{}
-	m := NewModel(s)
+	m := NewModel(s, "/tmp/test")
 	if m.CurrentView != SessionList {
 		t.Errorf("NewModel CurrentView = %v, want SessionList", m.CurrentView)
 	}
 	if m.Store != s {
 		t.Error("NewModel Store not set")
 	}
+	if m.Root != "/tmp/test" {
+		t.Errorf("NewModel Root = %s, want /tmp/test", m.Root)
+	}
 }
 
 func TestModelInit(t *testing.T) {
-	m := Model{}
+	s := &store.Store{}
+	m := NewModel(s, "/tmp")
 	cmd := m.Init()
 	if cmd == nil {
 		t.Error("Init() returned nil cmd; expected a command to load active session")
@@ -33,7 +37,8 @@ func TestModelInit(t *testing.T) {
 }
 
 func TestModelUpdateQuitOnEsc(t *testing.T) {
-	m := Model{}
+	s := &store.Store{}
+	m := NewModel(s, "/tmp")
 	msg := tea.KeyMsg{Type: tea.KeyEsc}
 	_, cmd := m.Update(msg)
 	if cmd == nil {
@@ -42,7 +47,8 @@ func TestModelUpdateQuitOnEsc(t *testing.T) {
 }
 
 func TestModelUpdateQuitOnCtrlC(t *testing.T) {
-	m := Model{}
+	s := &store.Store{}
+	m := NewModel(s, "/tmp")
 	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
 	_, cmd := m.Update(msg)
 	if cmd == nil {
@@ -64,7 +70,8 @@ func TestModelUpdateNoQuitWhenPaletteOpen(t *testing.T) {
 }
 
 func TestModelUpdateWindowSize(t *testing.T) {
-	m := Model{}
+	s := &store.Store{}
+	m := NewModel(s, "/tmp")
 	msg := tea.WindowSizeMsg{Width: 120, Height: 40}
 	nm, _ := m.Update(msg)
 	updated, ok := nm.(Model)
@@ -80,7 +87,8 @@ func TestModelUpdateWindowSize(t *testing.T) {
 }
 
 func TestModelViewNonEmpty(t *testing.T) {
-	m := Model{}
+	s := &store.Store{}
+	m := NewModel(s, "/tmp")
 	v := m.View()
 	if v == "" {
 		t.Error("View() returned empty string")

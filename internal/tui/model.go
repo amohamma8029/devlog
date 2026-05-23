@@ -25,6 +25,8 @@ type Model struct {
 	Events         []store.SessionEvent
 	Palette        *CommandPalette
 	Store          *store.Store
+	SessionList    SessionListModel
+	Root           string
 	Width          int
 	Height         int
 	ScrollOffset   int
@@ -35,32 +37,37 @@ type Model struct {
 	Title          string
 }
 
-func NewModel(s *store.Store) Model {
+func NewModel(s *store.Store, root string) Model {
 	p := NewCommandPalette()
 	return Model{
 		CurrentView: SessionList,
 		Palette:     &p,
 		Store:       s,
+		SessionList: NewSessionListModel(s, root, 80, 24),
+		Root:        root,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return func() tea.Msg {
-		active, err := session.FindActiveSession(m.Store)
-		if err != nil {
-			return ActiveSessionLoadedMsg{}
-		}
+	return tea.Batch(
+		func() tea.Msg {
+			active, err := session.FindActiveSession(m.Store)
+			if err != nil {
+				return ActiveSessionLoadedMsg{}
+			}
 
-		body, err := m.Store.ReadSessionBody(active.ID)
-		if err != nil {
-			return ActiveSessionLoadedMsg{Session: active}
-		}
+			body, err := m.Store.ReadSessionBody(active.ID)
+			if err != nil {
+				return ActiveSessionLoadedMsg{Session: active}
+			}
 
-		events := store.ParseSessionEvents(body)
-		title := extractStartMessage(events)
+			events := store.ParseSessionEvents(body)
+			title := extractStartMessage(events)
 
-		return ActiveSessionLoadedMsg{Session: active, Events: events, Title: title}
-	}
+			return ActiveSessionLoadedMsg{Session: active, Events: events, Title: title}
+		},
+		m.SessionList.Init(),
+	)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -76,6 +83,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Title = msg.Title
 		m.ScrollOffset = 0
 		m.CurrentView = ActiveSession
+		return m, nil
+
+	case NavigationMsg:
+		m.CurrentView = msg.Target
+		m.ActiveSession = msg.Session
 		return m, nil
 
 	case CommandExecutedMsg:
@@ -194,6 +206,13 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if key == "/" || key == "enter" {
 			return m, m.Init()
 		}
+	}
+
+	switch m.CurrentView {
+	case SessionList:
+		sl, cmd := m.SessionList.Update(msg)
+		m.SessionList, _ = sl.(SessionListModel)
+		return m, cmd
 	}
 
 	return m, nil
@@ -342,7 +361,7 @@ func (m Model) View() string {
 			v = renderNoSession(m)
 		}
 	case SessionList:
-		v = "<SessionList>\n\nPress / or Enter to check for active session."
+		v = m.SessionList.View()
 	case HandoffPreview:
 		v = renderHandoffPreview(m)
 	default:
