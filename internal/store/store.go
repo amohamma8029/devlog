@@ -32,6 +32,13 @@ type SessionRecord struct {
 
 const sessionsDir = ".devlog/sessions"
 
+// SessionEvent represents a structured event parsed from a session Markdown body.
+type SessionEvent struct {
+	Type string // Start, Note, Blocker, Stop
+	Time string // HH:MM (empty for Start)
+	Body string
+}
+
 // Store reads and writes devlog files under a repository root.
 type Store struct {
 	root string
@@ -131,6 +138,127 @@ func (s *Store) CloseSession(sessionID string) error {
 		return err
 	}
 	return s.appendEvent("CloseSession", sessionID, "Stop", "Session closed.", time.Now().UTC())
+}
+
+// ReadSessionBody reads the session file and returns the Markdown body (everything
+// after the YAML front-matter delimiters).
+func (s *Store) ReadSessionBody(sessionID string) (string, error) {
+	if err := validateSessionID("ReadSessionBody", sessionID); err != nil {
+		return "", err
+	}
+
+	content, err := s.ReadSessionContent(sessionID)
+	if err != nil {
+		return "", err
+	}
+
+	body, err := extractMarkdownBody(content)
+	if err != nil {
+		return "", fmt.Errorf("ReadSessionBody: %w", err)
+	}
+
+	return body, nil
+}
+
+// ReadSessionContent reads the raw session file content (including YAML front-matter).
+func (s *Store) ReadSessionContent(sessionID string) (string, error) {
+	if err := validateSessionID("ReadSessionContent", sessionID); err != nil {
+		return "", err
+	}
+
+	path, err := s.sessionPath(sessionID)
+	if err != nil {
+		return "", fmt.Errorf("ReadSessionContent: resolve session path: %w", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("ReadSessionContent: session file not found: %s", path)
+		}
+		return "", fmt.Errorf("ReadSessionContent: read file: %w", err)
+	}
+
+	content := strings.ReplaceAll(string(data), "\r\n", "\n")
+	return content, nil
+}
+
+// ParseSessionEvents parses a Markdown body (from a session file) into structured events.
+func ParseSessionEvents(body string) []SessionEvent {
+	body = strings.ReplaceAll(body, "\r\n", "\n")
+	events, _ := parseSessionEvents(body)
+	return events
+}
+
+// parseSessionEvents parses events and returns them along with whether a Start event was found.
+func parseSessionEvents(body string) ([]SessionEvent, bool) {
+	lines := strings.Split(body, "\n")
+	var events []SessionEvent
+	var current *SessionEvent
+	var bodyLines []string
+	hasStart := false
+
+	flush := func() {
+		if current == nil {
+			return
+		}
+		current.Body = strings.TrimSpace(strings.Join(bodyLines, "\n"))
+		events = append(events, *current)
+	}
+
+	for _, line := range lines {
+		eventType, at, ok := parseEventHeading(line)
+		if ok {
+			flush()
+			current = &SessionEvent{Type: eventType, Time: at}
+			bodyLines = nil
+			if eventType == "Start" {
+				hasStart = true
+			}
+			continue
+		}
+
+		if current != nil {
+			bodyLines = append(bodyLines, line)
+		}
+	}
+
+	flush()
+	return events, hasStart
+}
+
+func parseEventHeading(line string) (string, string, bool) {
+	if !strings.HasPrefix(line, "## ") {
+		return "", "", false
+	}
+
+	heading := strings.TrimSpace(strings.TrimPrefix(line, "## "))
+	for _, eventType := range []string{"Start", "Note", "Blocker", "Stop"} {
+		if heading == eventType {
+			return eventType, "", true
+		}
+
+		prefix := eventType + " - "
+		if strings.HasPrefix(heading, prefix) {
+			return eventType, strings.TrimRight(strings.TrimPrefix(heading, prefix), " UTC"), true
+		}
+	}
+
+	return "", "", false
+}
+
+func extractMarkdownBody(content string) (string, error) {
+	const delim = "---\n"
+	if !strings.HasPrefix(content, delim) {
+		return "", fmt.Errorf("missing opening front-matter delimiter")
+	}
+
+	parts := strings.SplitN(content[len(delim):], delim, 2)
+	if len(parts) < 2 {
+		return "", fmt.Errorf("missing closing front-matter delimiter")
+	}
+
+	return parts[1], nil
 }
 
 func (s *Store) appendEvent(op, sessionID, eventType, body string, at time.Time) error {

@@ -434,6 +434,139 @@ func TestParseSessionFileMissingClosingDelimiter(t *testing.T) {
 	}
 }
 
+func TestReadSessionBody(t *testing.T) {
+	root := t.TempDir()
+	store := newTestStore(t, root)
+	sess := testSession()
+
+	if err := store.WriteSession(sess, "Implement auth middleware"); err != nil {
+		t.Fatalf("WriteSession failed: %v", err)
+	}
+
+	body, err := store.ReadSessionBody(sess.ID)
+	if err != nil {
+		t.Fatalf("ReadSessionBody failed: %v", err)
+	}
+	if !strings.Contains(body, "## Start") {
+		t.Errorf("expected body to contain '## Start', got: %s", body)
+	}
+	if !strings.Contains(body, "Implement auth middleware") {
+		t.Errorf("expected body to contain start message, got: %s", body)
+	}
+	if strings.Contains(body, "id:") {
+		t.Errorf("body should not contain YAML front-matter, got: %s", body)
+	}
+}
+
+func TestReadSessionBodyMissing(t *testing.T) {
+	store := newTestStore(t, t.TempDir())
+
+	_, err := store.ReadSessionBody("nonexistent")
+	if err == nil || !strings.Contains(err.Error(), "session file not found") {
+		t.Fatalf("expected not found error, got: %v", err)
+	}
+}
+
+func TestReadSessionBodyInvalidID(t *testing.T) {
+	store := newTestStore(t, t.TempDir())
+
+	if _, err := store.ReadSessionBody(""); err == nil || !strings.Contains(err.Error(), "session ID is empty") {
+		t.Fatalf("expected empty ID error, got: %v", err)
+	}
+	if _, err := store.ReadSessionBody("../outside"); err == nil || !strings.Contains(err.Error(), "invalid session ID") {
+		t.Fatalf("expected invalid session ID error, got: %v", err)
+	}
+}
+
+func TestReadSessionContent(t *testing.T) {
+	root := t.TempDir()
+	store := newTestStore(t, root)
+	sess := testSession()
+
+	if err := store.WriteSession(sess, "Implement auth middleware"); err != nil {
+		t.Fatalf("WriteSession failed: %v", err)
+	}
+
+	content, err := store.ReadSessionContent(sess.ID)
+	if err != nil {
+		t.Fatalf("ReadSessionContent failed: %v", err)
+	}
+	if !strings.Contains(content, "id: 2026-01-15T143022Z") {
+		t.Errorf("expected content to contain YAML id field, got: %s", content)
+	}
+	if !strings.Contains(content, "## Start") {
+		t.Errorf("expected content to contain markdown body, got: %s", content)
+	}
+}
+
+func TestParseSessionEventsBasic(t *testing.T) {
+	body := "\n## Start\n\nImplement auth middleware\n\n## Note - 14:30 UTC\n\nRefactored JWT package\nMulti-line note.\n\n## Stop - 15:00 UTC\n\nSession closed.\n"
+
+	events := ParseSessionEvents(body)
+	if len(events) != 3 {
+		t.Fatalf("expected 3 events, got %d", len(events))
+	}
+
+	if events[0].Type != "Start" {
+		t.Errorf("expected first event to be Start, got %s", events[0].Type)
+	}
+	if events[0].Time != "" {
+		t.Errorf("expected Start event to have empty Time, got %s", events[0].Time)
+	}
+	if events[0].Body != "Implement auth middleware" {
+		t.Errorf("expected Start body, got %q", events[0].Body)
+	}
+
+	if events[1].Type != "Note" {
+		t.Errorf("expected second event to be Note, got %s", events[1].Type)
+	}
+	if events[1].Time != "14:30" {
+		t.Errorf("expected Note time 14:30, got %s", events[1].Time)
+	}
+	if events[1].Body != "Refactored JWT package\nMulti-line note." {
+		t.Errorf("expected Note body, got %q", events[1].Body)
+	}
+
+	if events[2].Type != "Stop" {
+		t.Errorf("expected third event to be Stop, got %s", events[2].Type)
+	}
+	if events[2].Time != "15:00" {
+		t.Errorf("expected Stop time 15:00, got %s", events[2].Time)
+	}
+	if events[2].Body != "Session closed." {
+		t.Errorf("expected Stop body, got %q", events[2].Body)
+	}
+}
+
+func TestParseSessionEventsEmptyBody(t *testing.T) {
+	events := ParseSessionEvents("")
+	if len(events) != 0 {
+		t.Fatalf("expected 0 events for empty body, got %d", len(events))
+	}
+}
+
+func TestParseSessionEventsNoHeadings(t *testing.T) {
+	events := ParseSessionEvents("just some text\nno headings here\n")
+	if len(events) != 0 {
+		t.Fatalf("expected 0 events, got %d", len(events))
+	}
+}
+
+func TestParseSessionEventsBlocker(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Blocker - 15:30 UTC\n\nWaiting for API key approval.\n"
+
+	events := ParseSessionEvents(body)
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+	if events[1].Type != "Blocker" {
+		t.Errorf("expected second event to be Blocker, got %s", events[1].Type)
+	}
+	if events[1].Body != "Waiting for API key approval." {
+		t.Errorf("expected Blocker body, got %q", events[1].Body)
+	}
+}
+
 func readSessionFile(t *testing.T, root, sessionID string) string {
 	t.Helper()
 
