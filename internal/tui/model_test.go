@@ -27,8 +27,8 @@ func TestNewModel(t *testing.T) {
 func TestModelInit(t *testing.T) {
 	m := Model{}
 	cmd := m.Init()
-	if cmd != nil {
-		t.Errorf("Init() returned non-nil cmd: %v", cmd)
+	if cmd == nil {
+		t.Error("Init() returned nil cmd; expected a command to load active session")
 	}
 }
 
@@ -51,8 +51,10 @@ func TestModelUpdateQuitOnCtrlC(t *testing.T) {
 }
 
 func TestModelUpdateNoQuitWhenPaletteOpen(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
 	m := Model{
-		Palette: CommandPalette{Open: true},
+		Palette: &p,
 	}
 	msg := tea.KeyMsg{Type: tea.KeyEsc}
 	_, cmd := m.Update(msg)
@@ -86,8 +88,18 @@ func TestModelViewNonEmpty(t *testing.T) {
 }
 
 func TestModelViewIncludesPaletteWhenOpen(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.Input = "test"
+	sess := &store.SessionRecord{
+		Session: store.Session{ID: "x", Author: "a", Branch: "b"},
+	}
 	m := Model{
-		Palette: CommandPalette{Open: true, Input: "test"},
+		CurrentView:   ActiveSession,
+		ActiveSession: sess,
+		Palette:       &p,
+		Width:         80,
+		Height:        24,
 	}
 	v := m.View()
 	if !strings.Contains(v, "test") {
