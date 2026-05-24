@@ -1,52 +1,201 @@
 package tui
 
 import (
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
+type CommandEntry struct {
+	Command     string
+	Description string
+	NoArg       bool
+}
+
+var PaletteCommands = []CommandEntry{
+	{Command: "/note", Description: "Add a note", NoArg: false},
+	{Command: "/block", Description: "Log a blocker", NoArg: false},
+	{Command: "/close", Description: "Close the session", NoArg: true},
+	{Command: "/handoff", Description: "Generate handoff summary", NoArg: true},
+}
+
 type CommandPalette struct {
-	Open    bool
-	Input   string
-	History []string
+	Open          bool
+	Input         string
+	History       []string
+	SelectedIndex int
+	HoverIndex    int
+	CursorVisible bool
+	offsetY       int
 }
 
 func NewCommandPalette() CommandPalette {
-	return CommandPalette{}
+	return CommandPalette{
+		SelectedIndex: -1,
+		HoverIndex:    -1,
+	}
 }
 
-func (p CommandPalette) Update(msg tea.Msg) (CommandPalette, tea.Cmd) {
-	keyMsg, ok := msg.(tea.KeyMsg)
-	if !ok || !p.Open {
-		return p, nil
+func (p *CommandPalette) OpenPalette() {
+	p.Open = true
+	p.Input = ""
+	p.SelectedIndex = -1
+	p.HoverIndex = -1
+	p.CursorVisible = true
+}
+
+func (p *CommandPalette) ClosePalette() {
+	p.Open = false
+	p.SelectedIndex = -1
+	p.HoverIndex = -1
+}
+
+func (p *CommandPalette) Update(msg tea.Msg) (tea.Cmd, *CommandPalette) {
+	if !p.Open {
+		return nil, p
 	}
 
-	switch keyMsg.String() {
+	switch msg := msg.(type) {
+	case tea.MouseMsg:
+		return p.handleMouse(msg)
+
+	case tea.KeyMsg:
+		return p.handleKey(msg)
+	}
+
+	return nil, p
+}
+
+func (p *CommandPalette) handleMouse(msg tea.MouseMsg) (tea.Cmd, *CommandPalette) {
+	if msg.Button != tea.MouseButtonLeft && msg.Button != tea.MouseButtonNone {
+		return nil, p
+	}
+
+	menuY := msg.Y - p.offsetY
+
+	if msg.Button == tea.MouseButtonNone || msg.Action == tea.MouseActionMotion {
+		if menuY >= 0 && menuY < len(PaletteCommands) {
+			p.HoverIndex = menuY
+		} else {
+			p.HoverIndex = -1
+		}
+		return nil, p
+	}
+
+	if msg.Action != tea.MouseActionPress {
+		return nil, p
+	}
+
+	if menuY >= 0 && menuY < len(PaletteCommands) {
+		p.SelectedIndex = menuY
+		entry := PaletteCommands[menuY]
+		if entry.NoArg {
+			p.ClosePalette()
+			return func() tea.Msg { return CommandExecutedMsg{Input: entry.Command} }, p
+		}
+		p.Input = entry.Command + " "
+		p.SelectedIndex = -1
+		p.HoverIndex = -1
+		return nil, p
+	}
+
+	return nil, p
+}
+
+func (p *CommandPalette) handleKey(msg tea.KeyMsg) (tea.Cmd, *CommandPalette) {
+	switch msg.String() {
 	case "esc":
-		p.Open = false
+		p.ClosePalette()
+		return nil, p
+
 	case "enter":
+		if p.SelectedIndex >= 0 && p.SelectedIndex < len(PaletteCommands) {
+			entry := PaletteCommands[p.SelectedIndex]
+			if entry.NoArg {
+				p.ClosePalette()
+				return func() tea.Msg { return CommandExecutedMsg{Input: entry.Command} }, p
+			}
+			p.Input = entry.Command + " "
+			p.SelectedIndex = -1
+			p.HoverIndex = -1
+			return nil, p
+		}
 		if p.Input != "" {
 			p.History = append(p.History, p.Input)
+			input := p.Input
 			p.Input = ""
-			p.Open = false
+			p.ClosePalette()
+			return func() tea.Msg { return CommandExecutedMsg{Input: input} }, p
 		}
+
 	case "backspace":
 		if len(p.Input) > 0 {
 			p.Input = p.Input[:len(p.Input)-1]
 		}
+
+	case "up":
+		if p.SelectedIndex > 0 {
+			p.SelectedIndex--
+		} else {
+			p.SelectedIndex = len(PaletteCommands) - 1
+		}
+		p.HoverIndex = -1
+
+	case "down":
+		if p.SelectedIndex < len(PaletteCommands)-1 {
+			p.SelectedIndex++
+		}
+		p.HoverIndex = -1
+
+	case "tab":
+		if p.SelectedIndex < len(PaletteCommands)-1 {
+			p.SelectedIndex++
+		} else {
+			p.SelectedIndex = 0
+		}
+		p.HoverIndex = -1
+
 	default:
-		if len(keyMsg.Runes) == 1 {
-			p.Input += string(keyMsg.Runes[0])
+		if len(msg.Runes) == 1 {
+			p.Input += string(msg.Runes[0])
+			p.SelectedIndex = -1
+			p.HoverIndex = -1
 		}
 	}
-	return p, nil
+
+	return nil, p
+}
+
+func (p *CommandPalette) SetOffset(offset int) {
+	p.offsetY = offset
 }
 
 func (p CommandPalette) View() string {
 	if !p.Open {
 		return ""
 	}
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		Render(": " + p.Input)
+
+	var menu strings.Builder
+
+	for i, cmd := range PaletteCommands {
+		line := cmd.Command + "  " + HintStyle.Render(cmd.Description)
+		if i == p.SelectedIndex {
+			menu.WriteString(MenuSelectedStyle.Render(line))
+		} else if i == p.HoverIndex {
+			menu.WriteString(MenuHoverStyle.Render(line))
+		} else {
+			menu.WriteString(MenuStyle.Render(line))
+		}
+		menu.WriteByte('\n')
+	}
+
+	menuBox := MenuBoxStyle.Render(strings.TrimRight(menu.String(), "\n"))
+
+	cursorChar := " "
+	if p.CursorVisible {
+		cursorChar = CursorStyle.Render("|")
+	}
+	inputDisplay := p.Input + cursorChar
+
+	return menuBox + "\n" + PaletteInputStyle.Render(" " + inputDisplay)
 }
