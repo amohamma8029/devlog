@@ -22,8 +22,9 @@ func TestViewForStateActiveSession(t *testing.T) {
 	if v == nil {
 		t.Fatal("viewForState returned nil for ActiveSession")
 	}
-	if !strings.Contains(v.View(), "<ActiveSession>") {
-		t.Errorf("viewForState View = %s, want <ActiveSession>", v.View())
+	// Real active session rendering is in model.View(); viewForState delegates to sessionListView
+	if !strings.Contains(v.View(), "<SessionList>") {
+		t.Errorf("viewForState View = %s, want <SessionList>", v.View())
 	}
 }
 
