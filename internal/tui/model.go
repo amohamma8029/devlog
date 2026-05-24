@@ -97,6 +97,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ErrorMessage = msg.Error.Error()
 		return m, nil
 
+	case SessionsLoadedMsg:
+		sl, cmd := m.SessionList.Update(msg)
+		m.SessionList = sl.(SessionListModel)
+		return m, cmd
+
 	case HandoffGeneratedMsg:
 		if msg.Error != nil {
 			m.ErrorMessage = msg.Error.Error()
@@ -203,15 +208,8 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.noSessionKeyHandler(key)
 
 	case SessionList:
-		if key == "/" || key == "enter" {
-			return m, m.Init()
-		}
-	}
-
-	switch m.CurrentView {
-	case SessionList:
 		sl, cmd := m.SessionList.Update(msg)
-		m.SessionList, _ = sl.(SessionListModel)
+		m.SessionList = sl.(SessionListModel)
 		return m, cmd
 	}
 
