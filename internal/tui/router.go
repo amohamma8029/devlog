@@ -8,12 +8,6 @@ func (v sessionListView) Init() tea.Cmd                         { return nil }
 func (v sessionListView) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return v, nil }
 func (v sessionListView) View() string                           { return "<SessionList>" }
 
-type activeSessionView struct{}
-
-func (v activeSessionView) Init() tea.Cmd                         { return nil }
-func (v activeSessionView) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return v, nil }
-func (v activeSessionView) View() string                           { return "<ActiveSession>" }
-
 type handoffPreviewView struct{}
 
 func (v handoffPreviewView) Init() tea.Cmd                         { return nil }
@@ -25,7 +19,10 @@ func viewForState(m Model) tea.Model {
 	case SessionList:
 		return sessionListView{}
 	case ActiveSession:
-		return activeSessionView{}
+		if m.ActiveSession != nil {
+			return sessionListView{} // fallback — real rendering is in model.View()
+		}
+		return sessionListView{}
 	case HandoffPreview:
 		return handoffPreviewView{}
 	default:
