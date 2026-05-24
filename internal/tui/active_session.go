@@ -1,0 +1,351 @@
+package tui
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/amo/devlog/internal/store"
+	"github.com/charmbracelet/lipgloss"
+)
+
+func renderActiveSession(m Model) string {
+	header := renderHeader(m)
+	timeline := ""
+	if len(m.Events) > 1 {
+		timeline = renderTimeline(m)
+	}
+
+	contentTop := header
+	if timeline != "" {
+		contentTop += "\n" + timeline
+	}
+
+	bottomHeight := bottomSectionHeight(m)
+	available := m.Height - bottomHeight
+	if available < 0 {
+		available = 0
+	}
+
+	contentLines := countLines(contentTop)
+	padding := available - contentLines
+	if padding < 0 {
+		padding = 0
+	}
+
+	var b strings.Builder
+	b.WriteString(contentTop)
+	b.WriteString(strings.Repeat("\n", padding))
+
+	if m.Palette.Open {
+		b.WriteString("\n")
+		b.WriteString(m.Palette.View())
+	}
+	b.WriteString("\n")
+	b.WriteString(renderFooter(m))
+
+	return b.String()
+}
+
+func bottomSectionHeight(m Model) int {
+	if m.Palette != nil && m.Palette.Open {
+		return len(PaletteCommands) + 6
+	}
+	return 2
+}
+
+func renderHeader(m Model) string {
+	sess := m.ActiveSession
+	if sess == nil {
+		return ""
+	}
+
+	var b strings.Builder
+
+	if m.Title != "" {
+		titleLine := TitleStyle.Render(m.Title) + " " + IDParenStyle.Render("("+sess.ID+")")
+		b.WriteString(titleLine)
+		b.WriteByte('\n')
+		b.WriteByte('\n')
+	}
+
+	now := time.Now().UTC()
+	dur := formatDuration(now.Sub(sess.Started.UTC()))
+	author := formatAuthor(sess.Author, sess.Email)
+
+	if m.Width >= 80 {
+		b.WriteString(MetadataStyle.Render(
+			fmt.Sprintf("Author: %s  ·  Branch: %s  ·  Started: %s  ·  Duration: %s",
+				author, sess.Branch, sess.Started.UTC().Format(time.RFC3339), dur),
+		))
+	} else {
+		b.WriteString(MetadataStyle.Render("Author: " + author))
+		b.WriteByte('\n')
+		b.WriteString(MetadataStyle.Render("Branch: " + sess.Branch))
+		b.WriteByte('\n')
+		b.WriteString(MetadataStyle.Render("Started: " + sess.Started.UTC().Format(time.RFC3339)))
+		b.WriteByte('\n')
+		b.WriteString(MetadataStyle.Render("Duration: " + dur))
+	}
+
+	b.WriteByte('\n')
+	return BorderStyle.Render(b.String())
+}
+
+func renderFooter(m Model) string {
+	var text string
+	if m.CurrentView == ActiveSession {
+		if m.ActiveSession != nil {
+			text = "/? help  ·  j/k scroll  ·  q quit"
+		} else {
+			text = "l: session list  ·  o: open new session  ·  q quit"
+		}
+	} else {
+		text = "q quit"
+	}
+	return HintStyle.Render(text)
+}
+
+func renderNoSession(m Model) string {
+	bottomHeight := bottomSectionHeight(m)
+	availHeight := m.Height - bottomHeight
+	if availHeight < 4 {
+		availHeight = 4
+	}
+
+	msg := "No active session"
+	centered := lipgloss.Place(
+		m.Width, availHeight,
+		lipgloss.Center, lipgloss.Center,
+		msg,
+	)
+
+	var b strings.Builder
+	b.WriteString(centered)
+
+	remaining := availHeight - countLines(centered)
+	if remaining < 0 {
+		remaining = 0
+	}
+	b.WriteString(strings.Repeat("\n", remaining))
+
+	if m.Palette.Open {
+		b.WriteString("\n")
+		b.WriteString(m.Palette.View())
+	}
+	b.WriteString("\n")
+	b.WriteString(renderFooter(m))
+
+	return b.String()
+}
+
+func renderHelpOverlay(m Model) string {
+	content := `Keybindings
+===========
+/      Open command palette
+?      Show this help (dismiss with any key)
+j/↓    Scroll down
+k/↑    Scroll up
+q      Quit
+
+Slash Commands
+==============
+/note <text>    Add a note to the session
+/block <text>   Log a blocker
+/close          Close the active session
+/handoff        Generate handoff summary
+
+No Active Session
+=================
+l      View session list
+o      Hint to open new session
+q      Quit`
+
+	rendered := HelpOverlayStyle.Render(content)
+	return lipgloss.Place(
+		m.Width, m.Height,
+		lipgloss.Center, lipgloss.Center,
+		rendered,
+	)
+}
+
+func renderHandoffPreview(m Model) string {
+	if m.HandoffContent == "" {
+		return "No handoff content available."
+	}
+	label := SectionStyle.Render("Handoff Preview")
+	return label + "\n" + m.HandoffContent + "\n\nPress q to quit."
+}
+
+func countLines(s string) int {
+	if s == "" {
+		return 0
+	}
+	return strings.Count(s, "\n") + 1
+}
+
+func formatAuthor(author, email string) string {
+	author = strings.TrimSpace(author)
+	email = strings.TrimSpace(email)
+	if author == "" && email == "" {
+		return "(unknown)"
+	}
+	if author == "" {
+		return email
+	}
+	if email == "" {
+		return author
+	}
+	return fmt.Sprintf("%s <%s>", author, email)
+}
+
+func renderTimeline(m Model) string {
+	width := m.Width
+	if width < 40 {
+		width = 40
+	}
+	contentWidth := width - 2
+
+	var b strings.Builder
+
+	nonStartEvents := filterNonStartEvents(m.Events)
+	if len(nonStartEvents) == 0 {
+		return ""
+	}
+
+	startLine := m.ScrollOffset
+	if startLine < 0 {
+		startLine = 0
+	}
+
+	renderedLines := renderEventLines(nonStartEvents, contentWidth)
+
+	if startLine >= len(renderedLines) {
+		startLine = len(renderedLines) - 1
+		if startLine < 0 {
+			startLine = 0
+		}
+	}
+
+	for i := startLine; i < len(renderedLines); i++ {
+		b.WriteString(renderedLines[i])
+		b.WriteByte('\n')
+	}
+
+	return b.String()
+}
+
+func filterNonStartEvents(events []store.SessionEvent) []store.SessionEvent {
+	var result []store.SessionEvent
+	for _, e := range events {
+		if e.Type != "Start" {
+			result = append(result, e)
+		}
+	}
+	return result
+}
+
+func renderEventLines(events []store.SessionEvent, maxWidth int) []string {
+	var lines []string
+	if len(events) == 0 {
+		return lines
+	}
+
+	eventWidth := maxWidth - 4
+	if eventWidth < 20 {
+		eventWidth = 20
+	}
+
+	timelineChar := "│"
+
+	for _, event := range events {
+		eventStyle := PanelStyle
+		labelStyle := EventStyle
+		connectorStyle := ConnectorStyle.Foreground(lipgloss.Color("#555555"))
+
+		if event.Type == "Blocker" {
+			eventStyle = BlockerStyle.Foreground(lipgloss.Color("#FF6600"))
+			labelStyle = BlockerLabelStyle
+			connectorStyle = ConnectorStyle.Foreground(lipgloss.Color("#FF6600"))
+		}
+
+		timeStr := event.Time
+		if timeStr == "" {
+			timeStr = "     "
+		}
+
+		headerLine := fmt.Sprintf("%s · %s UTC", event.Type, timeStr)
+		header := labelStyle.Render(headerLine)
+
+		bodyLines := splitLines(event.Body, eventWidth-4)
+		var paneLines []string
+		paneLines = append(paneLines, header)
+
+		if len(bodyLines) == 1 && bodyLines[0] == "" {
+		} else {
+			for _, bl := range bodyLines {
+				if strings.TrimSpace(bl) != "" {
+					paneLines = append(paneLines, EventStyle.Render(bl))
+				}
+			}
+		}
+
+		pane := eventStyle.Render(strings.Join(paneLines, "\n"))
+		eventLines := strings.Split(pane, "\n")
+
+		for i, el := range eventLines {
+			if i == 0 {
+				connHead := "┌"
+				if len(events) > 0 {
+					connHead = "├"
+				}
+				lines = append(lines, connectorStyle.Render(timelineChar+" "+connHead)+el)
+			} else {
+				connector := connectorStyle.Render(timelineChar + " │")
+				lines = append(lines, connector+el)
+			}
+		}
+
+		bottomBar := connectorStyle.Render(timelineChar + " └" + strings.Repeat("─", eventWidth) + "┘")
+		lines = append(lines, bottomBar)
+	}
+
+	return lines
+}
+
+func splitLines(text string, maxWidth int) []string {
+	if maxWidth < 1 {
+		maxWidth = 1
+	}
+
+	var result []string
+	para := strings.TrimSpace(text)
+	if para == "" {
+		return []string{""}
+	}
+
+	words := strings.Fields(para)
+	if len(words) == 0 {
+		return []string{""}
+	}
+
+	var line string
+	for _, word := range words {
+		if line == "" {
+			line = word
+		} else if len(line)+1+len(word) <= maxWidth {
+			line += " " + word
+		} else {
+			result = append(result, line)
+			line = word
+		}
+	}
+	if line != "" {
+		result = append(result, line)
+	}
+
+	if len(result) == 0 {
+		result = append(result, "")
+	}
+	return result
+}
