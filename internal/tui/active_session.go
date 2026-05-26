@@ -11,20 +11,25 @@ import (
 
 func renderActiveSession(m Model) string {
 	header := renderHeader(m)
-	timeline := ""
-	if len(m.Events) > 1 {
-		timeline = renderTimeline(m)
-	}
-
-	contentTop := header
-	if timeline != "" {
-		contentTop += "\n" + timeline
-	}
 
 	bottomHeight := bottomSectionHeight(m)
 	available := m.Height - bottomHeight
 	if available < 0 {
 		available = 0
+	}
+
+	timeline := ""
+	if len(m.Events) > 1 {
+		timelineHeight := available - countLines(header) - 1
+		if timelineHeight < 0 {
+			timelineHeight = 0
+		}
+		timeline = renderTimeline(m, timelineHeight)
+	}
+
+	contentTop := header
+	if timeline != "" {
+		contentTop += "\n" + timeline
 	}
 
 	contentLines := countLines(contentTop)
@@ -100,6 +105,8 @@ func renderFooter(m Model) string {
 		} else {
 			text = "l: session list  ·  o: open new session  ·  q quit"
 		}
+	} else if m.CurrentView == HandoffPreview {
+		text = "y copy  ·  s save  ·  j/k scroll  ·  q back"
 	} else {
 		text = "q quit"
 	}
@@ -148,6 +155,12 @@ j/↓    Scroll down
 k/↑    Scroll up
 q      Quit
 
+Session List
+============
+h      Generate handoff for active session
+Enter  Open selected session
+/      Filter sessions
+
 Slash Commands
 ==============
 /note <text>    Add a note to the session
@@ -155,11 +168,21 @@ Slash Commands
 /close          Close the active session
 /handoff        Generate handoff summary
 
+Handoff Preview
+===============
+y      Copy to clipboard
+s      Save to file
+j/↓    Scroll down
+k/↑    Scroll up
+q      Go back
+
 No Active Session
 =================
 l      View session list
 o      Hint to open new session
-q      Quit`
+q      Quit
+
+Note: Use terminal selection (Shift+click) to select text.`
 
 	rendered := HelpOverlayStyle.Render(content)
 	return lipgloss.Place(
@@ -167,14 +190,6 @@ q      Quit`
 		lipgloss.Center, lipgloss.Center,
 		rendered,
 	)
-}
-
-func renderHandoffPreview(m Model) string {
-	if m.HandoffContent == "" {
-		return "No handoff content available."
-	}
-	label := SectionStyle.Render("Handoff Preview")
-	return label + "\n" + m.HandoffContent + "\n\nPress q to quit."
 }
 
 func countLines(s string) int {
@@ -199,7 +214,7 @@ func formatAuthor(author, email string) string {
 	return fmt.Sprintf("%s <%s>", author, email)
 }
 
-func renderTimeline(m Model) string {
+func renderTimeline(m Model, maxLines int) string {
 	width := m.Width
 	if width < 40 {
 		width = 40
@@ -227,9 +242,16 @@ func renderTimeline(m Model) string {
 		}
 	}
 
-	for i := startLine; i < len(renderedLines); i++ {
+	endLine := len(renderedLines)
+	if maxLines > 0 && startLine+maxLines < endLine {
+		endLine = startLine + maxLines
+	}
+
+	for i := startLine; i < endLine; i++ {
 		b.WriteString(renderedLines[i])
-		b.WriteByte('\n')
+		if i < endLine-1 {
+			b.WriteByte('\n')
+		}
 	}
 
 	return b.String()

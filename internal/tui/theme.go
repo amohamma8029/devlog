@@ -85,3 +85,14 @@ var IDParenStyle = lipgloss.NewStyle().
 var PaletteInputStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
 	BorderForeground(lipgloss.Color("#666666"))
+
+var HandoffHeaderStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(lipgloss.Color("#FFFFFF"))
+
+var HandoffButtonStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#AAAAAA"))
+
+var SavePromptStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(lipgloss.Color("#666666"))
