@@ -41,3 +41,12 @@ type NavigationMsg struct {
 	Target  View
 	Session *store.SessionRecord
 }
+
+type HandoffSavedMsg struct {
+	Path  string
+	Error error
+}
+
+type HandoffCopiedMsg struct {
+	Error error
+}

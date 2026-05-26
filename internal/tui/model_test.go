@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/amo/devlog/internal/store"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestModelSatisfiesTeaModel(t *testing.T) {
@@ -83,6 +83,27 @@ func TestModelUpdateWindowSize(t *testing.T) {
 	}
 	if updated.Height != 40 {
 		t.Errorf("Height = %d, want 40", updated.Height)
+	}
+}
+
+func TestModelUpdateHandoffGeneratedClearsScreen(t *testing.T) {
+	m := testModel()
+	m.CurrentView = ActiveSession
+	m.ScrollOffset = 5
+
+	updatedModel, cmd := m.Update(HandoffGeneratedMsg{Content: "# Handoff"})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from Update, got %T", updatedModel)
+	}
+	if updated.CurrentView != HandoffPreview {
+		t.Fatalf("CurrentView = %v, want HandoffPreview", updated.CurrentView)
+	}
+	if updated.ScrollOffset != 0 {
+		t.Errorf("ScrollOffset = %d, want 0", updated.ScrollOffset)
+	}
+	if cmd == nil {
+		t.Fatal("expected clear-screen command when entering handoff preview")
 	}
 }
 

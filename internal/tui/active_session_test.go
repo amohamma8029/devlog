@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/amo/devlog/internal/store"
+	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
 )
 
 func testActiveSession() *store.SessionRecord {
@@ -88,6 +90,24 @@ func TestRenderActiveSessionNarrowLayout(t *testing.T) {
 	}
 }
 
+func TestRenderActiveSessionDoesNotOverflowHeight(t *testing.T) {
+	m := testModel()
+	m.CurrentView = ActiveSession
+	m.ActiveSession = testActiveSession()
+	m.Title = "Test title"
+	m.Width = 80
+	m.Height = 12
+	m.Events = []store.SessionEvent{{Type: "Start", Body: "Test title"}}
+	for i := 0; i < 20; i++ {
+		m.Events = append(m.Events, store.SessionEvent{Type: "Note", Time: "14:30", Body: "long note body that should be clipped to the available viewport height"})
+	}
+
+	v := renderActiveSession(m)
+	if got := countLines(v); got > m.Height {
+		t.Fatalf("renderActiveSession returned %d lines, want at most %d", got, m.Height)
+	}
+}
+
 func TestRenderNoSession(t *testing.T) {
 	m := testModel()
 	m.CurrentView = ActiveSession
@@ -135,10 +155,13 @@ func TestRenderHandoffPreview(t *testing.T) {
 	m.Height = 24
 	v := renderHandoffPreview(m)
 	if !strings.Contains(v, "Handoff Preview") {
-		t.Error("renderHandoffPreview should show label")
+		t.Error("renderHandoffPreview should show header label")
 	}
-	if !strings.Contains(v, "# Handoff Summary") {
-		t.Error("renderHandoffPreview should show content")
+	if !strings.Contains(v, "y copy") {
+		t.Error("renderHandoffPreview should show y copy footer")
+	}
+	if !strings.Contains(v, "s save") {
+		t.Error("renderHandoffPreview should show s save footer")
 	}
 }
 
@@ -150,6 +173,275 @@ func TestRenderHandoffPreviewEmpty(t *testing.T) {
 	v := renderHandoffPreview(m)
 	if !strings.Contains(v, "No handoff content") {
 		t.Error("renderHandoffPreview should show empty message when no content")
+	}
+}
+
+func TestRenderHandoffPreviewShowsContent(t *testing.T) {
+	m := testModel()
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = "Some content text"
+	m.Width = 80
+	m.Height = 24
+	v := renderHandoffPreview(m)
+	if v == "" {
+		t.Error("renderHandoffPreview should return non-empty view")
+	}
+	if !strings.Contains(v, "Handoff Preview") {
+		t.Error("renderHandoffPreview should show header")
+	}
+}
+
+func TestRenderHandoffBodyStylesHeadingsAndDiff(t *testing.T) {
+	m := testModel()
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = "# Title\n\n## Subheading\n\n```diff\nfile_a.go\n+added\n-removed\n\nfile_b.go\n+more\n```"
+	m.Width = 80
+	m.Height = 24
+
+	v := renderHandoffBody(m)
+	if strings.Contains(v, "## Subheading") {
+		t.Error("renderHandoffBody should not render raw markdown heading prefixes")
+	}
+	if strings.Contains(v, "```diff") {
+		t.Error("renderHandoffBody should not show raw fenced code markers")
+	}
+	if !strings.Contains(v, "Subheading") {
+		t.Error("renderHandoffBody should preserve heading text")
+	}
+	if strings.Count(v, "╭─ code ─") != 2 {
+		t.Errorf("renderHandoffBody should frame each file diff separately, got %d frames", strings.Count(v, "╭─ code ─"))
+	}
+	if !strings.Contains(v, "\x1b[") {
+		t.Error("renderHandoffBody should include ANSI styling")
+	}
+}
+
+func TestPrepareHandoffPreviewMarkdownSplitsDiffByFile(t *testing.T) {
+	content := "## Changes\n\n```diff\nfile_a.go\n+added\n\nfile_b.go\n-removed\n```"
+	preview := prepareHandoffPreviewMarkdown(content)
+	if strings.Count(preview, "```diff") != 2 {
+		t.Errorf("expected two diff fences, got %d", strings.Count(preview, "```diff"))
+	}
+	if !strings.Contains(preview, "#### file_a.go") || !strings.Contains(preview, "#### file_b.go") {
+		t.Errorf("expected per-file headings in preview markdown, got:\n%s", preview)
+	}
+}
+
+func TestRenderHandoffPreviewKeepsHeaderAndFooterWhenScrolled(t *testing.T) {
+	m := testModel()
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = "# Handoff Summary\n\nline 1 with enough text to wrap if not clamped properly\nline 2\nline 3\nline 4\nline 5\nline 6"
+	m.Width = 80
+	m.Height = 6
+	m.ScrollOffset = 4
+
+	v := renderHandoffPreview(m)
+	lines := strings.Split(v, "\n")
+	wantLines := previewViewportHeight(m.Height)
+	if len(lines) != wantLines {
+		t.Fatalf("renderHandoffPreview returned %d lines, want %d:\n%s", len(lines), wantLines, v)
+	}
+	if !strings.Contains(v, "Handoff Preview") {
+		t.Error("renderHandoffPreview should keep the header visible while scrolled")
+	}
+	if !strings.Contains(v, "[y Copy]") || !strings.Contains(v, "[s Save]") {
+		t.Error("renderHandoffPreview should keep action buttons visible while scrolled")
+	}
+	if !strings.Contains(v, "y copy") || !strings.Contains(v, "s save") {
+		t.Error("renderHandoffPreview should keep footer shortcuts visible while scrolled")
+	}
+	if !strings.Contains(xansi.Strip(lines[len(lines)-1]), "y copy") {
+		t.Fatalf("renderHandoffPreview should keep footer on the bottom row, got %q", xansi.Strip(lines[len(lines)-1]))
+	}
+}
+
+func TestRenderHandoffPreviewDoesNotOverflowViewportWidth(t *testing.T) {
+	m := testModel()
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = "# Handoff Summary\n\n```diff\ninternal/tui/very_long_file_name_that_should_not_wrap_in_the_terminal.go\n+this\tis a very long diff line that should be truncated before it can force terminal autowrap and push the header out of view\n```"
+	m.Width = 24
+	m.Height = 8
+
+	v := renderHandoffPreview(m)
+	lines := strings.Split(v, "\n")
+	if len(lines) > m.Height {
+		t.Fatalf("renderHandoffPreview returned %d lines, want at most %d:\n%s", len(lines), m.Height, v)
+	}
+	for i, line := range lines {
+		if got := xansi.StringWidth(line); got > previewLineWidth(m.Width) {
+			t.Fatalf("line %d width = %d, want <= %d: %q", i, got, previewLineWidth(m.Width), xansi.Strip(line))
+		}
+	}
+	if !strings.Contains(v, "Handoff Preview") {
+		t.Error("renderHandoffPreview should keep header visible in narrow view")
+	}
+	if !strings.Contains(v, "y copy") {
+		t.Error("renderHandoffPreview should keep footer visible in narrow view")
+	}
+}
+
+func TestHandoffButtonsHiddenWhenPreviewIsTooNarrow(t *testing.T) {
+	m := testModel()
+	m.Width = 36
+
+	v := renderHandoffHeader(m)
+	if strings.Contains(v, handoffCopyButton) || strings.Contains(v, handoffSaveButton) {
+		t.Fatalf("narrow header should omit action buttons to prevent terminal autowrap, got %q", xansi.Strip(v))
+	}
+
+	copyStart, copyEnd, saveStart, saveEnd := handoffButtonBounds(m.Width)
+	if copyStart != -1 || copyEnd != -1 || saveStart != -1 || saveEnd != -1 {
+		t.Fatalf("narrow button bounds = %d %d %d %d, want all -1", copyStart, copyEnd, saveStart, saveEnd)
+	}
+}
+
+func TestRenderHandoffPreviewUsesCompactViewportAtWideWidths(t *testing.T) {
+	m := testModel()
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = "# Handoff Summary\n\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20"
+	m.Width = 200
+	m.Height = 60
+
+	v := renderHandoffPreview(m)
+	lines := strings.Split(v, "\n")
+	wantLines := previewViewportHeight(m.Height)
+	if len(lines) != wantLines {
+		t.Fatalf("renderHandoffPreview returned %d lines, want %d", len(lines), wantLines)
+	}
+	prefix := strings.Repeat(" ", previewLeftPadding(m.Width))
+	for i, line := range lines {
+		if !strings.HasPrefix(line, prefix) {
+			t.Fatalf("line %d should include centered preview padding", i)
+		}
+		unpadded := strings.TrimPrefix(line, prefix)
+		if got := xansi.StringWidth(unpadded); got > maxHandoffPreviewWidth {
+			t.Fatalf("line %d content width = %d, want <= %d", i, got, maxHandoffPreviewWidth)
+		}
+		if got := xansi.StringWidth(line); got > m.Width-terminalSafetyCols {
+			t.Fatalf("line %d total width = %d, want <= %d", i, got, m.Width-terminalSafetyCols)
+		}
+	}
+	if !strings.Contains(v, "Handoff Preview") || !strings.Contains(v, "y copy") {
+		t.Fatalf("compact preview should keep header and footer visible:\n%s", v)
+	}
+	if !strings.Contains(xansi.Strip(lines[len(lines)-1]), "y copy") {
+		t.Fatalf("compact preview should keep footer on the bottom row, got %q", xansi.Strip(lines[len(lines)-1]))
+	}
+}
+
+func TestPreviewLeftPaddingCentersWideViewport(t *testing.T) {
+	if got := previewLeftPadding(200); got <= 0 {
+		t.Fatalf("previewLeftPadding(200) = %d, want positive padding", got)
+	}
+	if got := previewLeftPadding(36); got != 0 {
+		t.Fatalf("previewLeftPadding(36) = %d, want 0 for narrow viewport", got)
+	}
+}
+
+func TestClampHandoffScrollOffsetKeepsFullPage(t *testing.T) {
+	got := clampHandoffScrollOffset(99, 10, 4)
+	if got != 6 {
+		t.Fatalf("clampHandoffScrollOffset() = %d, want last full page offset 6", got)
+	}
+
+	got = clampHandoffScrollOffset(99, 3, 4)
+	if got != 0 {
+		t.Fatalf("clampHandoffScrollOffset() = %d, want 0 when content fits", got)
+	}
+}
+
+func TestRenderHandoffPreviewShowsSavePrompt(t *testing.T) {
+	m := testModel()
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = "# Handoff Summary"
+	m.SavePromptOpen = true
+	m.SaveInput = "2026-01-15T143022Z"
+	m.Width = 80
+	m.Height = 24
+
+	v := renderHandoffPreview(m)
+	if !strings.Contains(v, "Save as:") {
+		t.Error("renderHandoffPreview should show save prompt when SavePromptOpen is true")
+	}
+	if !strings.Contains(v, "2026-01-15T143022Z") {
+		t.Error("renderHandoffPreview should show default save filename")
+	}
+}
+
+func TestHandleHandoffKeyOpensSavePrompt(t *testing.T) {
+	m := testModel()
+	m.CurrentView = HandoffPreview
+	m.ActiveSession = testActiveSession()
+	m.HandoffContent = "# Handoff Summary"
+
+	updatedModel, cmd := handleHandoffKey(&m, "s")
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from handleHandoffKey, got %T", updatedModel)
+	}
+	if !updated.SavePromptOpen {
+		t.Fatal("pressing s should open save prompt")
+	}
+	if updated.SaveInput != "2026-01-15T143022Z" {
+		t.Errorf("SaveInput = %q, want active session ID", updated.SaveInput)
+	}
+	if cmd == nil {
+		t.Error("pressing s should start cursor tick command")
+	}
+}
+
+func TestHandleHandoffMouseIgnoresHover(t *testing.T) {
+	m := testModel()
+	m.CurrentView = HandoffPreview
+	m.ActiveSession = testActiveSession()
+	m.HandoffContent = "# Handoff Summary"
+	m.Width = 80
+
+	copyStart, _, _, _ := handoffButtonBounds(m.Width)
+	updatedModel, cmd := handleHandoffMouse(&m, tea.MouseMsg{
+		X:      copyStart,
+		Y:      0,
+		Action: tea.MouseActionMotion,
+		Button: tea.MouseButtonNone,
+	})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from handleHandoffMouse, got %T", updatedModel)
+	}
+	if cmd != nil {
+		t.Error("hovering copy button should not execute copy command")
+	}
+	if updated.SavePromptOpen {
+		t.Error("hovering buttons should not open save prompt")
+	}
+}
+
+func TestHandleHandoffMouseSavePressOpensPrompt(t *testing.T) {
+	m := testModel()
+	m.CurrentView = HandoffPreview
+	m.ActiveSession = testActiveSession()
+	m.HandoffContent = "# Handoff Summary"
+	m.Width = 80
+
+	_, _, saveStart, _ := handoffButtonBounds(m.Width)
+	updatedModel, cmd := handleHandoffMouse(&m, tea.MouseMsg{
+		X:      saveStart,
+		Y:      0,
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+	})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from handleHandoffMouse, got %T", updatedModel)
+	}
+	if !updated.SavePromptOpen {
+		t.Fatal("clicking save button should open save prompt")
+	}
+	if updated.SaveInput != "2026-01-15T143022Z" {
+		t.Errorf("SaveInput = %q, want active session ID", updated.SaveInput)
+	}
+	if cmd == nil {
+		t.Error("clicking save should start cursor tick command")
 	}
 }
 
