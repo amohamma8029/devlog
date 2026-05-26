@@ -35,6 +35,9 @@ type Model struct {
 	NoSessionMsg   string
 	HandoffContent string
 	Title          string
+	SavePromptOpen bool
+	SaveInput      string
+	HandoffMsg     string
 }
 
 func NewModel(s *store.Store, root string) Model {
@@ -105,9 +108,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case HandoffGeneratedMsg:
 		if msg.Error != nil {
 			m.ErrorMessage = msg.Error.Error()
+			return m, nil
 		} else {
 			m.HandoffContent = msg.Content
+			m.ScrollOffset = 0
 			m.CurrentView = HandoffPreview
+		}
+		return m, tea.ClearScreen
+
+	case HandoffSavedMsg:
+		m.SavePromptOpen = false
+		m.SaveInput = ""
+		if msg.Error != nil {
+			m.ErrorMessage = msg.Error.Error()
+		} else {
+			m.HandoffMsg = "Saved to " + msg.Path
+		}
+		return m, nil
+
+	case HandoffCopiedMsg:
+		if msg.Error != nil {
+			m.ErrorMessage = msg.Error.Error()
+		} else {
+			m.HandoffMsg = "Copied to clipboard"
 		}
 		return m, nil
 
@@ -150,6 +173,14 @@ func (m Model) handleCursorTick() (tea.Model, tea.Cmd) {
 			return CursorTickMsg{}
 		})
 	}
+	if m.CurrentView == HandoffPreview && m.SavePromptOpen {
+		if m.Palette != nil {
+			m.Palette.CursorVisible = !m.Palette.CursorVisible
+		}
+		return m, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+			return CursorTickMsg{}
+		})
+	}
 	return m, nil
 }
 
@@ -162,6 +193,10 @@ func (m Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.CurrentView == HandoffPreview {
+		return handleHandoffMouse(&m, msg)
+	}
+
 	action := ParseMouseEvent(msg)
 
 	if m.Palette != nil && m.Palette.Open {
@@ -196,7 +231,28 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
-	if key == "ctrl+c" || key == "esc" || key == "q" {
+	if key == "ctrl+c" {
+		return m, tea.Quit
+	}
+
+	if key == "esc" {
+		if m.CurrentView == HandoffPreview && m.SavePromptOpen {
+			m.SavePromptOpen = false
+			m.SaveInput = ""
+			return m, nil
+		}
+		return m, tea.Quit
+	}
+
+	if key == "q" {
+		if m.CurrentView == HandoffPreview {
+			if m.ActiveSession != nil {
+				m.CurrentView = ActiveSession
+			} else {
+				m.CurrentView = SessionList
+			}
+			return m, nil
+		}
 		return m, tea.Quit
 	}
 
@@ -211,6 +267,9 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		sl, cmd := m.SessionList.Update(msg)
 		m.SessionList = sl.(SessionListModel)
 		return m, cmd
+
+	case HandoffPreview:
+		return handleHandoffKey(&m, key)
 	}
 
 	return m, nil
@@ -370,6 +429,10 @@ func (m Model) View() string {
 		v += "\n" + ErrorBannerStyle.Render(" ERROR: "+m.ErrorMessage)
 	}
 
+	if m.HandoffMsg != "" {
+		v += "\n" + HintStyle.Render(formatHandoffConfirmation(m.HandoffMsg))
+	}
+
 	if m.NoSessionMsg != "" {
 		v += "\n" + HintStyle.Render(m.NoSessionMsg)
 	}
@@ -420,7 +483,7 @@ func formatDuration(d time.Duration) string {
 func countContentLines(m Model) int {
 	h := countLines(renderHeader(m))
 	if len(m.Events) > 1 {
-		tl := renderTimeline(m)
+		tl := renderTimeline(m, 0)
 		if tl != "" {
 			h += 1 + countLines(tl)
 		}

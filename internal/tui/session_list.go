@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	internalgit "github.com/amo/devlog/internal/git"
+	"github.com/amo/devlog/internal/handoff"
+	"github.com/amo/devlog/internal/session"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/amo/devlog/internal/store"
@@ -191,6 +194,9 @@ func (m SessionListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filterMode = true
 		m.filterText = ""
 		return m, nil
+
+	case "h":
+		return m.generateHandoff()
 	}
 
 	return m, nil
@@ -431,5 +437,29 @@ func readSessionStartMessage(sessionID, root string) (string, error) {
 	}
 
 	return "", nil
+}
+
+func (m SessionListModel) generateHandoff() (tea.Model, tea.Cmd) {
+	return m, func() tea.Msg {
+		active, err := session.FindActiveSession(m.store)
+		if err != nil {
+			return HandoffGeneratedMsg{Error: fmt.Errorf("No active session to generate handoff from")}
+		}
+		sessionID := active.ID
+		started := active.Started.UTC()
+		content, err := m.store.ReadSessionContent(sessionID)
+		if err != nil {
+			return HandoffGeneratedMsg{Error: err}
+		}
+		diff, err := internalgit.DiffSince(started)
+		if err != nil {
+			return HandoffGeneratedMsg{Error: err}
+		}
+		handoffText, err := handoff.Generate(content, diff)
+		if err != nil {
+			return HandoffGeneratedMsg{Error: err}
+		}
+		return HandoffGeneratedMsg{Content: handoffText}
+	}
 }
 
