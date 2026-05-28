@@ -294,6 +294,7 @@ func (m Model) activeSessionKeyHandler(key string) (tea.Model, tea.Cmd) {
 	case "/":
 		if m.Palette != nil {
 			m.Palette.OpenPalette()
+			m.Palette.Input = "/"
 			return m, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
 				return CursorTickMsg{}
 			})

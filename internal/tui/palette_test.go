@@ -26,6 +26,30 @@ func TestCommandPaletteViewOpen(t *testing.T) {
 	}
 }
 
+func TestSlashOpensCommandPaletteWithSlashPrefilled(t *testing.T) {
+	m := testModel()
+	m.CurrentView = ActiveSession
+	m.ActiveSession = testActiveSession()
+
+	updatedModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from Update, got %T", updatedModel)
+	}
+	if updated.Palette == nil || !updated.Palette.Open {
+		t.Fatal("pressing / should open the command palette")
+	}
+	if updated.Palette.Input != "/" {
+		t.Fatalf("Palette.Input = %q, want /", updated.Palette.Input)
+	}
+	if !strings.Contains(updated.View(), "/") {
+		t.Fatalf("rendered view should show prefilled slash, got:\n%s", updated.View())
+	}
+	if cmd == nil {
+		t.Fatal("pressing / should start cursor tick command")
+	}
+}
+
 func TestCommandPaletteUpdateEscCloses(t *testing.T) {
 	p := NewCommandPalette()
 	p.Open = true
