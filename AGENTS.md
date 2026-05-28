@@ -1,15 +1,16 @@
 # AGENTS.md — devlog
-# A CLI/TUI tool for structured session journals inside git repos.
-# Used by developers (human or AI) to capture session state, blockers,
-# and handoffs. Written in Go; binary is repo-local, no server.
 
-## ── REPO FACTS (3–5 lines) ──────────────────────────────────────────────────
+> Reference for AI agents and human contributors working in this repo.
+
+---
+
+## REPO FACTS (3–5 lines)
 # What this is, who uses it, one key constraint or rule a new contributor needs first.
 A CLI/TUI tool that records structured coding session journals inside a git repo.
 Used by solo developers or async coding partners (human or AI) to capture context,
 blockers, and handoffs. One global devlog per repo. Never auto-commits.
 
-## ── COMMANDS (put these first — agents reference them constantly) ────────────
+## COMMANDS (put these first — agents reference them constantly)
 mise install                             # install pinned Go version (if using mise)
 go build -o devlog.exe ./cmd/devlog       # compile
 go test ./...                              # run after EVERY change; stop on first failure
@@ -19,7 +20,7 @@ go test ./... -v                           # verbose output for debugging
 Go 1.22+, Cobra (CLI), Bubble Tea + Bubbles + Lipgloss + Glamour (TUI Phase 2).
 Storage: YAML front-matter + Markdown body, one file per session in .devlog/sessions/.
 
-## ── PROJECT STRUCTURE ────────────────────────────────────────────────────────
+## PROJECT STRUCTURE
 cmd/devlog/          — CLI entrypoint (main.go + Cobra command wiring)
 internal/session/    — Session lifecycle (start, stop, list, find active)
 internal/store/      — File I/O for .devlog/sessions/*.md (YAML front-matter + Markdown body)
@@ -27,7 +28,7 @@ internal/handoff/    — Summary artifact generation from session data
 internal/git/        — Repo root detection, branch name, author identity from git config
 internal/tui/        — Bubble Tea interactive interface (Phase 2)
 
-## ── CODE STYLE ───────────────────────────────────────────────────────────────
+## CODE STYLE
 # Conventions — concrete rules beat vague descriptions
 - Return explicit errors; never swallow them with blank identifiers
 - One session = one file in .devlog/sessions/; append-only during a session
@@ -52,7 +53,7 @@ func (s *Store) Write(sess Session) {
 }
 ```
 
-## ── ARCHITECTURE BOUNDARIES ──────────────────────────────────────────────────
+## ARCHITECTURE BOUNDARIES
 # Describe the data flow so the agent understands where things belong.
 1. User runs CLI command → cmd/devlog/ parses flags → dispatches to internal/
 2. internal/session/ validates business rules → calls internal/store/ for I/O
@@ -61,7 +62,7 @@ func (s *Store) Write(sess Session) {
 5. internal/git/ provides repo root, branch, and author metadata (no git mutations)
 6. internal/tui/ (Phase 2) wraps the same internal/ packages in a Bubble Tea interface
 
-## ── GIT WORKFLOW ─────────────────────────────────────────────────────────────
+## GIT WORKFLOW
 # Commit message format — write about user impact, not implementation detail
 # Good
 ```
@@ -79,7 +80,7 @@ Parent feature branches: feat/<feature-name> (e.g., feat/session-storage)
 Slice branches: feat/<feature-name>-<slice> (e.g., feat/session-storage-yaml)
 Never push directly to main. Feature branch merges to main only when end-to-end complete.
 
-## ── BOUNDARIES ───────────────────────────────────────────────────────────────
+## BOUNDARIES
 # Three-tier format: always / ask first / never
 
 # Always
@@ -99,11 +100,11 @@ Never push directly to main. Feature branch merges to main only when end-to-end 
 - Hardcode author identity or paths
 - Modify generated binary artifacts by hand
 
-## ── ENV / SECRETS ────────────────────────────────────────────────────────────
+## ENV / SECRETS
 No secrets needed for local dev.
 Optional env vars: DEVLOG_AUTHOR_NAME, DEVLOG_AUTHOR_EMAIL (fallback if git config unset).
 
-## ── TROUBLESHOOTING ─────────────────────────────────────────────────────────
+## TROUBLESHOOTING
 "cannot find package" after adding import → run go mod tidy
 "no such file or directory" on devlog.exe → run go build -o devlog.exe ./cmd/devlog first
 Test failure after store change → review store_test.go; store/ logic must be pure and deterministic
