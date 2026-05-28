@@ -91,7 +91,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case NavigationMsg:
 		m.CurrentView = msg.Target
 		m.ActiveSession = msg.Session
-		return m, nil
+		if msg.Session == nil {
+			return m, func() tea.Msg { return ActiveSessionLoadedMsg{} }
+		}
+
+		selected := msg.Session
+		return m, func() tea.Msg {
+			body, err := m.Store.ReadSessionBody(selected.ID)
+			if err != nil {
+				return ActiveSessionLoadedMsg{Session: selected}
+			}
+
+			events := store.ParseSessionEvents(body)
+			title := extractStartMessage(events)
+			return ActiveSessionLoadedMsg{Session: selected, Events: events, Title: title}
+		}
 
 	case CommandExecutedMsg:
 		return m.handleCommand(msg)
