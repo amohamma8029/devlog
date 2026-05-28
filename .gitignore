@@ -28,6 +28,7 @@ Thumbs.db
 # Local planning files
 FEATURE_MAP.md
 TASK.md
+.agent/
 .devlog/
 
 # Git worktrees
