@@ -3,7 +3,7 @@
 # Used by developers (human or AI) to capture session state, blockers,
 # and handoffs. Written in Go; binary is repo-local, no server.
 
-## ── REPO FACTS (3–5 lines — read in 10 seconds) ────────────────────────────
+## ── REPO FACTS (3–5 lines) ──────────────────────────────────────────────────
 # What this is, who uses it, one key constraint or rule a new contributor needs first.
 A CLI/TUI tool that records structured coding session journals inside a git repo.
 Used by solo developers or async coding partners (human or AI) to capture context,
@@ -37,6 +37,7 @@ internal/tui/        — Bubble Tea interactive interface (Phase 2)
 - No runtime dependencies added without asking first
 
 # Code example
+```go
 // Good: explicit error, clear guard, exported type
 func (s *Store) WriteSession(sess Session) error {
 	if sess.ID == "" {
@@ -49,6 +50,7 @@ func (s *Store) WriteSession(sess Session) error {
 func (s *Store) Write(sess Session) {
 	_ = os.WriteFile(path, data, 0644)  // silent failure
 }
+```
 
 ## ── ARCHITECTURE BOUNDARIES ──────────────────────────────────────────────────
 # Describe the data flow so the agent understands where things belong.
@@ -62,11 +64,15 @@ func (s *Store) Write(sess Session) {
 ## ── GIT WORKFLOW ─────────────────────────────────────────────────────────────
 # Commit message format — write about user impact, not implementation detail
 # Good
+```
 feat(session): add stop command to close active session
 fix(store): prevent overwriting existing session file on duplicate start
+```
 
 # Avoid
+```
 refactor: update WriteSession to use os.Create instead of os.OpenFile
+```
 
 Branch naming: feat/<short-slug>, fix/<short-slug>, chore/<short-slug>
 Parent feature branches: feat/<feature-name> (e.g., feat/session-storage)
