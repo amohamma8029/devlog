@@ -5,8 +5,6 @@
 
 ## ── REPO FACTS (3–5 lines — read in 10 seconds) ────────────────────────────
 # What this is, who uses it, one key constraint or rule a new contributor needs first.
-A CLI tool that converts Figma design tokens to platform-specific theme files
-(iOS, Android, CSS). Used by the design-systems team. ESM-only, no framework.
 A CLI/TUI tool that records structured coding session journals inside a git repo.
 Used by solo developers or async coding partners (human or AI) to capture context,
 blockers, and handoffs. One global devlog per repo. Never auto-commits.
