@@ -499,6 +499,13 @@ func (m Model) handleSaveToFile() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	if !isValidFilename(name) {
+		m.ErrorMessage = "Invalid filename: path separators or '..' not allowed"
+		m.SavePromptOpen = false
+		m.SaveInput = ""
+		return m, nil
+	}
+
 	root := m.Root
 	savePath := filepath.Join(root, ".devlog", "handoffs", name+".md")
 
@@ -512,6 +519,16 @@ func (m Model) handleSaveToFile() (tea.Model, tea.Cmd) {
 		}
 		return HandoffSavedMsg{Path: savePath}
 	}
+}
+
+func isValidFilename(name string) bool {
+	if strings.Contains(name, "..") {
+		return false
+	}
+	if strings.ContainsAny(name, `/\\`) {
+		return false
+	}
+	return true
 }
 
 func handleHandoffMouse(m *Model, msg tea.MouseMsg) (tea.Model, tea.Cmd) {
