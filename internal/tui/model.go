@@ -271,6 +271,7 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.CurrentView = ActiveSession
 			} else {
 				m.CurrentView = SessionList
+				return m, m.SessionList.Init()
 			}
 			return m, nil
 		}
@@ -334,7 +335,7 @@ func (m Model) noSessionKeyHandler(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "l":
 		m.CurrentView = SessionList
-		return m, nil
+		return m, m.SessionList.Init()
 
 	case "o":
 		m.NoSessionMsg = "Use `devlog open` to start a session"
@@ -380,13 +381,16 @@ func (m Model) handleCommand(msg CommandExecutedMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "/close":
-		return m, func() tea.Msg {
-			err := session.CloseActiveSession(m.Store)
-			if err != nil {
-				return CommandErrorMsg{Error: err}
-			}
-			return ActiveSessionLoadedMsg{}
-		}
+		return m, tea.Sequence(
+			func() tea.Msg {
+				err := session.CloseActiveSession(m.Store)
+				if err != nil {
+					return CommandErrorMsg{Error: err}
+				}
+				return ActiveSessionLoadedMsg{}
+			},
+			m.SessionList.Init(),
+		)
 
 	case "/handoff":
 		if m.ActiveSession == nil {
@@ -413,7 +417,7 @@ func (m Model) handleCommand(msg CommandExecutedMsg) (tea.Model, tea.Cmd) {
 
 	case "/list":
 		m.CurrentView = SessionList
-		return m, nil
+		return m, m.SessionList.Init()
 
 	default:
 		m.ErrorMessage = "Unknown command: " + cmdStr
