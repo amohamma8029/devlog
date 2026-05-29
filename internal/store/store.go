@@ -379,7 +379,14 @@ func parseSessionFile(data []byte) (SessionRecord, error) {
 		return SessionRecord{}, fmt.Errorf("parseSessionFile: unmarshal front-matter: %w", err)
 	}
 
-	closed := strings.Contains(parts[1], "## Stop")
+	closed := false
+	events, _ := parseSessionEvents(parts[1])
+	for _, e := range events {
+		if e.Type == "Stop" {
+			closed = true
+			break
+		}
+	}
 
 	return SessionRecord{Session: sess, Closed: closed}, nil
 }

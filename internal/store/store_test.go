@@ -268,6 +268,27 @@ func TestGetSessionClosed(t *testing.T) {
 	}
 }
 
+func TestGetSessionNotClosedWhenStopInBody(t *testing.T) {
+	root := t.TempDir()
+	store := newTestStore(t, root)
+	sess := testSession()
+
+	if err := store.WriteSession(sess, "Implement auth middleware"); err != nil {
+		t.Fatalf("WriteSession failed: %v", err)
+	}
+	if err := store.AppendEvent(sess.ID, "Note", "We should ## Stop this approach and reconsider"); err != nil {
+		t.Fatalf("AppendEvent failed: %v", err)
+	}
+
+	rec, err := store.GetSession(sess.ID)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+	if rec.Closed {
+		t.Error("expected Closed to be false when ## Stop appears only in note body")
+	}
+}
+
 func TestGetSessionMissing(t *testing.T) {
 	store := newTestStore(t, t.TempDir())
 
