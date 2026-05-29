@@ -376,3 +376,28 @@ func TestSessionListFileMissingStartMessage(t *testing.T) {
 		t.Fatalf("expected empty start message, got %q", msg)
 	}
 }
+
+func TestSessionListReloadsAfterClose(t *testing.T) {
+	s, root := newTestStore(t)
+	writeTestSession(t, s, "2026-01-15T140000Z", "feat/a", "Alice", "auth work", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	m := loadTestModel(t, s, root)
+
+	if m.sessions[0].Closed {
+		t.Fatal("expected session to be active initially")
+	}
+
+	closeTestSession(t, s, "2026-01-15T140000Z")
+
+	cmd := m.Init()
+	msg := cmd()
+	updated, _ := m.Update(msg)
+	m = updated.(SessionListModel)
+
+	if !m.sessions[0].Closed {
+		t.Fatal("expected session to be closed after reload")
+	}
+	if len(m.filtered) != 1 {
+		t.Fatalf("expected 1 filtered session after reload, got %d", len(m.filtered))
+	}
+}
