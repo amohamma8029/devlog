@@ -332,14 +332,14 @@ func TestListSessions(t *testing.T) {
 		t.Fatalf("expected 3 records, got %d", len(records))
 	}
 
-	if records[0].ID != sess1.ID {
-		t.Errorf("expected first record %q, got %q", sess1.ID, records[0].ID)
+	if records[0].ID != sess3.ID {
+		t.Errorf("expected first record %q (most recent), got %q", sess3.ID, records[0].ID)
 	}
 	if records[1].ID != sess2.ID {
 		t.Errorf("expected second record %q, got %q", sess2.ID, records[1].ID)
 	}
-	if records[2].ID != sess3.ID {
-		t.Errorf("expected third record %q, got %q", sess3.ID, records[2].ID)
+	if records[2].ID != sess1.ID {
+		t.Errorf("expected third record %q (oldest), got %q", sess1.ID, records[2].ID)
 	}
 }
 
@@ -389,11 +389,11 @@ func TestListSessionsChronological(t *testing.T) {
 		t.Fatalf("expected 2 records, got %d", len(records))
 	}
 
-	if records[0].ID != sessEarly.ID {
-		t.Errorf("expected first record %q (earlier), got %q", sessEarly.ID, records[0].ID)
+	if records[0].ID != sessLate.ID {
+		t.Errorf("expected first record %q (most recent), got %q", sessLate.ID, records[0].ID)
 	}
-	if records[1].ID != sessLate.ID {
-		t.Errorf("expected second record %q (later), got %q", sessLate.ID, records[1].ID)
+	if records[1].ID != sessEarly.ID {
+		t.Errorf("expected second record %q (older), got %q", sessEarly.ID, records[1].ID)
 	}
 }
 

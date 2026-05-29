@@ -400,6 +400,10 @@ func (m Model) handleCommand(msg CommandExecutedMsg) (tea.Model, tea.Cmd) {
 			return HandoffGeneratedMsg{Content: handoffText}
 		}
 
+	case "/list":
+		m.CurrentView = SessionList
+		return m, nil
+
 	default:
 		m.ErrorMessage = "Unknown command: " + cmdStr
 		return m, nil
