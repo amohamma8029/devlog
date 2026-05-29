@@ -19,6 +19,15 @@ type SessionsLoadedMsg struct {
 	Error    error
 }
 
+type columnWidths struct {
+	id         int
+	branch     int
+	author     int
+	started    int
+	status     int
+	showAuthor bool
+}
+
 type SessionListModel struct {
 	sessions      []store.SessionRecord
 	startMessages map[string]string
@@ -33,28 +42,86 @@ type SessionListModel struct {
 	root          string
 	width         int
 	height        int
+	cw            columnWidths
 }
 
 const (
-	colWidthID      = 20
-	colWidthBranch  = 20
-	colWidthAuthor  = 15
-	colWidthStarted = 20
-	colWidthStatus  = 8
-	colSep          = "  "
+	colSep = "  "
 )
+
+const (
+	minColID      = 10
+	minColBranch  = 8
+	minColAuthor  = 6
+	minColStarted = 12
+	minColStatus  = 6
+)
+
+const (
+	weightColID      = 3
+	weightColBranch  = 3
+	weightColAuthor  = 2
+	weightColStarted = 3
+	weightColStatus  = 1
+)
+
+const borderOverhead = 4
 
 var (
 	headerStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF"))
 	cursorRowStyle = lipgloss.NewStyle().Reverse(true)
 )
 
+func calcColumnWidths(termWidth int) columnWidths {
+	minTotal := minColID + minColBranch + minColAuthor + minColStarted + minColStatus
+	totalOverhead := borderOverhead + 4*len(colSep)
+	showAuthor := termWidth >= minTotal+totalOverhead
+
+	numCols := 5
+	totalWeight := weightColID + weightColBranch + weightColAuthor + weightColStarted + weightColStatus
+	if !showAuthor {
+		numCols = 4
+		totalWeight = weightColID + weightColBranch + weightColStarted + weightColStatus
+	}
+
+	sepOverhead := (numCols - 1) * len(colSep)
+	available := termWidth - borderOverhead - sepOverhead
+	if available < 1 {
+		available = 1
+	}
+
+	unit := float64(available) / float64(totalWeight)
+
+	cw := columnWidths{showAuthor: showAuthor}
+	cw.id = max(minColID, int(float64(weightColID)*unit))
+	cw.branch = max(minColBranch, int(float64(weightColBranch)*unit))
+	if showAuthor {
+		cw.author = max(minColAuthor, int(float64(weightColAuthor)*unit))
+	}
+	cw.started = max(minColStarted, int(float64(weightColStarted)*unit))
+	cw.status = max(minColStatus, int(float64(weightColStatus)*unit))
+
+	sum := cw.id + cw.branch + cw.started + cw.status
+	if showAuthor {
+		sum += cw.author
+	}
+	if diff := available - sum; diff > 0 {
+		cw.id += diff
+	}
+
+	return cw
+}
+
 func NewSessionListModel(s *store.Store, root string, width, height int) SessionListModel {
+	if width < 1 {
+		width = 80
+	}
 	return SessionListModel{
 		store:  s,
 		root:   root,
 		width:  width,
 		height: height,
+		cw:     calcColumnWidths(width),
 	}
 }
 
@@ -86,6 +153,7 @@ func (m SessionListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.cw = calcColumnWidths(msg.Width)
 		m.clampScroll()
 		return m, nil
 
@@ -275,18 +343,19 @@ func (m SessionListModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m SessionListModel) renderHeader() string {
-	return headerStyle.Render(fmt.Sprintf(
-		"%-*s%s%-*s%s%-*s%s%-*s%s%-*s",
-		colWidthID, "ID",
-		colSep,
-		colWidthBranch, "BRANCH",
-		colSep,
-		colWidthAuthor, "AUTHOR",
-		colSep,
-		colWidthStarted, "STARTED",
-		colSep,
-		colWidthStatus, "STATUS",
-	))
+	w := m.cw
+	cells := []string{
+		fmt.Sprintf("%-*s", w.id, "TITLE"),
+		fmt.Sprintf("%-*s", w.branch, "BRANCH"),
+	}
+	if w.showAuthor {
+		cells = append(cells, fmt.Sprintf("%-*s", w.author, "AUTHOR"))
+	}
+	cells = append(cells,
+		fmt.Sprintf("%-*s", w.started, "STARTED"),
+		fmt.Sprintf("%-*s", w.status, "STATUS"),
+	)
+	return headerStyle.Render(strings.Join(cells, colSep))
 }
 
 func (m SessionListModel) renderRow(s store.SessionRecord) string {
@@ -297,18 +366,23 @@ func (m SessionListModel) renderRow(s store.SessionRecord) string {
 		style = InactiveStyle
 	}
 
-	return fmt.Sprintf(
-		"%-*s%s%-*s%s%-*s%s%-*s%s%-*s",
-		colWidthID, s.ID,
-		colSep,
-		colWidthBranch, truncateCell(s.Branch, colWidthBranch),
-		colSep,
-		colWidthAuthor, truncateCell(s.Author, colWidthAuthor),
-		colSep,
-		colWidthStarted, s.Started.Format("2006-01-02T15:04:05Z"),
-		colSep,
-		colWidthStatus, style.Render(status),
+	w := m.cw
+	title := m.startMessages[s.ID]
+	if title == "" {
+		title = s.ID
+	}
+	cells := []string{
+		fmt.Sprintf("%-*s", w.id, truncateCell(title, w.id)),
+		fmt.Sprintf("%-*s", w.branch, truncateCell(s.Branch, w.branch)),
+	}
+	if w.showAuthor {
+		cells = append(cells, fmt.Sprintf("%-*s", w.author, truncateCell(s.Author, w.author)))
+	}
+	cells = append(cells,
+		fmt.Sprintf("%-*s", w.started, s.Started.Format("2006-01-02T15:04:05Z")),
+		fmt.Sprintf("%-*s", w.status, style.Render(status)),
 	)
+	return strings.Join(cells, colSep)
 }
 
 func (m SessionListModel) renderFilterBar() string {
