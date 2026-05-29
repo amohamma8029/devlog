@@ -105,7 +105,17 @@ func calcColumnWidths(termWidth int) columnWidths {
 	if showAuthor {
 		sum += cw.author
 	}
-	if diff := available - sum; diff > 0 {
+
+	if sum > available {
+		ratio := float64(available) / float64(sum)
+		cw.id = max(1, int(float64(cw.id)*ratio))
+		cw.branch = max(1, int(float64(cw.branch)*ratio))
+		if showAuthor {
+			cw.author = max(1, int(float64(cw.author)*ratio))
+		}
+		cw.started = max(1, int(float64(cw.started)*ratio))
+		cw.status = max(1, int(float64(cw.status)*ratio))
+	} else if diff := available - sum; diff > 0 {
 		cw.id += diff
 	}
 
@@ -379,7 +389,7 @@ func (m SessionListModel) renderRow(s store.SessionRecord) string {
 		cells = append(cells, fmt.Sprintf("%-*s", w.author, truncateCell(s.Author, w.author)))
 	}
 	cells = append(cells,
-		fmt.Sprintf("%-*s", w.started, s.Started.Format("2006-01-02T15:04:05Z")),
+		fmt.Sprintf("%-*s", w.started, truncateCell(s.Started.Format("2006-01-02T15:04:05Z"), w.started)),
 		fmt.Sprintf("%-*s", w.status, style.Render(status)),
 	)
 	return strings.Join(cells, colSep)

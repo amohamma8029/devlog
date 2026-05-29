@@ -9,6 +9,7 @@ import (
 	"github.com/amo/devlog/internal/session"
 	"github.com/amo/devlog/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 type View int
@@ -78,6 +79,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.Width = msg.Width
 		m.Height = msg.Height
+		sl, _ := m.SessionList.Update(msg)
+		m.SessionList = sl.(SessionListModel)
 		return m, nil
 
 	case ActiveSessionLoadedMsg:
@@ -255,6 +258,10 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.SaveInput = ""
 			return m, nil
 		}
+		if m.CurrentView == SessionList && m.ActiveSession != nil {
+			m.CurrentView = ActiveSession
+			return m, nil
+		}
 		return m, tea.Quit
 	}
 
@@ -265,6 +272,10 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				m.CurrentView = SessionList
 			}
+			return m, nil
+		}
+		if m.CurrentView == SessionList && m.ActiveSession != nil {
+			m.CurrentView = ActiveSession
 			return m, nil
 		}
 		return m, tea.Quit
@@ -455,6 +466,10 @@ func (m Model) View() string {
 	if m.NoSessionMsg != "" {
 		v += "\n" + HintStyle.Render(m.NoSessionMsg)
 	}
+
+	// Force view to fill terminal height so no stale content persists on resize.
+	// lipgloss.Place pads with newlines — ANSI-aware, zero flicker.
+	v = lipgloss.Place(m.Width, m.Height, lipgloss.Left, lipgloss.Top, v)
 
 	return v
 }
