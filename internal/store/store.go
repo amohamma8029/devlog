@@ -354,7 +354,7 @@ func (s *Store) ListSessions() ([]SessionRecord, error) {
 	}
 
 	sort.Slice(records, func(i, j int) bool {
-		return records[i].Started.Before(records[j].Started)
+		return records[i].Started.After(records[j].Started)
 	})
 
 	return records, nil

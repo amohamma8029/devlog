@@ -167,6 +167,7 @@ Slash Commands
 /block <text>   Log a blocker
 /close          Close the active session
 /handoff        Generate handoff summary
+/list           Go to session list
 
 Handoff Preview
 ===============

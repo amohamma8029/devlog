@@ -264,13 +264,13 @@ func TestSessionListViewContainsColumns(t *testing.T) {
 	m := loadTestModel(t, s, root)
 
 	v := m.View()
-	for _, col := range []string{"ID", "BRANCH", "AUTHOR", "STARTED", "STATUS"} {
+	for _, col := range []string{"TITLE", "BRANCH", "AUTHOR", "STARTED", "STATUS"} {
 		if !strings.Contains(v, col) {
 			t.Fatalf("expected column %q in view, got: %s", col, v)
 		}
 	}
-	if !strings.Contains(v, "2026-01-15T140000Z") {
-		t.Fatalf("expected session ID in view: %s", v)
+	if !strings.Contains(v, "auth") {
+		t.Fatalf("expected title 'auth' in view: %s", v)
 	}
 	if !strings.Contains(v, "Alice") {
 		t.Fatalf("expected author in view: %s", v)

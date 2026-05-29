@@ -17,6 +17,7 @@ var PaletteCommands = []CommandEntry{
 	{Command: "/block", Description: "Log a blocker", NoArg: false},
 	{Command: "/close", Description: "Close the session", NoArg: true},
 	{Command: "/handoff", Description: "Generate handoff summary", NoArg: true},
+	{Command: "/list", Description: "Go to session list", NoArg: true},
 }
 
 type CommandPalette struct {
