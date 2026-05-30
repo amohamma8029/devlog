@@ -114,6 +114,34 @@ func TestDiffSinceUntrackedSkippedDevlog(t *testing.T) {
 	}
 }
 
+func TestDiffSinceUntrackedSkippedSecretFile(t *testing.T) {
+	requireGit(t)
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	runGitIn(t, dir, "init")
+	runGitIn(t, dir, "checkout", "-b", "feat/test")
+	writeTestFile(t, dir, "README.md", "# Repo")
+	commitWithDate(t, dir, "2000-01-01T00:00:00Z", "initial")
+
+	sessionStart := time.Now().UTC()
+
+	writeTestFile(t, dir, ".env", "DEVLOG_TEST_VALUE=example\n")
+	writeTestFile(t, dir, "notes.txt", "safe note\n")
+
+	diff, err := DiffSince(sessionStart)
+	if err != nil {
+		t.Fatalf("DiffSince failed: %v", err)
+	}
+
+	if !strings.Contains(diff, "notes.txt") {
+		t.Errorf("expected diff to contain non-secret untracked file, got:\n%s", diff)
+	}
+	if strings.Contains(diff, ".env") || strings.Contains(diff, "DEVLOG_TEST_VALUE") {
+		t.Errorf("untracked .env file should be excluded from diff, got:\n%s", diff)
+	}
+}
+
 func TestDiffSinceDevlogStrippedFromCommittedDiff(t *testing.T) {
 	requireGit(t)
 
