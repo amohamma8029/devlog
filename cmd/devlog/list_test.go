@@ -13,8 +13,8 @@ func TestListCommandListsAllSessions(t *testing.T) {
 	requireCmdTestGit(t)
 
 	root := initCmdTestRepo(t)
-	active := writeCmdTestSession(t, root)
-	closed := writeCmdTestClosedSession(t, root)
+	_ = writeCmdTestSession(t, root)
+	_ = writeCmdTestClosedSession(t, root)
 	t.Chdir(root)
 
 	out, err := executeListCommand()
@@ -22,11 +22,11 @@ func TestListCommandListsAllSessions(t *testing.T) {
 		t.Fatalf("list command failed: %v", err)
 	}
 
-	if !strings.Contains(out, active.ID) {
-		t.Fatalf("expected output to contain active session ID %q, got: %s", active.ID, out)
+	if !strings.Contains(out, "start message") {
+		t.Fatalf("expected output to contain title 'start message', got: %s", out)
 	}
-	if !strings.Contains(out, closed.ID) {
-		t.Fatalf("expected output to contain closed session ID %q, got: %s", closed.ID, out)
+	if !strings.Contains(out, "start message") {
+		t.Fatalf("expected output to contain title 'start message', got: %s", out)
 	}
 	if !strings.Contains(out, "active") {
 		t.Fatal("expected output to contain active status")
@@ -34,7 +34,7 @@ func TestListCommandListsAllSessions(t *testing.T) {
 	if !strings.Contains(out, "closed") {
 		t.Fatal("expected output to contain closed status")
 	}
-	for _, col := range []string{"ID", "BRANCH", "STATUS", "STARTED", "DURATION"} {
+	for _, col := range []string{"TITLE", "BRANCH", "STATUS", "STARTED", "DURATION"} {
 		if !strings.Contains(out, col) {
 			t.Fatalf("expected table to contain %q column, got: %s", col, out)
 		}
@@ -45,8 +45,8 @@ func TestListCommandActiveFlag(t *testing.T) {
 	requireCmdTestGit(t)
 
 	root := initCmdTestRepo(t)
-	active := writeCmdTestSession(t, root)
-	writeCmdTestClosedSession(t, root)
+	_ = writeCmdTestSession(t, root)
+	_ = writeCmdTestClosedSession(t, root)
 	t.Chdir(root)
 
 	out, err := executeListCommand("--active")
@@ -54,8 +54,8 @@ func TestListCommandActiveFlag(t *testing.T) {
 		t.Fatalf("list --active failed: %v", err)
 	}
 
-	if !strings.Contains(out, active.ID) {
-		t.Fatalf("expected output to contain active session ID %q, got: %s", active.ID, out)
+	if !strings.Contains(out, "start message") {
+		t.Fatalf("expected output to contain title 'start message', got: %s", out)
 	}
 	if strings.Contains(out, "closed") {
 		t.Fatal("expected --active output to not contain closed sessions")
