@@ -71,7 +71,7 @@ func renderListTable(records []store.SessionRecord, root string, now time.Time) 
 
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("%-22s  %-20s  %-7s  %-20s  %s\n", "ID", "BRANCH", "STATUS", "STARTED", "DURATION"))
+	b.WriteString(fmt.Sprintf("%-22s  %-20s  %-7s  %-20s  %s\n", "TITLE", "BRANCH", "STATUS", "STARTED", "DURATION"))
 
 	for _, r := range records {
 		status := "active"
@@ -81,7 +81,7 @@ func renderListTable(records []store.SessionRecord, root string, now time.Time) 
 
 		b.WriteString(fmt.Sprintf(
 			"%-22s  %-20s  %-7s  %-20s  %s\n",
-			r.ID,
+			truncateListField(readListTitle(root, r.ID), 22),
 			truncateListField(r.Branch, 20),
 			status,
 			r.Started.Format(time.RFC3339),
@@ -90,6 +90,28 @@ func renderListTable(records []store.SessionRecord, root string, now time.Time) 
 	}
 
 	return b.String()
+}
+
+func readListTitle(root, sessionID string) string {
+	body, err := readListSessionBody(root, sessionID)
+	if err != nil {
+		return sessionID
+	}
+
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		if line == "## Start" && i+1 < len(lines) {
+			for j := i + 1; j < len(lines); j++ {
+				trimmed := strings.TrimSpace(lines[j])
+				if trimmed == "" {
+					continue
+				}
+				return trimmed
+			}
+		}
+	}
+
+	return sessionID
 }
 
 func truncateListField(s string, max int) string {
