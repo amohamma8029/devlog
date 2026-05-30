@@ -155,8 +155,17 @@ func filterDevlogAndBinary(files []string) []string {
 		if strings.HasPrefix(f, ".devlog/") || f == ".devlog" {
 			continue
 		}
+		name := strings.ToLower(filepath.Base(f))
+		if name == ".env" || strings.HasPrefix(name, ".env.") || name == "id_rsa" || name == "id_ed25519" {
+			continue
+		}
+		if strings.Contains(name, "secret") || strings.Contains(name, "token") || strings.Contains(name, "credential") || strings.Contains(name, "password") || strings.Contains(name, "private") {
+			continue
+		}
 		ext := strings.ToLower(filepath.Ext(f))
 		switch ext {
+		case ".pem", ".key", ".p12", ".pfx", ".crt", ".cer":
+			continue
 		case ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp":
 			continue
 		case ".exe", ".dll", ".so", ".dylib", ".bin":
