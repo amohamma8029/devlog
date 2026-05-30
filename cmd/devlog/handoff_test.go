@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestHandoffCommandPrintsToStdout(t *testing.T) {
+func TestHandoffCommandWritesToDefaultPath(t *testing.T) {
 	requireCmdTestGit(t)
 
 	root := initCmdTestRepo(t)
@@ -22,11 +22,19 @@ func TestHandoffCommandPrintsToStdout(t *testing.T) {
 		t.Fatalf("handoff command failed: %v", err)
 	}
 
-	assertContains(t, out, "# Handoff: feat/test — "+sess.ID+" (Test Author) [active]")
-	assertContains(t, out, "## Summary")
-	assertContains(t, out, "Progress: finished auth module")
-	assertContains(t, out, "Blockers: waiting for PR review")
-	assertContains(t, out, "## Changes")
+	expectedPath := filepath.Join(root, ".devlog", "handoffs", sess.ID+".md")
+	assertContains(t, out, "Handoff written to "+expectedPath)
+
+	data, err := os.ReadFile(expectedPath)
+	if err != nil {
+		t.Fatalf("read output file failed: %v", err)
+	}
+	content := string(data)
+	assertContains(t, content, "# Handoff: feat/test — "+sess.ID+" (Test Author) [active]")
+	assertContains(t, content, "## Summary")
+	assertContains(t, content, "Progress: finished auth module")
+	assertContains(t, content, "Blockers: waiting for PR review")
+	assertContains(t, content, "## Changes")
 }
 
 func TestHandoffCommandWithSessionID(t *testing.T) {
@@ -37,16 +45,21 @@ func TestHandoffCommandWithSessionID(t *testing.T) {
 	appendCmdTestEvent(t, root, sess.ID, "Note", "worked on feature X")
 	t.Chdir(root)
 
-	out, err := executeHandoffCommand(sess.ID)
+	_, err := executeHandoffCommand(sess.ID)
 	if err != nil {
 		t.Fatalf("handoff command with session id failed: %v", err)
 	}
 
-	assertContains(t, out, sess.ID)
-	assertContains(t, out, "Progress: worked on feature X")
+	data, err := os.ReadFile(filepath.Join(root, ".devlog", "handoffs", sess.ID+".md"))
+	if err != nil {
+		t.Fatalf("read output file failed: %v", err)
+	}
+	content := string(data)
+	assertContains(t, content, sess.ID)
+	assertContains(t, content, "Progress: worked on feature X")
 }
 
-func TestHandoffCommandWritesToFile(t *testing.T) {
+func TestHandoffCommandWritesToCustomFilename(t *testing.T) {
 	requireCmdTestGit(t)
 
 	root := initCmdTestRepo(t)
@@ -54,15 +67,15 @@ func TestHandoffCommandWritesToFile(t *testing.T) {
 	appendCmdTestEvent(t, root, sess.ID, "Note", "wrote handoff tests")
 	t.Chdir(root)
 
-	outFile := filepath.Join(root, "handoff-output.md")
-	out, err := executeHandoffCommand("-o", outFile)
+	out, err := executeHandoffCommand("-o", "my-handoff")
 	if err != nil {
 		t.Fatalf("handoff command with output flag failed: %v", err)
 	}
 
-	assertContains(t, out, "Handoff written to "+outFile)
+	expectedPath := filepath.Join(root, ".devlog", "handoffs", "my-handoff.md")
+	assertContains(t, out, "Handoff written to "+expectedPath)
 
-	data, err := os.ReadFile(outFile)
+	data, err := os.ReadFile(expectedPath)
 	if err != nil {
 		t.Fatalf("read output file failed: %v", err)
 	}
@@ -120,12 +133,16 @@ func TestHandoffCommandWithCodeChanges(t *testing.T) {
 		t.Fatalf("write file failed: %v", err)
 	}
 
-	out, err := executeHandoffCommand()
+	_, err := executeHandoffCommand()
 	if err != nil {
 		t.Fatalf("handoff command with code changes failed: %v", err)
 	}
 
-	assertContains(t, out, "feature.go")
+	data, err := os.ReadFile(filepath.Join(root, ".devlog", "handoffs", sess.ID+".md"))
+	if err != nil {
+		t.Fatalf("read output file failed: %v", err)
+	}
+	assertContains(t, string(data), "feature.go")
 }
 
 func TestRootCommandIncludesHandoffCommand(t *testing.T) {
@@ -135,6 +152,81 @@ func TestRootCommandIncludesHandoffCommand(t *testing.T) {
 	}
 	if cmd == nil || cmd.Name() != "handoff" {
 		t.Fatalf("expected root command to include handoff, got %v", cmd)
+	}
+}
+
+func TestHandoffCommandRejectsPathTraversal(t *testing.T) {
+	requireCmdTestGit(t)
+
+	root := initCmdTestRepo(t)
+	writeCmdTestSession(t, root)
+	t.Chdir(root)
+
+	_, err := executeHandoffCommand("-o", "../../escape")
+	if err == nil || !strings.Contains(err.Error(), "invalid filename") {
+		t.Fatalf("expected invalid filename error, got: %v", err)
+	}
+}
+
+func TestHandoffCommandRejectsPathSeparator(t *testing.T) {
+	requireCmdTestGit(t)
+
+	root := initCmdTestRepo(t)
+	writeCmdTestSession(t, root)
+	t.Chdir(root)
+
+	_, err := executeHandoffCommand("-o", "path/to/file")
+	if err == nil || !strings.Contains(err.Error(), "invalid filename") {
+		t.Fatalf("expected invalid filename error, got: %v", err)
+	}
+}
+
+func TestHandoffCommandRejectsBackslash(t *testing.T) {
+	requireCmdTestGit(t)
+
+	root := initCmdTestRepo(t)
+	writeCmdTestSession(t, root)
+	t.Chdir(root)
+
+	_, err := executeHandoffCommand("-o", "path\\to\\file")
+	if err == nil || !strings.Contains(err.Error(), "invalid filename") {
+		t.Fatalf("expected invalid filename error, got: %v", err)
+	}
+}
+
+func TestHandoffCommandRejectsOverwrite(t *testing.T) {
+	requireCmdTestGit(t)
+
+	root := initCmdTestRepo(t)
+	writeCmdTestSession(t, root)
+	t.Chdir(root)
+
+	_, err := executeHandoffCommand("-o", "my-handoff")
+	if err != nil {
+		t.Fatalf("first handoff command failed: %v", err)
+	}
+
+	_, err = executeHandoffCommand("-o", "my-handoff")
+	if err == nil || !strings.Contains(err.Error(), "file already exists") {
+		t.Fatalf("expected file already exists error, got: %v", err)
+	}
+}
+
+func TestHandoffCommandRejectsOverwriteDefault(t *testing.T) {
+	requireCmdTestGit(t)
+
+	root := initCmdTestRepo(t)
+	writeCmdTestSession(t, root)
+	t.Chdir(root)
+
+	_, err := executeHandoffCommand()
+	if err != nil {
+		t.Fatalf("first handoff command failed: %v", err)
+	}
+
+	_, err = executeHandoffCommand()
+	if err == nil || !strings.Contains(err.Error(), "file already exists") {
+		t.Fatalf("expected file already exists error, got: %v", err)
 	}
 }
 
