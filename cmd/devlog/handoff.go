@@ -64,18 +64,23 @@ func newHandoffCommand() *cobra.Command {
 				return fmt.Errorf("handoff: generate: %w", err)
 			}
 
-			if output != "" {
-				if err := os.MkdirAll(filepath.Dir(output), 0755); err != nil {
-					return fmt.Errorf("handoff: create output directory: %w", err)
-				}
-				if err := os.WriteFile(output, []byte(handoffText), 0644); err != nil {
-					return fmt.Errorf("handoff: write output file: %w", err)
-				}
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "Handoff written to %s\n", output)
+			savePath, err := resolveHandoffOutputPath(root, rec.ID, output)
+			if err != nil {
 				return err
 			}
 
-			_, err = fmt.Fprint(cmd.OutOrStdout(), handoffText)
+			if _, err := os.Stat(savePath); err == nil {
+				return fmt.Errorf("handoff: file already exists: %s", savePath)
+			}
+
+			dir := filepath.Dir(savePath)
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				return fmt.Errorf("handoff: create output directory: %w", err)
+			}
+			if err := os.WriteFile(savePath, []byte(handoffText), 0644); err != nil {
+				return fmt.Errorf("handoff: write output file: %w", err)
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Handoff written to %s\n", savePath)
 			return err
 		},
 	}
@@ -83,6 +88,34 @@ func newHandoffCommand() *cobra.Command {
 	cmd.Flags().StringVarP(&output, "output", "o", "", "Write handoff to a file instead of stdout")
 
 	return cmd
+}
+
+func resolveHandoffOutputPath(root, sessionID, output string) (string, error) {
+	handoffsDir := filepath.Join(root, ".devlog", "handoffs")
+
+	if output == "" {
+		return filepath.Join(handoffsDir, sessionID+".md"), nil
+	}
+
+	name := strings.TrimSpace(output)
+	if name == "" {
+		return "", fmt.Errorf("handoff: filename cannot be empty")
+	}
+	if !isValidFilename(name) {
+		return "", fmt.Errorf("handoff: invalid filename: path separators or '..' not allowed")
+	}
+
+	return filepath.Join(handoffsDir, name+".md"), nil
+}
+
+func isValidFilename(name string) bool {
+	if strings.Contains(name, "..") {
+		return false
+	}
+	if strings.ContainsAny(name, `/\\`) {
+		return false
+	}
+	return true
 }
 
 func readSessionContent(root, sessionID string) (string, error) {
