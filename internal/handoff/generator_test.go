@@ -20,15 +20,15 @@ status: active
 
 Starting work on the OAuth implementation.
 
-## Note - 15:00 UTC
+## Note - 2026-01-15 15:00 UTC
 
 Explored PKCE flow options in the auth middleware
 
-## Blocker - 16:00 UTC
+## Blocker - 2026-01-15 16:00 UTC
 
 Waiting for security review on token rotation
 
-## Note - 17:00 UTC
+## Note - 2026-01-15 17:00 UTC
 
 Added unit tests for the refresh token path
 `
@@ -46,7 +46,7 @@ status: active
 
 Starting work.
 
-## Blocker - 16:00 UTC
+## Blocker - 2026-01-15 16:00 UTC
 
 Waiting for security review on token rotation
 `
@@ -64,7 +64,7 @@ status: active
 
 Starting work.
 
-## Note - 15:00 UTC
+## Note - 2026-01-15 15:00 UTC
 
 Explored PKCE flow options.
 `
@@ -96,11 +96,11 @@ status: active
 
 Starting work.
 
-## Note - 15:00 UTC
+## Note - 2026-01-15 15:00 UTC
 
 Implemented PKCE flow.
 
-## Stop - 18:00 UTC
+## Stop - 2026-01-15 18:00 UTC
 
 Session closed.
 `

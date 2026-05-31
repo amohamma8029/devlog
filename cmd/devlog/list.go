@@ -119,21 +119,22 @@ func computeListDuration(sr store.SessionRecord, root string, now time.Time) str
 		return formatStatusDuration(now.Sub(sr.Started))
 	}
 
-	stopAt, err := readSessionStopTime(root, sr.ID)
-	if err != nil || stopAt.IsZero() {
+	s, err := store.New(root)
+	if err != nil {
 		return "-"
 	}
 
-	stop := time.Date(
-		sr.Started.Year(), sr.Started.Month(), sr.Started.Day(),
-		stopAt.Hour(), stopAt.Minute(), 0, 0, time.UTC,
-	)
-
-	if stop.Before(sr.Started) || stop.Equal(sr.Started) {
-		stop = stop.Add(24 * time.Hour)
+	body, err := s.ReadSessionBody(sr.ID)
+	if err != nil {
+		return "-"
 	}
 
-	d := stop.Sub(sr.Started)
+	stop := lastStopTime(store.ParseSessionEvents(body))
+	if stop.IsZero() {
+		return "-"
+	}
+
+	d := stop.Sub(sr.Started.UTC())
 	if d < 0 {
 		return "-"
 	}
@@ -141,36 +142,12 @@ func computeListDuration(sr store.SessionRecord, root string, now time.Time) str
 	return formatStatusDuration(d)
 }
 
-func readSessionStopTime(root, sessionID string) (time.Time, error) {
-	s, err := store.New(root)
-	if err != nil {
-		return time.Time{}, err
-	}
-
-	body, err := s.ReadSessionBody(sessionID)
-	if err != nil {
-		return time.Time{}, err
-	}
-
-	events := store.ParseSessionEvents(body)
-	var lastStopAt string
-	for _, e := range events {
-		if e.Type == "Stop" {
-			lastStopAt = e.Time
+func lastStopTime(events []store.SessionEvent) time.Time {
+	var stop time.Time
+	for _, event := range events {
+		if event.Type == "Stop" {
+			stop = event.Time
 		}
 	}
-	if lastStopAt == "" {
-		return time.Time{}, nil
-	}
-
-	return parseListUTCTime(lastStopAt)
-}
-
-func parseListUTCTime(s string) (time.Time, error) {
-	s = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(s), " UTC"))
-	t, err := time.Parse("15:04", s)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("list: parse stop time: %w", err)
-	}
-	return t, nil
+	return stop
 }

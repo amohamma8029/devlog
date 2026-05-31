@@ -292,12 +292,12 @@ func renderEventLines(events []store.SessionEvent, maxWidth int) []string {
 			connectorStyle = ConnectorStyle.Foreground(lipgloss.Color("#FF6600"))
 		}
 
-		timeStr := event.Time
-		if timeStr == "" {
+		timeStr := event.Time.UTC().Format("2006-01-02 15:04 UTC")
+		if event.Time.IsZero() {
 			timeStr = "     "
 		}
 
-		headerLine := fmt.Sprintf("%s · %s UTC", event.Type, timeStr)
+		headerLine := fmt.Sprintf("%s · %s", event.Type, timeStr)
 		header := labelStyle.Render(headerLine)
 
 		bodyLines := splitLines(event.Body, eventWidth-4)

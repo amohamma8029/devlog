@@ -24,6 +24,10 @@ func testActiveSession() *store.SessionRecord {
 	}
 }
 
+func testEventTime(hour, minute int) time.Time {
+	return time.Date(2026, 1, 15, hour, minute, 0, 0, time.UTC)
+}
+
 func testModel() Model {
 	p := NewCommandPalette()
 	return Model{
@@ -99,7 +103,7 @@ func TestRenderActiveSessionDoesNotOverflowHeight(t *testing.T) {
 	m.Height = 12
 	m.Events = []store.SessionEvent{{Type: "Start", Body: "Test title"}}
 	for i := 0; i < 20; i++ {
-		m.Events = append(m.Events, store.SessionEvent{Type: "Note", Time: "14:30", Body: "long note body that should be clipped to the available viewport height"})
+		m.Events = append(m.Events, store.SessionEvent{Type: "Note", Time: testEventTime(14, 30), Body: "long note body that should be clipped to the available viewport height"})
 	}
 
 	v := renderActiveSession(m)
@@ -448,7 +452,7 @@ func TestHandleHandoffMouseSavePressOpensPrompt(t *testing.T) {
 func TestExtractStartMessage(t *testing.T) {
 	events := []store.SessionEvent{
 		{Type: "Start", Body: "  Implement auth middleware  "},
-		{Type: "Note", Time: "14:30", Body: "Added JWT"},
+		{Type: "Note", Time: testEventTime(14, 30), Body: "Added JWT"},
 	}
 	title := extractStartMessage(events)
 	if title != "Implement auth middleware" {
@@ -458,7 +462,7 @@ func TestExtractStartMessage(t *testing.T) {
 
 func TestExtractStartMessageEmpty(t *testing.T) {
 	events := []store.SessionEvent{
-		{Type: "Note", Time: "14:30", Body: "Added JWT"},
+		{Type: "Note", Time: testEventTime(14, 30), Body: "Added JWT"},
 	}
 	title := extractStartMessage(events)
 	if title != "" {
@@ -509,10 +513,10 @@ func TestFormatAuthor(t *testing.T) {
 func TestFilterNonStartEvents(t *testing.T) {
 	events := []store.SessionEvent{
 		{Type: "Start", Body: "title"},
-		{Type: "Note", Time: "14:30", Body: "note 1"},
+		{Type: "Note", Time: testEventTime(14, 30), Body: "note 1"},
 		{Type: "Start", Body: "another"},
-		{Type: "Blocker", Time: "15:00", Body: "blocked"},
-		{Type: "Stop", Time: "16:00", Body: "done"},
+		{Type: "Blocker", Time: testEventTime(15, 0), Body: "blocked"},
+		{Type: "Stop", Time: testEventTime(16, 0), Body: "done"},
 	}
 	filtered := filterNonStartEvents(events)
 	if len(filtered) != 3 {
