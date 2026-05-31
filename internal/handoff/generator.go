@@ -48,7 +48,7 @@ type sessionMeta struct {
 
 type event struct {
 	Type string // Start, Note, Blocker, Stop
-	Time string // HH:MM (empty for Start events)
+	Time string // YYYY-MM-DD HH:MM (empty for Start events)
 	Body string
 }
 
@@ -86,7 +86,7 @@ func extractFrontMatter(content string) (*sessionMeta, string, error) {
 	return &meta, parts[1], nil
 }
 
-var eventHeaderRe = regexp.MustCompile(`^## (Start|Note|Blocker|Stop)(?: - (\d{2}:\d{2}) UTC)?$`)
+var eventHeaderRe = regexp.MustCompile(`^## (Start|Note|Blocker|Stop)(?: - (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) UTC)?$`)
 
 func parseEvents(body string) []event {
 	lines := strings.Split(body, "\n")

@@ -32,10 +32,12 @@ type SessionRecord struct {
 
 const sessionsDir = ".devlog/sessions"
 
+const eventTimeLayout = "2006-01-02 15:04"
+
 // SessionEvent represents a structured event parsed from a session Markdown body.
 type SessionEvent struct {
 	Type string // Start, Note, Blocker, Stop
-	Time string // HH:MM (empty for Start)
+	Time time.Time
 	Body string
 }
 
@@ -243,24 +245,28 @@ func parseSessionEvents(body string) ([]SessionEvent, bool) {
 	return events, hasStart
 }
 
-func parseEventHeading(line string) (string, string, bool) {
+func parseEventHeading(line string) (string, time.Time, bool) {
 	if !strings.HasPrefix(line, "## ") {
-		return "", "", false
+		return "", time.Time{}, false
 	}
 
 	heading := strings.TrimSpace(strings.TrimPrefix(line, "## "))
 	for _, eventType := range []string{"Start", "Note", "Blocker", "Stop"} {
 		if heading == eventType {
-			return eventType, "", true
+			return eventType, time.Time{}, true
 		}
 
 		prefix := eventType + " - "
 		if strings.HasPrefix(heading, prefix) {
-			return eventType, strings.TrimRight(strings.TrimPrefix(heading, prefix), " UTC"), true
+			at, err := time.Parse(eventTimeLayout+" UTC", strings.TrimSpace(strings.TrimPrefix(heading, prefix)))
+			if err != nil {
+				return "", time.Time{}, false
+			}
+			return eventType, at, true
 		}
 	}
 
-	return "", "", false
+	return "", time.Time{}, false
 }
 
 // ExtractMarkdownBody returns everything after the YAML front-matter delimiters.
@@ -302,7 +308,7 @@ func (s *Store) appendEvent(op, sessionID, eventType, body string, at time.Time)
 	}
 
 	var section strings.Builder
-	section.WriteString(fmt.Sprintf("\n## %s - %s UTC\n", eventType, at.Format("15:04")))
+	section.WriteString(fmt.Sprintf("\n## %s - %s UTC\n", eventType, at.UTC().Format(eventTimeLayout)))
 	section.WriteString("\n")
 	section.WriteString(strings.TrimRight(body, "\n") + "\n")
 

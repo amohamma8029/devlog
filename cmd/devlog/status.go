@@ -11,6 +11,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const statusEventTimeLayout = "2006-01-02 15:04 UTC"
+
 func newStatusCommand() *cobra.Command {
 	var number int
 
@@ -148,12 +150,12 @@ func writeRecentStatusEvents(b *strings.Builder, events []store.SessionEvent) {
 }
 
 func writeStatusEvent(b *strings.Builder, event store.SessionEvent) {
-	if event.Time == "" {
+	if event.Time.IsZero() {
 		fmt.Fprintf(b, "- %s: %s\n", event.Type, oneLineStatusBody(event.Body))
 		return
 	}
 
-	fmt.Fprintf(b, "- %s %s: %s\n", event.Time, event.Type, oneLineStatusBody(event.Body))
+	fmt.Fprintf(b, "- %s %s: %s\n", formatStatusEventTime(event.Time), event.Type, oneLineStatusBody(event.Body))
 }
 
 func writeStatusBlockers(b *strings.Builder, events []store.SessionEvent) {
@@ -164,16 +166,20 @@ func writeStatusBlockers(b *strings.Builder, events []store.SessionEvent) {
 		}
 
 		found = true
-		if event.Time == "" {
+		if event.Time.IsZero() {
 			fmt.Fprintf(b, "- %s\n", oneLineStatusBody(event.Body))
 			continue
 		}
-		fmt.Fprintf(b, "- %s: %s\n", event.Time, oneLineStatusBody(event.Body))
+		fmt.Fprintf(b, "- %s: %s\n", formatStatusEventTime(event.Time), oneLineStatusBody(event.Body))
 	}
 
 	if !found {
 		b.WriteString("None\n")
 	}
+}
+
+func formatStatusEventTime(t time.Time) string {
+	return t.UTC().Format(statusEventTimeLayout)
 }
 
 func oneLineStatusBody(body string) string {

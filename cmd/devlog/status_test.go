@@ -30,10 +30,12 @@ func TestStatusCommandShowsActiveSessionEventsAndBlockers(t *testing.T) {
 	assertContains(t, out, "Started: 2026-01-15T14:00:00Z")
 	assertContains(t, out, "Duration: ")
 	assertContains(t, out, "Recent events (last 10)")
+	assertContains(t, out, " UTC Note: wrote status tests")
 	assertContains(t, out, "Note: wrote status tests")
 	assertContains(t, out, "Blocker: waiting for review")
 	assertContains(t, out, "Start: start message")
 	assertContains(t, out, "Blockers")
+	assertContains(t, out, " UTC: waiting for review")
 	assertContains(t, out, "waiting for review")
 }
 
