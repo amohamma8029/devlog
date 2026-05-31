@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,12 +10,6 @@ import (
 	"github.com/amo/devlog/internal/store"
 	"github.com/spf13/cobra"
 )
-
-type statusEvent struct {
-	Type string
-	At   string
-	Body string
-}
 
 func newStatusCommand() *cobra.Command {
 	var number int
@@ -47,12 +39,12 @@ func newStatusCommand() *cobra.Command {
 				return err
 			}
 
-			body, err := readStatusSessionBody(root, active.ID)
+			body, err := s.ReadSessionBody(active.ID)
 			if err != nil {
 				return err
 			}
 
-			events := parseStatusEvents(body)
+			events := store.ParseSessionEvents(body)
 			_, err = fmt.Fprint(cmd.OutOrStdout(), renderStatus(active, events, number, time.Now().UTC()))
 			return err
 		},
@@ -63,104 +55,7 @@ func newStatusCommand() *cobra.Command {
 	return cmd
 }
 
-func readStatusSessionBody(root, sessionID string) (string, error) {
-	path, err := statusSessionPath(root, sessionID)
-	if err != nil {
-		return "", err
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("status: read session file: %w", err)
-	}
-
-	body, err := statusMarkdownBody(string(data))
-	if err != nil {
-		return "", err
-	}
-
-	return body, nil
-}
-
-func statusSessionPath(root, sessionID string) (string, error) {
-	if strings.TrimSpace(sessionID) == "" {
-		return "", fmt.Errorf("status: session ID is empty")
-	}
-	if sessionID == "." || sessionID == ".." || strings.ContainsAny(sessionID, `/\`) {
-		return "", fmt.Errorf("status: invalid session ID: %s", sessionID)
-	}
-
-	return filepath.Join(root, ".devlog", "sessions", sessionID+".md"), nil
-}
-
-func statusMarkdownBody(content string) (string, error) {
-	content = strings.ReplaceAll(content, "\r\n", "\n")
-	const delim = "---\n"
-	if !strings.HasPrefix(content, delim) {
-		return "", fmt.Errorf("status: missing opening front-matter delimiter")
-	}
-
-	parts := strings.SplitN(content[len(delim):], delim, 2)
-	if len(parts) < 2 {
-		return "", fmt.Errorf("status: missing closing front-matter delimiter")
-	}
-
-	return parts[1], nil
-}
-
-func parseStatusEvents(markdown string) []statusEvent {
-	lines := strings.Split(strings.ReplaceAll(markdown, "\r\n", "\n"), "\n")
-	var events []statusEvent
-	var current *statusEvent
-	var bodyLines []string
-
-	flush := func() {
-		if current == nil {
-			return
-		}
-		current.Body = strings.TrimSpace(strings.Join(bodyLines, "\n"))
-		events = append(events, *current)
-	}
-
-	for _, line := range lines {
-		eventType, at, ok := parseStatusEventHeading(line)
-		if ok {
-			flush()
-			current = &statusEvent{Type: eventType, At: at}
-			bodyLines = nil
-			continue
-		}
-
-		if current != nil {
-			bodyLines = append(bodyLines, line)
-		}
-	}
-
-	flush()
-	return events
-}
-
-func parseStatusEventHeading(line string) (string, string, bool) {
-	if !strings.HasPrefix(line, "## ") {
-		return "", "", false
-	}
-
-	heading := strings.TrimSpace(strings.TrimPrefix(line, "## "))
-	for _, eventType := range []string{"Start", "Note", "Blocker", "Stop"} {
-		if heading == eventType {
-			return eventType, "", true
-		}
-
-		prefix := eventType + " - "
-		if strings.HasPrefix(heading, prefix) {
-			return eventType, strings.TrimSpace(strings.TrimPrefix(heading, prefix)), true
-		}
-	}
-
-	return "", "", false
-}
-
-func renderStatus(active *store.SessionRecord, events []statusEvent, number int, now time.Time) string {
+func renderStatus(active *store.SessionRecord, events []store.SessionEvent, number int, now time.Time) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "Active session\n")
@@ -233,7 +128,7 @@ func formatStatusDuration(d time.Duration) string {
 	return strings.Join(parts, " ")
 }
 
-func recentStatusEvents(events []statusEvent, number int) []statusEvent {
+func recentStatusEvents(events []store.SessionEvent, number int) []store.SessionEvent {
 	if number == 0 || number >= len(events) {
 		return events
 	}
@@ -241,7 +136,7 @@ func recentStatusEvents(events []statusEvent, number int) []statusEvent {
 	return events[len(events)-number:]
 }
 
-func writeRecentStatusEvents(b *strings.Builder, events []statusEvent) {
+func writeRecentStatusEvents(b *strings.Builder, events []store.SessionEvent) {
 	if len(events) == 0 {
 		b.WriteString("None\n")
 		return
@@ -252,16 +147,16 @@ func writeRecentStatusEvents(b *strings.Builder, events []statusEvent) {
 	}
 }
 
-func writeStatusEvent(b *strings.Builder, event statusEvent) {
-	if event.At == "" {
+func writeStatusEvent(b *strings.Builder, event store.SessionEvent) {
+	if event.Time == "" {
 		fmt.Fprintf(b, "- %s: %s\n", event.Type, oneLineStatusBody(event.Body))
 		return
 	}
 
-	fmt.Fprintf(b, "- %s %s: %s\n", event.At, event.Type, oneLineStatusBody(event.Body))
+	fmt.Fprintf(b, "- %s %s: %s\n", event.Time, event.Type, oneLineStatusBody(event.Body))
 }
 
-func writeStatusBlockers(b *strings.Builder, events []statusEvent) {
+func writeStatusBlockers(b *strings.Builder, events []store.SessionEvent) {
 	found := false
 	for _, event := range events {
 		if event.Type != "Blocker" {
@@ -269,11 +164,11 @@ func writeStatusBlockers(b *strings.Builder, events []statusEvent) {
 		}
 
 		found = true
-		if event.At == "" {
+		if event.Time == "" {
 			fmt.Fprintf(b, "- %s\n", oneLineStatusBody(event.Body))
 			continue
 		}
-		fmt.Fprintf(b, "- %s: %s\n", event.At, oneLineStatusBody(event.Body))
+		fmt.Fprintf(b, "- %s: %s\n", event.Time, oneLineStatusBody(event.Body))
 	}
 
 	if !found {

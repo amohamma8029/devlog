@@ -2,16 +2,14 @@ package tui
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	internalgit "github.com/amo/devlog/internal/git"
 	"github.com/amo/devlog/internal/handoff"
 	"github.com/amo/devlog/internal/session"
+	"github.com/amo/devlog/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/amo/devlog/internal/store"
 )
 
 type SessionsLoadedMsg struct {
@@ -479,48 +477,13 @@ func (m *SessionListModel) clampScroll() {
 func (m *SessionListModel) loadStartMessages() {
 	m.startMessages = make(map[string]string, len(m.sessions))
 	for _, s := range m.sessions {
-		msg, err := readSessionStartMessage(s.ID, m.root)
+		msg, err := m.store.ReadSessionStartMessage(s.ID)
 		if err != nil {
 			m.startMessages[s.ID] = ""
 			continue
 		}
 		m.startMessages[s.ID] = msg
 	}
-}
-
-func readSessionStartMessage(sessionID, root string) (string, error) {
-	path := filepath.Join(root, ".devlog", "sessions", sessionID+".md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-
-	content := strings.ReplaceAll(string(data), "\r\n", "\n")
-	const delim = "---\n"
-	if !strings.HasPrefix(content, delim) {
-		return "", fmt.Errorf("missing opening front-matter delimiter")
-	}
-
-	parts := strings.SplitN(content[len(delim):], delim, 2)
-	if len(parts) < 2 {
-		return "", fmt.Errorf("missing closing front-matter delimiter")
-	}
-
-	body := parts[1]
-	lines := strings.Split(body, "\n")
-	for i, line := range lines {
-		if line == "## Start" && i+1 < len(lines) {
-			for j := i + 1; j < len(lines); j++ {
-				trimmed := strings.TrimSpace(lines[j])
-				if trimmed == "" {
-					continue
-				}
-				return trimmed, nil
-			}
-		}
-	}
-
-	return "", nil
 }
 
 func (m SessionListModel) generateHandoff() (tea.Model, tea.Cmd) {
@@ -546,4 +509,3 @@ func (m SessionListModel) generateHandoff() (tea.Model, tea.Cmd) {
 		return HandoffGeneratedMsg{Content: handoffText}
 	}
 }
-
