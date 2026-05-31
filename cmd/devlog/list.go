@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -69,6 +67,11 @@ func renderListTable(records []store.SessionRecord, root string, now time.Time) 
 		return "No sessions found.\n"
 	}
 
+	s, err := store.New(root)
+	if err != nil {
+		s = nil
+	}
+
 	var b strings.Builder
 
 	b.WriteString(fmt.Sprintf("%-22s  %-20s  %-7s  %-20s  %s\n", "TITLE", "BRANCH", "STATUS", "STARTED", "DURATION"))
@@ -81,7 +84,7 @@ func renderListTable(records []store.SessionRecord, root string, now time.Time) 
 
 		b.WriteString(fmt.Sprintf(
 			"%-22s  %-20s  %-7s  %-20s  %s\n",
-			truncateListField(readListTitle(root, r.ID), 22),
+			truncateListField(listTitle(s, r.ID), 22),
 			truncateListField(r.Branch, 20),
 			status,
 			r.Started.Format(time.RFC3339),
@@ -92,26 +95,16 @@ func renderListTable(records []store.SessionRecord, root string, now time.Time) 
 	return b.String()
 }
 
-func readListTitle(root, sessionID string) string {
-	body, err := readListSessionBody(root, sessionID)
-	if err != nil {
+func listTitle(s *store.Store, sessionID string) string {
+	if s == nil {
+		return sessionID
+	}
+	title, err := s.ReadSessionStartMessage(sessionID)
+	if err != nil || title == "" {
 		return sessionID
 	}
 
-	lines := strings.Split(body, "\n")
-	for i, line := range lines {
-		if line == "## Start" && i+1 < len(lines) {
-			for j := i + 1; j < len(lines); j++ {
-				trimmed := strings.TrimSpace(lines[j])
-				if trimmed == "" {
-					continue
-				}
-				return trimmed
-			}
-		}
-	}
-
-	return sessionID
+	return title
 }
 
 func truncateListField(s string, max int) string {
@@ -149,16 +142,21 @@ func computeListDuration(sr store.SessionRecord, root string, now time.Time) str
 }
 
 func readSessionStopTime(root, sessionID string) (time.Time, error) {
-	body, err := readListSessionBody(root, sessionID)
+	s, err := store.New(root)
 	if err != nil {
 		return time.Time{}, err
 	}
 
-	events := parseStatusEvents(body)
+	body, err := s.ReadSessionBody(sessionID)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	events := store.ParseSessionEvents(body)
 	var lastStopAt string
 	for _, e := range events {
 		if e.Type == "Stop" {
-			lastStopAt = e.At
+			lastStopAt = e.Time
 		}
 	}
 	if lastStopAt == "" {
@@ -166,27 +164,6 @@ func readSessionStopTime(root, sessionID string) (time.Time, error) {
 	}
 
 	return parseListUTCTime(lastStopAt)
-}
-
-func readListSessionBody(root, sessionID string) (string, error) {
-	path := filepath.Join(root, ".devlog", "sessions", sessionID+".md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("list: read session file: %w", err)
-	}
-
-	content := strings.ReplaceAll(string(data), "\r\n", "\n")
-	const delim = "---\n"
-	if !strings.HasPrefix(content, delim) {
-		return "", fmt.Errorf("list: missing opening front-matter delimiter")
-	}
-
-	parts := strings.SplitN(content[len(delim):], delim, 2)
-	if len(parts) < 2 {
-		return "", fmt.Errorf("list: missing closing front-matter delimiter")
-	}
-
-	return parts[1], nil
 }
 
 func parseListUTCTime(s string) (time.Time, error) {

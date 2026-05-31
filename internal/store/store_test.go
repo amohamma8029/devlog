@@ -479,6 +479,69 @@ func TestReadSessionBody(t *testing.T) {
 	}
 }
 
+func TestExtractMarkdownBody(t *testing.T) {
+	content := "---\nid: test\n---\n\n## Start\n\nImplement auth middleware\n"
+
+	body, err := ExtractMarkdownBody(content)
+	if err != nil {
+		t.Fatalf("ExtractMarkdownBody failed: %v", err)
+	}
+	if body != "\n## Start\n\nImplement auth middleware\n" {
+		t.Fatalf("expected markdown body, got %q", body)
+	}
+}
+
+func TestExtractMarkdownBodyRequiresDelimiters(t *testing.T) {
+	if _, err := ExtractMarkdownBody("no delimiter here"); err == nil || !strings.Contains(err.Error(), "missing opening front-matter delimiter") {
+		t.Fatalf("expected missing opening delimiter error, got: %v", err)
+	}
+	if _, err := ExtractMarkdownBody("---\nid: x\n"); err == nil || !strings.Contains(err.Error(), "missing closing front-matter delimiter") {
+		t.Fatalf("expected missing closing delimiter error, got: %v", err)
+	}
+}
+
+func TestReadSessionStartMessage(t *testing.T) {
+	root := t.TempDir()
+	store := newTestStore(t, root)
+	sess := testSession()
+
+	if err := store.WriteSession(sess, "\n\nImplement auth middleware\nSecond line"); err != nil {
+		t.Fatalf("WriteSession failed: %v", err)
+	}
+
+	message, err := store.ReadSessionStartMessage(sess.ID)
+	if err != nil {
+		t.Fatalf("ReadSessionStartMessage failed: %v", err)
+	}
+	if message != "Implement auth middleware" {
+		t.Fatalf("expected first non-empty start line, got %q", message)
+	}
+}
+
+func TestReadSessionStartMessageEmptyWhenMissing(t *testing.T) {
+	root := t.TempDir()
+	store := newTestStore(t, root)
+	sess := testSession()
+
+	if err := store.WriteSession(sess, "temporary"); err != nil {
+		t.Fatalf("WriteSession failed: %v", err)
+	}
+
+	path := filepath.Join(root, sessionsDir, sess.ID+".md")
+	content := strings.Replace(readSessionFile(t, root, sess.ID), "temporary", "", 1)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("write session file failed: %v", err)
+	}
+
+	message, err := store.ReadSessionStartMessage(sess.ID)
+	if err != nil {
+		t.Fatalf("ReadSessionStartMessage failed: %v", err)
+	}
+	if message != "" {
+		t.Fatalf("expected empty start message, got %q", message)
+	}
+}
+
 func TestReadSessionBodyMissing(t *testing.T) {
 	store := newTestStore(t, t.TempDir())
 

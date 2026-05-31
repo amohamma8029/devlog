@@ -152,12 +152,28 @@ func (s *Store) ReadSessionBody(sessionID string) (string, error) {
 		return "", err
 	}
 
-	body, err := extractMarkdownBody(content)
+	body, err := ExtractMarkdownBody(content)
 	if err != nil {
 		return "", fmt.Errorf("ReadSessionBody: %w", err)
 	}
 
 	return body, nil
+}
+
+// ReadSessionStartMessage returns the first non-empty line from a session's Start event body.
+func (s *Store) ReadSessionStartMessage(sessionID string) (string, error) {
+	body, err := s.ReadSessionBody(sessionID)
+	if err != nil {
+		return "", err
+	}
+
+	for _, event := range ParseSessionEvents(body) {
+		if event.Type == "Start" {
+			return firstNonEmptyLine(event.Body), nil
+		}
+	}
+
+	return "", nil
 }
 
 // ReadSessionContent reads the raw session file content (including YAML front-matter).
@@ -247,7 +263,8 @@ func parseEventHeading(line string) (string, string, bool) {
 	return "", "", false
 }
 
-func extractMarkdownBody(content string) (string, error) {
+// ExtractMarkdownBody returns everything after the YAML front-matter delimiters.
+func ExtractMarkdownBody(content string) (string, error) {
 	const delim = "---\n"
 	if !strings.HasPrefix(content, delim) {
 		return "", fmt.Errorf("missing opening front-matter delimiter")
@@ -259,6 +276,16 @@ func extractMarkdownBody(content string) (string, error) {
 	}
 
 	return parts[1], nil
+}
+
+func firstNonEmptyLine(body string) string {
+	for _, line := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func (s *Store) appendEvent(op, sessionID, eventType, body string, at time.Time) error {
