@@ -37,13 +37,56 @@ func TestModelInit(t *testing.T) {
 	}
 }
 
-func TestModelUpdateQuitOnEsc(t *testing.T) {
-	s := &store.Store{}
-	m := NewModel(s, "/tmp")
-	msg := tea.KeyMsg{Type: tea.KeyEsc}
-	_, cmd := m.Update(msg)
-	if cmd == nil {
-		t.Fatal("expected quit cmd on Esc")
+func TestModelUpdateQuitOnNoSessionKeys(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		msg  tea.KeyMsg
+	}{
+		{name: "esc", msg: tea.KeyMsg{Type: tea.KeyEsc}},
+		{name: "q", msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &store.Store{}
+			m := NewModel(s, "/tmp")
+			m.CurrentView = ActiveSession
+
+			_, cmd := m.Update(tc.msg)
+			if cmd == nil {
+				t.Fatal("expected quit cmd")
+			}
+		})
+	}
+}
+
+func TestModelSessionListBackKeysReturnToNoSession(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		msg  tea.KeyMsg
+	}{
+		{name: "esc", msg: tea.KeyMsg{Type: tea.KeyEsc}},
+		{name: "q", msg: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &store.Store{}
+			m := NewModel(s, "/tmp")
+			m.CurrentView = SessionList
+			m.ActiveSession = nil
+
+			updatedModel, cmd := m.Update(tc.msg)
+			if cmd != nil {
+				t.Fatal("expected no quit cmd")
+			}
+			updated, ok := updatedModel.(Model)
+			if !ok {
+				t.Fatalf("expected Model from Update, got %T", updatedModel)
+			}
+			if updated.CurrentView != ActiveSession {
+				t.Fatalf("CurrentView = %v, want ActiveSession", updated.CurrentView)
+			}
+			if updated.ActiveSession != nil {
+				t.Fatalf("ActiveSession = %#v, want nil", updated.ActiveSession)
+			}
+		})
 	}
 }
 

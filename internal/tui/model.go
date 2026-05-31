@@ -258,7 +258,7 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.SaveInput = ""
 			return m, nil
 		}
-		if m.CurrentView == SessionList && m.ActiveSession != nil {
+		if m.CurrentView == SessionList {
 			m.CurrentView = ActiveSession
 			return m, nil
 		}
@@ -275,7 +275,7 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if m.CurrentView == SessionList && m.ActiveSession != nil {
+		if m.CurrentView == SessionList {
 			m.CurrentView = ActiveSession
 			return m, nil
 		}
