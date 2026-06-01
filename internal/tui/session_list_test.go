@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
 	"github.com/amo/devlog/internal/store"
 )
 
@@ -399,5 +400,53 @@ func TestSessionListReloadsAfterClose(t *testing.T) {
 	}
 	if len(m.filtered) != 1 {
 		t.Fatalf("expected 1 filtered session after reload, got %d", len(m.filtered))
+	}
+}
+
+func TestTruncateCellASCII(t *testing.T) {
+	tests := []struct {
+		name  string
+		s     string
+		width int
+		want  string
+	}{
+		{"shorter than width", "hello", 10, "hello"},
+		{"exactly width", "hello", 5, "hello"},
+		{"longer than width", "hello world", 6, "hello\u2026"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncateCell(tt.s, tt.width)
+			if got != tt.want {
+				t.Errorf("truncateCell(%q, %d) = %q, want %q", tt.s, tt.width, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTruncateCellUnicode(t *testing.T) {
+	tests := []struct {
+		name  string
+		s     string
+		width int
+	}{
+		{"multi-byte shorter", "café", 10},
+		{"multi-byte longer", "café résumé", 5},
+		{"emoji shorter", "hello 🚀", 10},
+		{"emoji longer", "hello 🚀 world", 12},
+		{"CJK shorter", "日本語テスト", 10},
+		{"CJK longer", "日本語テスト文章", 8},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncateCell(tt.s, tt.width)
+			sw := xansi.StringWidth(got)
+			if sw > tt.width {
+				t.Errorf("truncateCell(%q, %d) = %q has display width %d, exceeds max %d", tt.s, tt.width, got, sw, tt.width)
+			}
+			if !strings.Contains(got, "\u2026") && xansi.StringWidth(tt.s) > tt.width {
+				t.Errorf("truncateCell(%q, %d) = %q should contain ellipsis for truncation", tt.s, tt.width, got)
+			}
+		})
 	}
 }

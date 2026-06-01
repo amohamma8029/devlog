@@ -7,9 +7,10 @@ import (
 	internalgit "github.com/amo/devlog/internal/git"
 	"github.com/amo/devlog/internal/handoff"
 	"github.com/amo/devlog/internal/session"
-	"github.com/amo/devlog/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	xansi "github.com/charmbracelet/x/ansi"
+	"github.com/amo/devlog/internal/store"
 )
 
 type SessionsLoadedMsg struct {
@@ -350,18 +351,26 @@ func (m SessionListModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func padCell(s string, width int) string {
+	sw := xansi.StringWidth(s)
+	if sw >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-sw)
+}
+
 func (m SessionListModel) renderHeader() string {
 	w := m.cw
 	cells := []string{
-		fmt.Sprintf("%-*s", w.id, "TITLE"),
-		fmt.Sprintf("%-*s", w.branch, "BRANCH"),
+		padCell("TITLE", w.id),
+		padCell("BRANCH", w.branch),
 	}
 	if w.showAuthor {
-		cells = append(cells, fmt.Sprintf("%-*s", w.author, "AUTHOR"))
+		cells = append(cells, padCell("AUTHOR", w.author))
 	}
 	cells = append(cells,
-		fmt.Sprintf("%-*s", w.started, "STARTED"),
-		fmt.Sprintf("%-*s", w.status, "STATUS"),
+		padCell("STARTED", w.started),
+		padCell("STATUS", w.status),
 	)
 	return headerStyle.Render(strings.Join(cells, colSep))
 }
@@ -380,15 +389,15 @@ func (m SessionListModel) renderRow(s store.SessionRecord) string {
 		title = s.ID
 	}
 	cells := []string{
-		fmt.Sprintf("%-*s", w.id, truncateCell(title, w.id)),
-		fmt.Sprintf("%-*s", w.branch, truncateCell(s.Branch, w.branch)),
+		padCell(truncateCell(title, w.id), w.id),
+		padCell(truncateCell(s.Branch, w.branch), w.branch),
 	}
 	if w.showAuthor {
-		cells = append(cells, fmt.Sprintf("%-*s", w.author, truncateCell(s.Author, w.author)))
+		cells = append(cells, padCell(truncateCell(s.Author, w.author), w.author))
 	}
 	cells = append(cells,
-		fmt.Sprintf("%-*s", w.started, truncateCell(s.Started.Format("2006-01-02T15:04:05Z"), w.started)),
-		fmt.Sprintf("%-*s", w.status, style.Render(status)),
+		padCell(truncateCell(s.Started.Format("2006-01-02T15:04:05Z"), w.started), w.started),
+		padCell(style.Render(status), w.status),
 	)
 	return strings.Join(cells, colSep)
 }
@@ -406,10 +415,15 @@ func (m SessionListModel) renderFilterBar() string {
 }
 
 func truncateCell(s string, width int) string {
-	if len(s) <= width {
+	if xansi.StringWidth(s) <= width {
 		return s
 	}
-	return s[:width-1] + "\u2026"
+	ellipsis := "\u2026"
+	maxContent := width - xansi.StringWidth(ellipsis)
+	if maxContent < 0 {
+		maxContent = 0
+	}
+	return xansi.Truncate(s, maxContent, "") + ellipsis
 }
 
 func (m *SessionListModel) applyFilter() {

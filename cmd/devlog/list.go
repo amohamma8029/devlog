@@ -7,6 +7,7 @@ import (
 
 	internalgit "github.com/amo/devlog/internal/git"
 	"github.com/amo/devlog/internal/store"
+	"github.com/mattn/go-runewidth"
 	"github.com/spf13/cobra"
 )
 
@@ -62,6 +63,14 @@ func filterListSessions(records []store.SessionRecord, activeOnly bool, branch s
 	return filtered
 }
 
+func padField(s string, width int) string {
+	w := runewidth.StringWidth(s)
+	if w >= width {
+		return s
+	}
+	return s + strings.Repeat(" ", width-w)
+}
+
 func renderListTable(records []store.SessionRecord, root string, now time.Time) string {
 	if len(records) == 0 {
 		return "No sessions found.\n"
@@ -74,7 +83,11 @@ func renderListTable(records []store.SessionRecord, root string, now time.Time) 
 
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("%-22s  %-20s  %-7s  %-20s  %s\n", "TITLE", "BRANCH", "STATUS", "STARTED", "DURATION"))
+	b.WriteString(padField("TITLE", 22) + "  " +
+		padField("BRANCH", 20) + "  " +
+		padField("STATUS", 7) + "  " +
+		padField("STARTED", 20) + "  " +
+		"DURATION\n")
 
 	for _, r := range records {
 		status := "active"
@@ -82,14 +95,12 @@ func renderListTable(records []store.SessionRecord, root string, now time.Time) 
 			status = "closed"
 		}
 
-		b.WriteString(fmt.Sprintf(
-			"%-22s  %-20s  %-7s  %-20s  %s\n",
-			truncateListField(listTitle(s, r.ID), 22),
-			truncateListField(r.Branch, 20),
-			status,
-			r.Started.Format(time.RFC3339),
-			computeListDuration(r, root, now),
-		))
+		b.WriteString(
+			padField(truncateListField(listTitle(s, r.ID), 22), 22) + "  " +
+				padField(truncateListField(r.Branch, 20), 20) + "  " +
+				padField(status, 7) + "  " +
+				padField(r.Started.Format(time.RFC3339), 20) + "  " +
+				computeListDuration(r, root, now) + "\n")
 	}
 
 	return b.String()
@@ -108,10 +119,10 @@ func listTitle(s *store.Store, sessionID string) string {
 }
 
 func truncateListField(s string, max int) string {
-	if len(s) <= max {
+	if runewidth.StringWidth(s) <= max {
 		return s
 	}
-	return s[:max-1] + "\u2026"
+	return runewidth.Truncate(s, max, "\u2026")
 }
 
 func computeListDuration(sr store.SessionRecord, root string, now time.Time) string {
