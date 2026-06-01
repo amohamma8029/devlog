@@ -212,6 +212,70 @@ func TestDiffSinceBeforeFirstCommit(t *testing.T) {
 	}
 }
 
+func TestDiffSinceTrackedModifiedSecretEnv(t *testing.T) {
+	requireGit(t)
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	runGitIn(t, dir, "init")
+	runGitIn(t, dir, "checkout", "-b", "feat/test")
+
+	writeTestFile(t, dir, ".env", "SECRET_KEY=old-value\n")
+	writeTestFile(t, dir, "src/main.go", "package main\n")
+	commitWithDate(t, dir, "2000-01-01T00:00:00Z", "initial commit")
+
+	sessionStart := time.Now().UTC()
+
+	time.Sleep(1500 * time.Millisecond)
+
+	writeTestFile(t, dir, ".env", "SECRET_KEY=new-leaked-value\n")
+	writeTestFile(t, dir, "src/main.go", "package main\nfunc main() {}\n")
+
+	diff, err := DiffSince(sessionStart)
+	if err != nil {
+		t.Fatalf("DiffSince failed: %v", err)
+	}
+
+	if !strings.Contains(diff, "src/main.go") {
+		t.Errorf("expected diff to contain src/main.go, got:\n%s", diff)
+	}
+	if strings.Contains(diff, ".env") || strings.Contains(diff, "SECRET_KEY") || strings.Contains(diff, "old-value") || strings.Contains(diff, "new-leaked-value") {
+		t.Errorf("tracked .env modification should be excluded from diff, got:\n%s", diff)
+	}
+}
+
+func TestDiffSinceTrackedModifiedSecretPem(t *testing.T) {
+	requireGit(t)
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	runGitIn(t, dir, "init")
+	runGitIn(t, dir, "checkout", "-b", "feat/test")
+
+	writeTestFile(t, dir, "certs/server.pem", "-----BEGIN CERTIFICATE-----\nold\n-----END CERTIFICATE-----\n")
+	writeTestFile(t, dir, "src/main.go", "package main\n")
+	commitWithDate(t, dir, "2000-01-01T00:00:00Z", "initial commit")
+
+	sessionStart := time.Now().UTC()
+
+	time.Sleep(1500 * time.Millisecond)
+
+	writeTestFile(t, dir, "certs/server.pem", "-----BEGIN CERTIFICATE-----\nleaked\n-----END CERTIFICATE-----\n")
+	writeTestFile(t, dir, "src/main.go", "package main\nfunc main() {}\n")
+
+	diff, err := DiffSince(sessionStart)
+	if err != nil {
+		t.Fatalf("DiffSince failed: %v", err)
+	}
+
+	if !strings.Contains(diff, "src/main.go") {
+		t.Errorf("expected diff to contain src/main.go, got:\n%s", diff)
+	}
+	if strings.Contains(diff, "server.pem") || strings.Contains(diff, "CERTIFICATE") {
+		t.Errorf("tracked .pem modification should be excluded from diff, got:\n%s", diff)
+	}
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 func runGitIn(t *testing.T, dir string, args ...string) {
