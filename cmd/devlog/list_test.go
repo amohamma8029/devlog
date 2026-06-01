@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/amo/devlog/internal/store"
 )
@@ -307,4 +308,51 @@ func executeListCommand(args ...string) (string, error) {
 
 	err := cmd.Execute()
 	return out.String(), err
+}
+
+func TestTruncateListFieldASCII(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		max  int
+		want string
+	}{
+		{"shorter than max", "hello", 10, "hello"},
+		{"exactly max", "hello", 5, "hello"},
+		{"longer than max", "hello world", 6, "hello\u2026"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncateListField(tt.s, tt.max)
+			if got != tt.want {
+				t.Errorf("truncateListField(%q, %d) = %q, want %q", tt.s, tt.max, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTruncateListFieldUnicode(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		max  int
+	}{
+		{"multi-byte shorter than max in runes", "café", 10},
+		{"multi-byte longer than max in runes", "café résumé", 5},
+		{"emoji shorter", "hello 🚀", 10},
+		{"emoji longer", "hello 🚀 world", 8},
+		{"CJK shorter", "日本語テスト", 10},
+		{"CJK longer", "日本語テスト文章", 4},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncateListField(tt.s, tt.max)
+			if !utf8.ValidString(got) {
+				t.Errorf("truncateListField(%q, %d) = %q is not valid UTF-8", tt.s, tt.max, got)
+			}
+			if utf8.RuneCountInString(got) > tt.max {
+				t.Errorf("truncateListField(%q, %d) = %q has %d runes, exceeds max %d", tt.s, tt.max, got, utf8.RuneCountInString(got), tt.max)
+			}
+		})
+	}
 }
