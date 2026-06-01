@@ -509,6 +509,13 @@ func (m Model) handleSaveToFile() (tea.Model, tea.Cmd) {
 	root := m.Root
 	savePath := filepath.Join(root, ".devlog", "handoffs", name+".md")
 
+	if _, err := os.Stat(savePath); err == nil {
+		m.ErrorMessage = "Handoff file already exists: " + name + ".md"
+		m.SavePromptOpen = false
+		m.SaveInput = ""
+		return m, nil
+	}
+
 	return m, func() tea.Msg {
 		dir := filepath.Dir(savePath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
