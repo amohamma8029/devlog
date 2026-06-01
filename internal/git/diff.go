@@ -50,12 +50,12 @@ func DiffSince(started time.Time) (string, error) {
 
 	result := strings.Join(parts, "\n")
 	result = strings.TrimSpace(result)
+	result = stripDevlogEntries(result)
+	result = stripSecretEntries(result)
 
 	if hasMergeConflicts() {
 		result = "WARNING: Working tree has merge conflicts / unmerged files.\n" + result
 	}
-
-	result = stripDevlogEntries(result)
 
 	return result, nil
 }
@@ -145,6 +145,22 @@ func diffUntrackedFiles() (string, error) {
 	return strings.TrimSpace(diffOut.String()), nil
 }
 
+func isSecretPath(path string) bool {
+	name := strings.ToLower(filepath.Base(path))
+	if name == ".env" || strings.HasPrefix(name, ".env.") || name == "id_rsa" || name == "id_ed25519" {
+		return true
+	}
+	if strings.Contains(name, "secret") || strings.Contains(name, "token") || strings.Contains(name, "credential") || strings.Contains(name, "password") || strings.Contains(name, "private") {
+		return true
+	}
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".pem", ".key", ".p12", ".pfx", ".crt", ".cer":
+		return true
+	}
+	return false
+}
+
 func filterDevlogAndBinary(files []string) []string {
 	var result []string
 	for _, f := range files {
@@ -155,17 +171,11 @@ func filterDevlogAndBinary(files []string) []string {
 		if strings.HasPrefix(f, ".devlog/") || f == ".devlog" {
 			continue
 		}
-		name := strings.ToLower(filepath.Base(f))
-		if name == ".env" || strings.HasPrefix(name, ".env.") || name == "id_rsa" || name == "id_ed25519" {
-			continue
-		}
-		if strings.Contains(name, "secret") || strings.Contains(name, "token") || strings.Contains(name, "credential") || strings.Contains(name, "password") || strings.Contains(name, "private") {
+		if isSecretPath(f) {
 			continue
 		}
 		ext := strings.ToLower(filepath.Ext(f))
 		switch ext {
-		case ".pem", ".key", ".p12", ".pfx", ".crt", ".cer":
-			continue
 		case ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp":
 			continue
 		case ".exe", ".dll", ".so", ".dylib", ".bin":
@@ -202,6 +212,42 @@ func stripDevlogEntries(diff string) string {
 		filtered = append(filtered, section)
 	}
 	return strings.TrimSpace(strings.Join(filtered, ""))
+}
+
+func stripSecretEntries(diff string) string {
+	if diff == "" {
+		return diff
+	}
+
+	sections := splitDiffSections(diff)
+	var filtered []string
+	for _, section := range sections {
+		path := extractDiffPath(section)
+		if isSecretPath(path) {
+			continue
+		}
+		filtered = append(filtered, section)
+	}
+	return strings.TrimSpace(strings.Join(filtered, ""))
+}
+
+func extractDiffPath(section string) string {
+	idx := strings.IndexByte(section, '\n')
+	if idx < 0 {
+		idx = len(section)
+	}
+	firstLine := section[:idx]
+
+	aIdx := strings.Index(firstLine, " a/")
+	if aIdx < 0 {
+		return ""
+	}
+	afterA := firstLine[aIdx+3:]
+	bIdx := strings.Index(afterA, " b/")
+	if bIdx < 0 {
+		return afterA
+	}
+	return afterA[:bIdx]
 }
 
 func splitDiffSections(diff string) []string {
