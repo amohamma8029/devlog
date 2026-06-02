@@ -151,11 +151,15 @@ func diffUntrackedFiles() (string, error) {
 
 func isSecretPath(path string) bool {
 	name := strings.ToLower(filepath.Base(path))
-	if name == ".env" || strings.HasPrefix(name, ".env.") || name == "id_rsa" || name == "id_ed25519" {
+	if isSecretPathComponent(name) {
 		return true
 	}
-	if strings.Contains(name, "secret") || strings.Contains(name, "token") || strings.Contains(name, "credential") || strings.Contains(name, "password") || strings.Contains(name, "private") {
-		return true
+	for _, component := range strings.FieldsFunc(path, func(r rune) bool {
+		return r == '/' || r == '\\'
+	}) {
+		if isSecretPathComponent(strings.ToLower(component)) {
+			return true
+		}
 	}
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
@@ -163,6 +167,13 @@ func isSecretPath(path string) bool {
 		return true
 	}
 	return false
+}
+
+func isSecretPathComponent(name string) bool {
+	if name == ".env" || strings.HasPrefix(name, ".env.") || name == "id_rsa" || name == "id_ed25519" {
+		return true
+	}
+	return strings.Contains(name, "secret") || strings.Contains(name, "token") || strings.Contains(name, "credential") || strings.Contains(name, "password") || strings.Contains(name, "private")
 }
 
 func filterDevlogAndBinary(files []string) []string {
