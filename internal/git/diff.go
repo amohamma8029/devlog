@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+const emptyTreeHash = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
 // DiffSince returns a combined git diff string showing all changes from the
 // most recent commit at or before started to the current working tree.
 // It includes committed changes, uncommitted changes (staged and unstaged),
@@ -31,12 +33,14 @@ func DiffSince(started time.Time) (string, error) {
 			return "", fmt.Errorf("DiffSince: diff from %s: %s", shortHash(commit), commandFailure(stderr, err))
 		}
 	} else {
-		// No commits before session start — capture uncommitted changes.
-		diff, stderr, err := runGit("diff", "HEAD")
+		// No commits before session start — diff against the empty tree
+		// to capture both committed and uncommitted changes. git diff HEAD
+		// would miss commits that happened after session start.
+		diff, stderr, err := runGit("diff", emptyTreeHash)
 		if diff != "" {
 			parts = append(parts, diff)
 		} else if err != nil && !isDiffExitCode(stderr, err) {
-			return "", fmt.Errorf("DiffSince: diff HEAD: %s", commandFailure(stderr, err))
+			return "", fmt.Errorf("DiffSince: diff against empty tree: %s", commandFailure(stderr, err))
 		}
 	}
 

@@ -276,6 +276,31 @@ func TestDiffSinceTrackedModifiedSecretPem(t *testing.T) {
 	}
 }
 
+func TestDiffSinceCommitAfterStartInEmptyRepo(t *testing.T) {
+	requireGit(t)
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	runGitIn(t, dir, "init")
+
+	sessionStart := time.Now().UTC()
+
+	time.Sleep(1500 * time.Millisecond)
+
+	writeTestFile(t, dir, "src/app.go", "package main\nfunc main() {}\n")
+	runGitIn(t, dir, "add", "src/app.go")
+	runGitIn(t, dir, "commit", "-m", "first commit after session start")
+
+	diff, err := DiffSince(sessionStart)
+	if err != nil {
+		t.Fatalf("DiffSince failed: %v", err)
+	}
+
+	if !strings.Contains(diff, "src/app.go") {
+		t.Errorf("expected diff to contain src/app.go committed after session start, got:\n%s", diff)
+	}
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 func runGitIn(t *testing.T, dir string, args ...string) {
