@@ -301,6 +301,36 @@ func TestDiffSinceCommitAfterStartInEmptyRepo(t *testing.T) {
 	}
 }
 
+func TestDiffSinceTrackedModifiedSecretDirectory(t *testing.T) {
+	requireGit(t)
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	runGitIn(t, dir, "init")
+	runGitIn(t, dir, "checkout", "-b", "feat/test")
+
+	writeTestFile(t, dir, "secrets/config.yml", "api_key: old-directory-secret\n")
+	writeTestFile(t, dir, "src/main.go", "package main\n")
+	commitWithDate(t, dir, "2000-01-01T00:00:00Z", "initial commit")
+
+	sessionStart := time.Now().UTC()
+
+	writeTestFile(t, dir, "secrets/config.yml", "api_key: new-directory-secret\n")
+	writeTestFile(t, dir, "src/main.go", "package main\nfunc main() {}\n")
+
+	diff, err := DiffSince(sessionStart)
+	if err != nil {
+		t.Fatalf("DiffSince failed: %v", err)
+	}
+
+	if !strings.Contains(diff, "src/main.go") {
+		t.Errorf("expected diff to contain src/main.go, got:\n%s", diff)
+	}
+	if strings.Contains(diff, "secrets/config.yml") || strings.Contains(diff, "old-directory-secret") || strings.Contains(diff, "new-directory-secret") {
+		t.Errorf("tracked file under secret-bearing directory should be excluded from diff, got:\n%s", diff)
+	}
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 func runGitIn(t *testing.T, dir string, args ...string) {
