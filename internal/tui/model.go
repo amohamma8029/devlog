@@ -252,6 +252,12 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	if m.CurrentView == SessionList && m.SessionList.filterMode {
+		sl, cmd := m.SessionList.Update(msg)
+		m.SessionList = sl.(SessionListModel)
+		return m, cmd
+	}
+
 	if key == "esc" {
 		if m.CurrentView == HandoffPreview && m.SavePromptOpen {
 			m.SavePromptOpen = false
