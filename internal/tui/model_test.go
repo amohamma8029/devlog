@@ -90,6 +90,79 @@ func TestModelSessionListBackKeysReturnToNoSession(t *testing.T) {
 	}
 }
 
+func TestModelSessionListFilterReceivesQ(t *testing.T) {
+	s, root := newTestStore(t)
+	writeTestSession(t, s, "2026-01-15T140000Z", "feat/a", "Alice", "quality pass", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	m := NewModel(s, root)
+	m.CurrentView = SessionList
+	m.SessionList = loadTestModel(t, s, root)
+
+	updatedModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model after /, got %T", updatedModel)
+	}
+	if updated.CurrentView != SessionList {
+		t.Fatalf("CurrentView after / = %v, want SessionList", updated.CurrentView)
+	}
+	if !updated.SessionList.filterMode {
+		t.Fatal("expected session list filter mode after /")
+	}
+
+	updatedModel, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if cmd != nil {
+		t.Fatal("expected q in filter mode not to return a command")
+	}
+	updated, ok = updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model after q, got %T", updatedModel)
+	}
+	if updated.CurrentView != SessionList {
+		t.Fatalf("CurrentView after filter q = %v, want SessionList", updated.CurrentView)
+	}
+	if updated.SessionList.filterText != "q" {
+		t.Fatalf("filterText after q = %q, want %q", updated.SessionList.filterText, "q")
+	}
+}
+
+func TestModelSessionListArrowNavigation(t *testing.T) {
+	s, root := newTestStore(t)
+	writeTestSession(t, s, "2026-01-15T140000Z", "feat/a", "Alice", "auth", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+	writeTestSession(t, s, "2026-02-20T090000Z", "feat/b", "Bob", "tests", time.Date(2026, 2, 20, 9, 0, 0, 0, time.UTC))
+
+	m := NewModel(s, root)
+	m.CurrentView = SessionList
+	m.SessionList = loadTestModel(t, s, root)
+
+	updatedModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if cmd != nil {
+		t.Fatal("expected down arrow not to return a command")
+	}
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model after down, got %T", updatedModel)
+	}
+	if updated.CurrentView != SessionList {
+		t.Fatalf("CurrentView after down = %v, want SessionList", updated.CurrentView)
+	}
+	if updated.SessionList.cursor != 1 {
+		t.Fatalf("cursor after down = %d, want 1", updated.SessionList.cursor)
+	}
+
+	updatedModel, cmd = updated.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if cmd != nil {
+		t.Fatal("expected up arrow not to return a command")
+	}
+	updated, ok = updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model after up, got %T", updatedModel)
+	}
+	if updated.SessionList.cursor != 0 {
+		t.Fatalf("cursor after up = %d, want 0", updated.SessionList.cursor)
+	}
+}
+
 func TestModelUpdateQuitOnCtrlC(t *testing.T) {
 	s := &store.Store{}
 	m := NewModel(s, "/tmp")
