@@ -233,8 +233,7 @@ func stripSecretEntries(diff string) string {
 	sections := splitDiffSections(diff)
 	var filtered []string
 	for _, section := range sections {
-		path := extractDiffPath(section)
-		if isSecretPath(path) {
+		if hasSecretDiffPath(section) {
 			continue
 		}
 		filtered = append(filtered, section)
@@ -242,23 +241,47 @@ func stripSecretEntries(diff string) string {
 	return strings.TrimSpace(strings.Join(filtered, ""))
 }
 
-func extractDiffPath(section string) string {
+func hasSecretDiffPath(section string) bool {
+	for _, path := range extractDiffPaths(section) {
+		if isSecretPath(path) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractDiffPaths(section string) []string {
 	idx := strings.IndexByte(section, '\n')
 	if idx < 0 {
 		idx = len(section)
 	}
 	firstLine := section[:idx]
+	paths := extractDiffHeaderPaths(firstLine)
 
+	for _, line := range strings.Split(section, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if from, ok := strings.CutPrefix(trimmed, "rename from "); ok {
+			paths = append(paths, from)
+		}
+		if to, ok := strings.CutPrefix(trimmed, "rename to "); ok {
+			paths = append(paths, to)
+		}
+	}
+
+	return paths
+}
+
+func extractDiffHeaderPaths(firstLine string) []string {
 	aIdx := strings.Index(firstLine, " a/")
 	if aIdx < 0 {
-		return ""
+		return nil
 	}
 	afterA := firstLine[aIdx+3:]
 	bIdx := strings.Index(afterA, " b/")
 	if bIdx < 0 {
-		return afterA
+		return []string{afterA}
 	}
-	return afterA[:bIdx]
+	return []string{afterA[:bIdx], afterA[bIdx+3:]}
 }
 
 func splitDiffSections(diff string) []string {
