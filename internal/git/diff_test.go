@@ -331,6 +331,73 @@ func TestDiffSinceTrackedModifiedSecretDirectory(t *testing.T) {
 	}
 }
 
+func TestDiffSinceRenameSafeToSecretPath(t *testing.T) {
+	requireGit(t)
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	runGitIn(t, dir, "init")
+	runGitIn(t, dir, "checkout", "-b", "feat/test")
+	runGitIn(t, dir, "config", "diff.renames", "true")
+
+	writeTestFile(t, dir, "config.yml", "api_key: safe-name-old\nendpoint: example\nmode: test\n")
+	writeTestFile(t, dir, "src/main.go", "package main\n")
+	commitWithDate(t, dir, "2000-01-01T00:00:00Z", "initial commit")
+
+	sessionStart := time.Now().UTC()
+
+	if err := os.MkdirAll(filepath.Join(dir, "secrets"), 0755); err != nil {
+		t.Fatalf("mkdir secrets failed: %v", err)
+	}
+	runGitIn(t, dir, "mv", "config.yml", "secrets/config.yml")
+	writeTestFile(t, dir, "secrets/config.yml", "api_key: safe-to-secret-leak\nendpoint: example\nmode: test\n")
+	writeTestFile(t, dir, "src/main.go", "package main\nfunc main() {}\n")
+
+	diff, err := DiffSince(sessionStart)
+	if err != nil {
+		t.Fatalf("DiffSince failed: %v", err)
+	}
+
+	if !strings.Contains(diff, "src/main.go") {
+		t.Errorf("expected diff to contain src/main.go, got:\n%s", diff)
+	}
+	if strings.Contains(diff, "config.yml") || strings.Contains(diff, "safe-name-old") || strings.Contains(diff, "safe-to-secret-leak") {
+		t.Errorf("safe-to-secret rename should be excluded from diff, got:\n%s", diff)
+	}
+}
+
+func TestDiffSinceRenameSecretToSafePath(t *testing.T) {
+	requireGit(t)
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	runGitIn(t, dir, "init")
+	runGitIn(t, dir, "checkout", "-b", "feat/test")
+	runGitIn(t, dir, "config", "diff.renames", "true")
+
+	writeTestFile(t, dir, "secrets/config.yml", "api_key: secret-name-old\nendpoint: example\nmode: test\n")
+	writeTestFile(t, dir, "src/main.go", "package main\n")
+	commitWithDate(t, dir, "2000-01-01T00:00:00Z", "initial commit")
+
+	sessionStart := time.Now().UTC()
+
+	runGitIn(t, dir, "mv", "secrets/config.yml", "config.yml")
+	writeTestFile(t, dir, "config.yml", "api_key: secret-to-safe-leak\nendpoint: example\nmode: test\n")
+	writeTestFile(t, dir, "src/main.go", "package main\nfunc main() {}\n")
+
+	diff, err := DiffSince(sessionStart)
+	if err != nil {
+		t.Fatalf("DiffSince failed: %v", err)
+	}
+
+	if !strings.Contains(diff, "src/main.go") {
+		t.Errorf("expected diff to contain src/main.go, got:\n%s", diff)
+	}
+	if strings.Contains(diff, "config.yml") || strings.Contains(diff, "secret-name-old") || strings.Contains(diff, "secret-to-safe-leak") {
+		t.Errorf("secret-to-safe rename should be excluded from diff, got:\n%s", diff)
+	}
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 func runGitIn(t *testing.T, dir string, args ...string) {
