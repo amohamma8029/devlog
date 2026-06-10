@@ -367,3 +367,224 @@ func TestModelViewIncludesPaletteWhenOpen(t *testing.T) {
 		t.Errorf("View() does not contain palette input: %s", v)
 	}
 }
+
+func TestHandleCommandNoteOnClosedSessionSetsError(t *testing.T) {
+	s, root := newTestStore(t)
+	const closedID = "2026-01-15T140000Z"
+	writeTestSession(t, s, closedID, "feat/old", "Alice", "Old work", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+	closeTestSession(t, s, closedID)
+
+	rec, err := s.GetSession(closedID)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+
+	p := NewCommandPalette()
+	m := Model{
+		Store:         s,
+		Root:          root,
+		ActiveSession: &rec,
+		Palette:       &p,
+	}
+
+	bodyBefore, err := s.ReadSessionBody(closedID)
+	if err != nil {
+		t.Fatalf("ReadSessionBody failed: %v", err)
+	}
+
+	updatedModel, cmd := m.Update(CommandExecutedMsg{Input: "/note should not append"})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if cmd != nil {
+		t.Fatal("expected no command for /note on closed session")
+	}
+	if updated.ErrorMessage == "" {
+		t.Fatal("expected error message for /note on closed session")
+	}
+
+	bodyAfter, err := s.ReadSessionBody(closedID)
+	if err != nil {
+		t.Fatalf("ReadSessionBody after failed: %v", err)
+	}
+	if bodyAfter != bodyBefore {
+		t.Fatal("closed session body was modified by /note")
+	}
+}
+
+func TestHandleCommandBlockOnClosedSessionSetsError(t *testing.T) {
+	s, root := newTestStore(t)
+	const closedID = "2026-01-15T140000Z"
+	writeTestSession(t, s, closedID, "feat/old", "Alice", "Old work", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+	closeTestSession(t, s, closedID)
+
+	rec, err := s.GetSession(closedID)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+
+	p := NewCommandPalette()
+	m := Model{
+		Store:         s,
+		Root:          root,
+		ActiveSession: &rec,
+		Palette:       &p,
+	}
+
+	updatedModel, cmd := m.Update(CommandExecutedMsg{Input: "/block should not append"})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if cmd != nil {
+		t.Fatal("expected no command for /block on closed session")
+	}
+	if updated.ErrorMessage == "" {
+		t.Fatal("expected error message for /block on closed session")
+	}
+}
+
+func TestHandleCommandCloseOnClosedSessionSetsError(t *testing.T) {
+	s, root := newTestStore(t)
+	const closedID = "2026-01-15T140000Z"
+	writeTestSession(t, s, closedID, "feat/old", "Alice", "Old work", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+	closeTestSession(t, s, closedID)
+
+	rec, err := s.GetSession(closedID)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+
+	p := NewCommandPalette()
+	m := Model{
+		Store:         s,
+		Root:          root,
+		ActiveSession: &rec,
+		Palette:       &p,
+	}
+
+	updatedModel, cmd := m.Update(CommandExecutedMsg{Input: "/close"})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if cmd != nil {
+		t.Fatal("expected no command for /close on closed session")
+	}
+	if updated.ErrorMessage == "" {
+		t.Fatal("expected error message for /close on closed session")
+	}
+}
+
+func TestHandleCommandNoteWithNoSessionSetsError(t *testing.T) {
+	p := NewCommandPalette()
+	m := Model{
+		Palette: &p,
+	}
+
+	updatedModel, cmd := m.Update(CommandExecutedMsg{Input: "/note orphan note"})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if cmd != nil {
+		t.Fatal("expected no command for /note with no session")
+	}
+	if updated.ErrorMessage == "" {
+		t.Fatal("expected error message for /note with no session")
+	}
+}
+
+func TestHandleCommandNoteDoesNotMutateGlobalActiveWhenViewingClosed(t *testing.T) {
+	s, root := newTestStore(t)
+	const activeID = "2026-02-20T090000Z"
+	const closedID = "2026-01-15T140000Z"
+
+	writeTestSession(t, s, closedID, "feat/old", "Alice", "Old work", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+	closeTestSession(t, s, closedID)
+
+	writeTestSession(t, s, activeID, "feat/new", "Alice", "Current work", time.Date(2026, 2, 20, 9, 0, 0, 0, time.UTC))
+
+	closedRec, err := s.GetSession(closedID)
+	if err != nil {
+		t.Fatalf("GetSession closed failed: %v", err)
+	}
+
+	activeBodyBefore, err := s.ReadSessionBody(activeID)
+	if err != nil {
+		t.Fatalf("ReadSessionBody active failed: %v", err)
+	}
+
+	p := NewCommandPalette()
+	m := Model{
+		Store:         s,
+		Root:          root,
+		ActiveSession: &closedRec,
+		Palette:       &p,
+	}
+
+	updatedModel, cmd := m.Update(CommandExecutedMsg{Input: "/note stray note"})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if cmd != nil {
+		t.Fatal("expected no command")
+	}
+	if updated.ErrorMessage == "" {
+		t.Fatal("expected error message")
+	}
+
+	activeBodyAfter, err := s.ReadSessionBody(activeID)
+	if err != nil {
+		t.Fatalf("ReadSessionBody active after failed: %v", err)
+	}
+	if activeBodyAfter != activeBodyBefore {
+		t.Fatal("global active session was mutated while viewing a closed session")
+	}
+}
+
+func TestHandleCommandNoteAppendsToDisplayedOpenSession(t *testing.T) {
+	s, root := newTestStore(t)
+	const openID = "2026-02-20T090000Z"
+	writeTestSession(t, s, openID, "feat/new", "Alice", "Current work", time.Date(2026, 2, 20, 9, 0, 0, 0, time.UTC))
+
+	rec, err := s.GetSession(openID)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+
+	p := NewCommandPalette()
+	m := Model{
+		Store:         s,
+		Root:          root,
+		ActiveSession: &rec,
+		Palette:       &p,
+	}
+
+	updatedModel, cmd := m.Update(CommandExecutedMsg{Input: "/note visible session note"})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if cmd == nil {
+		t.Fatal("expected command for /note on open session")
+	}
+	if updated.ErrorMessage != "" {
+		t.Fatalf("unexpected error: %s", updated.ErrorMessage)
+	}
+
+	msg := cmd()
+	if _, isErr := msg.(CommandErrorMsg); isErr {
+		t.Fatalf("command returned error: %v", msg)
+	}
+
+	body, err := s.ReadSessionBody(openID)
+	if err != nil {
+		t.Fatalf("ReadSessionBody failed: %v", err)
+	}
+	if !strings.Contains(body, "visible session note") {
+		t.Fatal("note was not appended to the displayed open session")
+	}
+}
