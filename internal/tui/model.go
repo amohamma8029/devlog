@@ -365,8 +365,17 @@ func (m Model) handleCommand(msg CommandExecutedMsg) (tea.Model, tea.Cmd) {
 			m.ErrorMessage = "Usage: /note <text>"
 			return m, nil
 		}
+		if m.ActiveSession == nil {
+			m.ErrorMessage = "No session displayed"
+			return m, nil
+		}
+		if m.ActiveSession.Closed {
+			m.ErrorMessage = "Cannot add notes to a closed session"
+			return m, nil
+		}
+		sessionID := m.ActiveSession.ID
 		return m, func() tea.Msg {
-			err := session.AppendEventToActiveSession(m.Store, "Note", args)
+			err := m.Store.AppendEvent(sessionID, "Note", args)
 			if err != nil {
 				return CommandErrorMsg{Error: err}
 			}
@@ -378,8 +387,17 @@ func (m Model) handleCommand(msg CommandExecutedMsg) (tea.Model, tea.Cmd) {
 			m.ErrorMessage = "Usage: /block <text>"
 			return m, nil
 		}
+		if m.ActiveSession == nil {
+			m.ErrorMessage = "No session displayed"
+			return m, nil
+		}
+		if m.ActiveSession.Closed {
+			m.ErrorMessage = "Cannot add blockers to a closed session"
+			return m, nil
+		}
+		sessionID := m.ActiveSession.ID
 		return m, func() tea.Msg {
-			err := session.AppendEventToActiveSession(m.Store, "Blocker", args)
+			err := m.Store.AppendEvent(sessionID, "Blocker", args)
 			if err != nil {
 				return CommandErrorMsg{Error: err}
 			}
@@ -387,9 +405,18 @@ func (m Model) handleCommand(msg CommandExecutedMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "/close":
+		if m.ActiveSession == nil {
+			m.ErrorMessage = "No session displayed"
+			return m, nil
+		}
+		if m.ActiveSession.Closed {
+			m.ErrorMessage = "Session is already closed"
+			return m, nil
+		}
+		sessionID := m.ActiveSession.ID
 		return m, tea.Sequence(
 			func() tea.Msg {
-				err := session.CloseActiveSession(m.Store)
+				err := m.Store.CloseSession(sessionID)
 				if err != nil {
 					return CommandErrorMsg{Error: err}
 				}
