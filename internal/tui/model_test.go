@@ -588,3 +588,92 @@ func TestHandleCommandNoteAppendsToDisplayedOpenSession(t *testing.T) {
 		t.Fatal("note was not appended to the displayed open session")
 	}
 }
+
+func TestHandleViewKeyEscClosesHandoffSavePrompt(t *testing.T) {
+	s, root := newTestStore(t)
+	const sessionID = "2026-01-15T140000Z"
+	writeTestSession(t, s, sessionID, "feat/a", "Alice", "auth", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	m := NewModel(s, root)
+	m.CurrentView = HandoffPreview
+	m.SavePromptOpen = true
+	m.SaveInput = "test-file.md"
+	m.ActiveSession = &store.SessionRecord{
+		Session: store.Session{ID: sessionID, Author: "Alice", Branch: "feat/a"},
+	}
+
+	msg := tea.KeyMsg{Type: tea.KeyEsc}
+	updatedModel, cmd := m.Update(msg)
+	if cmd != nil {
+		t.Fatal("esc with save prompt open should not quit")
+	}
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if updated.SavePromptOpen {
+		t.Error("esc should close save prompt")
+	}
+	if updated.CurrentView != HandoffPreview {
+		t.Errorf("should stay on HandoffPreview, got %v", updated.CurrentView)
+	}
+}
+
+func TestHandleViewKeyQInHandoffSavePrompt(t *testing.T) {
+	s, root := newTestStore(t)
+	const sessionID = "2026-01-15T140000Z"
+	writeTestSession(t, s, sessionID, "feat/a", "Alice", "auth", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	m := NewModel(s, root)
+	m.CurrentView = HandoffPreview
+	m.SavePromptOpen = true
+	m.SaveInput = "file.md"
+	m.ActiveSession = &store.SessionRecord{
+		Session: store.Session{ID: sessionID, Author: "Alice", Branch: "feat/a"},
+	}
+
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+	updatedModel, cmd := m.Update(msg)
+	if cmd != nil {
+		t.Fatal("q with save prompt open should not navigate or quit")
+	}
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if !updated.SavePromptOpen {
+		t.Error("save prompt should stay open after typing q")
+	}
+	if !strings.Contains(updated.SaveInput, "q") {
+		t.Errorf("q should be appended to filename, got %q", updated.SaveInput)
+	}
+	if updated.CurrentView != HandoffPreview {
+		t.Errorf("should stay on HandoffPreview, got %v", updated.CurrentView)
+	}
+}
+
+func TestHandleViewKeyQNavigatesBackFromHandoffNoPrompt(t *testing.T) {
+	s, root := newTestStore(t)
+	const sessionID = "2026-01-15T140000Z"
+	writeTestSession(t, s, sessionID, "feat/a", "Alice", "auth", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	m := NewModel(s, root)
+	m.CurrentView = HandoffPreview
+	m.SavePromptOpen = false
+	m.ActiveSession = &store.SessionRecord{
+		Session: store.Session{ID: sessionID, Author: "Alice", Branch: "feat/a"},
+	}
+
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+	updatedModel, cmd := m.Update(msg)
+	if cmd != nil {
+		t.Fatal("q without save prompt should not quit")
+	}
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if updated.CurrentView != ActiveSession {
+		t.Errorf("should navigate to ActiveSession, got %v", updated.CurrentView)
+	}
+}
