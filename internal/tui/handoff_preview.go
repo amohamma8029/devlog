@@ -521,7 +521,18 @@ func (m Model) handleSaveToFile() (tea.Model, tea.Cmd) {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return HandoffSavedMsg{Path: savePath, Error: err}
 		}
-		if err := os.WriteFile(savePath, []byte(m.HandoffContent), 0644); err != nil {
+		f, err := os.OpenFile(savePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+		if err != nil {
+			if os.IsExist(err) {
+				return HandoffSavedMsg{Path: savePath, Error: fmt.Errorf("handoff file already exists: %s.md", name)}
+			}
+			return HandoffSavedMsg{Path: savePath, Error: err}
+		}
+		if _, err := f.WriteString(m.HandoffContent); err != nil {
+			f.Close()
+			return HandoffSavedMsg{Path: savePath, Error: err}
+		}
+		if err := f.Close(); err != nil {
 			return HandoffSavedMsg{Path: savePath, Error: err}
 		}
 		return HandoffSavedMsg{Path: savePath}
