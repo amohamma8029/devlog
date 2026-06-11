@@ -272,7 +272,9 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if key == "q" {
-		if m.CurrentView == HandoffPreview {
+		if m.CurrentView == HandoffPreview && m.SavePromptOpen {
+			// save prompt open: fall through to handleHandoffKey below
+		} else if m.CurrentView == HandoffPreview {
 			if m.ActiveSession != nil {
 				m.CurrentView = ActiveSession
 			} else {
@@ -280,12 +282,12 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, m.SessionList.Init()
 			}
 			return m, nil
-		}
-		if m.CurrentView == SessionList {
+		} else if m.CurrentView == SessionList {
 			m.CurrentView = ActiveSession
 			return m, nil
+		} else {
+			return m, tea.Quit
 		}
-		return m, tea.Quit
 	}
 
 	switch m.CurrentView {
