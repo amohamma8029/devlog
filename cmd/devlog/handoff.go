@@ -77,8 +77,19 @@ func newHandoffCommand() *cobra.Command {
 			if err := os.MkdirAll(dir, 0755); err != nil {
 				return fmt.Errorf("handoff: create output directory: %w", err)
 			}
-			if err := os.WriteFile(savePath, []byte(handoffText), 0644); err != nil {
+			f, err := os.OpenFile(savePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+			if err != nil {
+				if os.IsExist(err) {
+					return fmt.Errorf("handoff: file already exists: %s", savePath)
+				}
+				return fmt.Errorf("handoff: create output file: %w", err)
+			}
+			if _, err := f.WriteString(handoffText); err != nil {
+				f.Close()
 				return fmt.Errorf("handoff: write output file: %w", err)
+			}
+			if err := f.Close(); err != nil {
+				return fmt.Errorf("handoff: close output file: %w", err)
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Handoff written to %s\n", savePath)
 			return err
