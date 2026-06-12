@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
 )
 
 func TestCommandPaletteViewClosed(t *testing.T) {
@@ -23,6 +24,39 @@ func TestCommandPaletteViewOpen(t *testing.T) {
 	v := p.View()
 	if !strings.Contains(v, "hello") {
 		t.Errorf("View() = %q, should contain 'hello'", v)
+	}
+}
+
+func TestCommandPaletteViewConstrainsInputBoxWidth(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.CursorVisible = true
+	p.Input = strings.Repeat("a", 100) + "tail"
+
+	v := p.View()
+	lines := strings.Split(v, "\n")
+	if len(lines) < 4 {
+		t.Fatalf("palette view returned too few lines:\n%s", v)
+	}
+
+	menuWidth := xansi.StringWidth(lines[0])
+	inputLines := lines[len(lines)-3:]
+	for i, line := range inputLines {
+		if got := xansi.StringWidth(line); got != menuWidth {
+			t.Fatalf("input line %d width = %d, want %d: %q", i, got, menuWidth, line)
+		}
+	}
+
+	if got := strings.Count(inputLines[1], "│"); got != 2 {
+		t.Fatalf("palette input line has %d side borders, want 2: %q", got, inputLines[1])
+	}
+
+	content := xansi.Strip(inputLines[1])
+	if !strings.Contains(content, inputOverflowMarker) {
+		t.Fatalf("overflowed palette input should show overflow marker, got %q", content)
+	}
+	if !strings.Contains(content, "tail|") {
+		t.Fatalf("overflowed palette input should keep input tail and cursor visible, got %q", content)
 	}
 }
 

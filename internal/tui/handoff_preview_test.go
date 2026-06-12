@@ -43,6 +43,41 @@ func TestIsValidFilename(t *testing.T) {
 	}
 }
 
+func TestRenderSavePromptConstrainsBorderedWidth(t *testing.T) {
+	p := NewCommandPalette()
+	p.CursorVisible = true
+	m := Model{
+		Width:     40,
+		SaveInput: strings.Repeat("a", 100) + "tail",
+		Palette:   &p,
+	}
+
+	prompt := renderSavePrompt(m)
+	lines := strings.Split(prompt, "\n")
+	if len(lines) != 3 {
+		t.Fatalf("renderSavePrompt returned %d lines, want 3:\n%s", len(lines), prompt)
+	}
+
+	wantWidth := previewLineWidth(m.Width)
+	for i, line := range lines {
+		if got := xansi.StringWidth(line); got != wantWidth {
+			t.Fatalf("line %d width = %d, want %d: %q", i, got, wantWidth, line)
+		}
+	}
+
+	if got := strings.Count(lines[1], "│"); got != 2 {
+		t.Fatalf("prompt content line has %d side borders, want 2: %q", got, lines[1])
+	}
+
+	content := xansi.Strip(lines[1])
+	if !strings.Contains(content, inputOverflowMarker) {
+		t.Fatalf("overflowed prompt should show overflow marker, got %q", content)
+	}
+	if !strings.Contains(content, "tail|") {
+		t.Fatalf("overflowed prompt should keep input tail and cursor visible, got %q", content)
+	}
+}
+
 func TestHandleSaveToFileRejectsPathTraversal(t *testing.T) {
 	m := NewModel(nil, "/tmp/root")
 	m.SavePromptOpen = true
