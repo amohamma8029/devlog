@@ -280,6 +280,15 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.SaveInput = ""
 			return m, nil
 		}
+		if m.CurrentView == HandoffPreview {
+			if m.ActiveSession != nil {
+				m.CurrentView = ActiveSession
+			} else {
+				m.CurrentView = SessionList
+				return m, m.SessionList.Init()
+			}
+			return m, nil
+		}
 		if m.CurrentView == SessionList {
 			m.CurrentView = ActiveSession
 			return m, nil
