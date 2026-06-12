@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/amo/devlog/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/amo/devlog/internal/store"
 )
 
 func newTestStore(t *testing.T) (*store.Store, string) {
@@ -104,25 +104,53 @@ func TestSessionListCursorNavigation(t *testing.T) {
 	}
 }
 
-func TestSessionListJKNavigation(t *testing.T) {
+func TestSessionListPageNavigation(t *testing.T) {
 	s, root := newTestStore(t)
-	writeTestSession(t, s, "2026-01-15T140000Z", "feat/a", "Alice", "auth", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
-	writeTestSession(t, s, "2026-02-20T090000Z", "feat/b", "Bob", "tests", time.Date(2026, 2, 20, 9, 0, 0, 0, time.UTC))
+	writeTestSession(t, s, "2026-01-15T140000Z", "feat/a", "Alice", "one", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+	writeTestSession(t, s, "2026-01-15T140001Z", "feat/b", "Alice", "two", time.Date(2026, 1, 15, 14, 0, 1, 0, time.UTC))
+	writeTestSession(t, s, "2026-01-15T140002Z", "feat/c", "Alice", "three", time.Date(2026, 1, 15, 14, 0, 2, 0, time.UTC))
+	writeTestSession(t, s, "2026-01-15T140003Z", "feat/d", "Alice", "four", time.Date(2026, 1, 15, 14, 0, 3, 0, time.UTC))
+	writeTestSession(t, s, "2026-01-15T140004Z", "feat/e", "Alice", "five", time.Date(2026, 1, 15, 14, 0, 4, 0, time.UTC))
+	writeTestSession(t, s, "2026-01-15T140005Z", "feat/f", "Alice", "six", time.Date(2026, 1, 15, 14, 0, 5, 0, time.UTC))
 
-	m := loadTestModel(t, s, root)
-
-	j := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
-	updated, _ := m.Update(j)
+	m := NewSessionListModel(s, root, 80, 6)
+	updated, _ := m.Update(m.Init()())
 	m, _ = updated.(SessionListModel)
-	if m.cursor != 1 {
-		t.Fatalf("cursor should be 1 after j, got %d", m.cursor)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m, _ = updated.(SessionListModel)
+	if m.cursor != 3 {
+		t.Fatalf("cursor should be 3 after PgDn, got %d", m.cursor)
 	}
 
-	k := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
-	updated, _ = m.Update(k)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
 	m, _ = updated.(SessionListModel)
 	if m.cursor != 0 {
-		t.Fatalf("cursor should be 0 after k, got %d", m.cursor)
+		t.Fatalf("cursor should be 0 after PgUp, got %d", m.cursor)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	m, _ = updated.(SessionListModel)
+	if m.cursor != len(m.filtered)-1 {
+		t.Fatalf("cursor should jump to end, got %d", m.cursor)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyHome})
+	m, _ = updated.(SessionListModel)
+	if m.cursor != 0 {
+		t.Fatalf("cursor should jump home, got %d", m.cursor)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m, _ = updated.(SessionListModel)
+	if m.cursor != 0 {
+		t.Fatalf("j should not move cursor after removal, got %d", m.cursor)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	m, _ = updated.(SessionListModel)
+	if m.cursor != 0 {
+		t.Fatalf("k should not move cursor after removal, got %d", m.cursor)
 	}
 }
 
