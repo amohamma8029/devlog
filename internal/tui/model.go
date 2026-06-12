@@ -350,14 +350,32 @@ func (m Model) activeSessionKeyHandler(key string) (tea.Model, tea.Cmd) {
 		m.ShowHelp = true
 		return m, nil
 
-	case "j", "down":
+	case "down":
 		m.ScrollOffset++
+		clampActiveSessionModelScroll(&m)
 		return m, nil
 
-	case "k", "up":
-		if m.ScrollOffset > 0 {
-			m.ScrollOffset--
-		}
+	case "up":
+		m.ScrollOffset--
+		clampActiveSessionModelScroll(&m)
+		return m, nil
+
+	case "pgdown":
+		m.ScrollOffset += activeSessionPageSize(m)
+		clampActiveSessionModelScroll(&m)
+		return m, nil
+
+	case "pgup":
+		m.ScrollOffset -= activeSessionPageSize(m)
+		clampActiveSessionModelScroll(&m)
+		return m, nil
+
+	case "home":
+		m.ScrollOffset = 0
+		return m, nil
+
+	case "end":
+		m.ScrollOffset = activeSessionMaxScrollOffset(m)
 		return m, nil
 	}
 

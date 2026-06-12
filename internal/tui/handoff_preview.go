@@ -416,16 +416,32 @@ func handleHandoffKey(m *Model, key string) (tea.Model, tea.Cmd) {
 	case "s":
 		return openHandoffSavePrompt(m)
 
-	case "j", "down":
+	case "down":
 		m.ScrollOffset++
 		clampHandoffModelScroll(m)
 		return *m, nil
 
-	case "k", "up":
-		if m.ScrollOffset > 0 {
-			m.ScrollOffset--
-		}
+	case "up":
+		m.ScrollOffset--
 		clampHandoffModelScroll(m)
+		return *m, nil
+
+	case "pgdown":
+		m.ScrollOffset += handoffPreviewContentLines(*m)
+		clampHandoffModelScroll(m)
+		return *m, nil
+
+	case "pgup":
+		m.ScrollOffset -= handoffPreviewContentLines(*m)
+		clampHandoffModelScroll(m)
+		return *m, nil
+
+	case "home":
+		m.ScrollOffset = 0
+		return *m, nil
+
+	case "end":
+		m.ScrollOffset = handoffMaxScrollOffset(*m)
 		return *m, nil
 
 	case "q":
@@ -481,6 +497,16 @@ func handoffPreviewContentLines(m Model) int {
 		return 1
 	}
 	return contentLines
+}
+
+func handoffMaxScrollOffset(m Model) int {
+	contentLines := handoffPreviewContentLines(m)
+	bodyLines := len(clampPreviewLines(splitRenderedLines(renderHandoffBody(m)), previewLineWidth(m.Width)))
+	maxOffset := bodyLines - contentLines
+	if maxOffset < 0 {
+		return 0
+	}
+	return maxOffset
 }
 
 func (m Model) handleCopyToClipboard() (tea.Model, tea.Cmd) {
