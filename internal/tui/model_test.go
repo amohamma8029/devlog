@@ -73,8 +73,8 @@ func TestModelSessionListBackKeysReturnToNoSession(t *testing.T) {
 			m.ActiveSession = nil
 
 			updatedModel, cmd := m.Update(tc.msg)
-			if cmd != nil {
-				t.Fatal("expected no quit cmd")
+			if cmd == nil {
+				t.Fatal("expected clear-screen cmd when returning to active session")
 			}
 			updated, ok := updatedModel.(Model)
 			if !ok {
@@ -392,6 +392,31 @@ func TestModelUpdateNavigationMsgReturnsLoadCommand(t *testing.T) {
 	}
 }
 
+func TestModelUpdateNavigationMsgClearsTransientMessages(t *testing.T) {
+	s, root := newTestStore(t)
+	const sessionID = "2026-01-15T140000Z"
+	writeTestSession(t, s, sessionID, "feat/nav", "Alice", "Implement session navigation", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+	rec, err := s.GetSession(sessionID)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+
+	m := NewModel(s, root)
+	m.CurrentView = SessionList
+	m.ErrorMessage = "old error"
+	m.HandoffMsg = "old confirmation"
+	m.NoSessionMsg = "old hint"
+
+	updatedModel, _ := m.Update(NavigationMsg{Target: ActiveSession, Session: &rec})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from Update, got %T", updatedModel)
+	}
+	if updated.ErrorMessage != "" || updated.HandoffMsg != "" || updated.NoSessionMsg != "" {
+		t.Fatalf("transient messages should clear on navigation, got error=%q handoff=%q noSession=%q", updated.ErrorMessage, updated.HandoffMsg, updated.NoSessionMsg)
+	}
+}
+
 func TestModelUpdateNavigationMsgLoadCommandParsesEvents(t *testing.T) {
 	s, root := newTestStore(t)
 	const sessionID = "2026-01-15T140000Z"
@@ -499,6 +524,20 @@ func TestModelUpdateHandoffGeneratedClearsScreen(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("expected clear-screen command when entering handoff preview")
+	}
+}
+
+func TestModelViewRendersHandoffConfirmationOnce(t *testing.T) {
+	m := testModel()
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = "# Handoff Summary\n\nSaved body"
+	m.HandoffMsg = "Saved to handoff.md"
+	m.Width = 80
+	m.Height = 24
+
+	v := m.View()
+	if got := strings.Count(v, "Saved to handoff.md"); got != 1 {
+		t.Fatalf("handoff confirmation rendered %d times, want 1:\n%s", got, v)
 	}
 }
 
@@ -828,9 +867,11 @@ func TestHandleViewKeyQNavigatesBackFromHandoffNoPrompt(t *testing.T) {
 	}
 
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+	m.HandoffMsg = "Saved to handoff.md"
+
 	updatedModel, cmd := m.Update(msg)
-	if cmd != nil {
-		t.Fatal("q without save prompt should not quit")
+	if cmd == nil {
+		t.Fatal("q without save prompt should clear the screen")
 	}
 	updated, ok := updatedModel.(Model)
 	if !ok {
@@ -838,6 +879,9 @@ func TestHandleViewKeyQNavigatesBackFromHandoffNoPrompt(t *testing.T) {
 	}
 	if updated.CurrentView != ActiveSession {
 		t.Errorf("should navigate to ActiveSession, got %v", updated.CurrentView)
+	}
+	if updated.HandoffMsg != "" {
+		t.Fatalf("handoff confirmation should clear on view transition, got %q", updated.HandoffMsg)
 	}
 }
 
@@ -849,14 +893,15 @@ func TestHandleViewKeyEscNavigatesBackFromHandoffNoPrompt(t *testing.T) {
 	m := NewModel(s, root)
 	m.CurrentView = HandoffPreview
 	m.SavePromptOpen = false
+	m.HandoffMsg = "Saved to handoff.md"
 	m.ActiveSession = &store.SessionRecord{
 		Session: store.Session{ID: sessionID, Author: "Alice", Branch: "feat/a"},
 	}
 
 	msg := tea.KeyMsg{Type: tea.KeyEsc}
 	updatedModel, cmd := m.Update(msg)
-	if cmd != nil {
-		t.Fatal("esc without save prompt should not quit")
+	if cmd == nil {
+		t.Fatal("esc without save prompt should clear the screen")
 	}
 	updated, ok := updatedModel.(Model)
 	if !ok {
@@ -864,5 +909,8 @@ func TestHandleViewKeyEscNavigatesBackFromHandoffNoPrompt(t *testing.T) {
 	}
 	if updated.CurrentView != ActiveSession {
 		t.Errorf("should navigate to ActiveSession, got %v", updated.CurrentView)
+	}
+	if updated.HandoffMsg != "" {
+		t.Fatalf("handoff confirmation should clear on view transition, got %q", updated.HandoffMsg)
 	}
 }
