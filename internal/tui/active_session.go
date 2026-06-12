@@ -20,10 +20,7 @@ func renderActiveSession(m Model) string {
 
 	timeline := ""
 	if len(m.Events) > 1 {
-		timelineHeight := available - countLines(header) - 1
-		if timelineHeight < 0 {
-			timelineHeight = 0
-		}
+		timelineHeight := activeSessionTimelineHeight(m)
 		timeline = renderTimeline(m, timelineHeight)
 	}
 
@@ -101,12 +98,12 @@ func renderFooter(m Model) string {
 	var text string
 	if m.CurrentView == ActiveSession {
 		if m.ActiveSession != nil {
-			text = "/? help  ·  j/k scroll  ·  q quit"
+			text = "/? help  ·  ↑/↓ line  ·  pgup/pgdn page  ·  home/end jump  ·  q quit"
 		} else {
 			text = "l: session list  ·  o: open new session  ·  q quit"
 		}
 	} else if m.CurrentView == HandoffPreview {
-		text = "y copy  ·  s save  ·  j/k scroll  ·  q back"
+		text = "y copy  ·  s save  ·  ↑/↓ line  ·  pgup/pgdn page  ·  home/end jump  ·  q back"
 	} else {
 		text = "q quit"
 	}
@@ -151,8 +148,12 @@ func renderHelpOverlay(m Model) string {
 ===========
 /      Open command palette
 ?      Show this help (dismiss with any key)
-j/↓    Scroll down
-k/↑    Scroll up
+↓      Scroll down one line
+↑      Scroll up one line
+pgdn   Scroll down one page
+pgup   Scroll up one page
+home   Jump to top
+end    Jump to bottom
 q      Quit
 
 Session List
@@ -173,8 +174,12 @@ Handoff Preview
 ===============
 y      Copy to clipboard
 s      Save to file
-j/↓    Scroll down
-k/↑    Scroll up
+↓      Scroll down one line
+↑      Scroll up one line
+pgdn   Scroll down one page
+pgup   Scroll up one page
+home   Jump to top
+end    Jump to bottom
 q      Go back
 
 No Active Session
@@ -216,16 +221,10 @@ func formatAuthor(author, email string) string {
 }
 
 func renderTimeline(m Model, maxLines int) string {
-	width := m.Width
-	if width < 40 {
-		width = 40
-	}
-	contentWidth := width - 2
-
 	var b strings.Builder
 
-	nonStartEvents := filterNonStartEvents(m.Events)
-	if len(nonStartEvents) == 0 {
+	renderedLines := activeSessionTimelineLines(m)
+	if len(renderedLines) == 0 {
 		return ""
 	}
 
@@ -233,8 +232,6 @@ func renderTimeline(m Model, maxLines int) string {
 	if startLine < 0 {
 		startLine = 0
 	}
-
-	renderedLines := renderEventLines(nonStartEvents, contentWidth)
 
 	if startLine >= len(renderedLines) {
 		startLine = len(renderedLines) - 1
@@ -256,6 +253,61 @@ func renderTimeline(m Model, maxLines int) string {
 	}
 
 	return b.String()
+}
+
+func activeSessionTimelineHeight(m Model) int {
+	header := renderHeader(m)
+	bottomHeight := bottomSectionHeight(m)
+	available := m.Height - bottomHeight
+	if available < 0 {
+		available = 0
+	}
+	timelineHeight := available - countLines(header) - 1
+	if timelineHeight < 0 {
+		return 0
+	}
+	return timelineHeight
+}
+
+func activeSessionPageSize(m Model) int {
+	pageSize := activeSessionTimelineHeight(m)
+	if pageSize < 1 {
+		return 1
+	}
+	return pageSize
+}
+
+func activeSessionMaxScrollOffset(m Model) int {
+	maxOffset := len(activeSessionTimelineLines(m)) - activeSessionPageSize(m)
+	if maxOffset < 0 {
+		return 0
+	}
+	return maxOffset
+}
+
+func clampActiveSessionModelScroll(m *Model) {
+	if m.ScrollOffset < 0 {
+		m.ScrollOffset = 0
+		return
+	}
+	maxOffset := activeSessionMaxScrollOffset(*m)
+	if m.ScrollOffset > maxOffset {
+		m.ScrollOffset = maxOffset
+	}
+}
+
+func activeSessionTimelineLines(m Model) []string {
+	width := m.Width
+	if width < 40 {
+		width = 40
+	}
+	contentWidth := width - 2
+
+	nonStartEvents := filterNonStartEvents(m.Events)
+	if len(nonStartEvents) == 0 {
+		return nil
+	}
+	return renderEventLines(nonStartEvents, contentWidth)
 }
 
 func filterNonStartEvents(events []store.SessionEvent) []store.SessionEvent {

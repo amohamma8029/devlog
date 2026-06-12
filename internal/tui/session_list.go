@@ -7,10 +7,10 @@ import (
 	internalgit "github.com/amo/devlog/internal/git"
 	"github.com/amo/devlog/internal/handoff"
 	"github.com/amo/devlog/internal/session"
+	"github.com/amo/devlog/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	xansi "github.com/charmbracelet/x/ansi"
-	"github.com/amo/devlog/internal/store"
 )
 
 type SessionsLoadedMsg struct {
@@ -243,17 +243,43 @@ func (m SessionListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "up", "k":
+	case "up":
 		if m.cursor > 0 {
 			m.cursor--
 		}
 		m.clampScroll()
 		return m, nil
 
-	case "down", "j":
+	case "down":
 		if m.cursor < len(m.filtered)-1 {
 			m.cursor++
 		}
+		m.clampScroll()
+		return m, nil
+
+	case "pgup":
+		m.cursor -= m.visibleRows()
+		m.clampCursor()
+		m.clampScroll()
+		return m, nil
+
+	case "pgdown":
+		m.cursor += m.visibleRows()
+		m.clampCursor()
+		m.clampScroll()
+		return m, nil
+
+	case "home":
+		m.cursor = 0
+		m.clampCursor()
+		m.clampScroll()
+		return m, nil
+
+	case "end":
+		if len(m.filtered) > 0 {
+			m.cursor = len(m.filtered) - 1
+		}
+		m.clampCursor()
 		m.clampScroll()
 		return m, nil
 
@@ -459,7 +485,7 @@ func (m *SessionListModel) clampCursor() {
 	}
 }
 
-func (m *SessionListModel) clampScroll() {
+func (m SessionListModel) visibleRows() int {
 	headerHeight := 1
 	if m.filterMode {
 		headerHeight = 2
@@ -469,6 +495,11 @@ func (m *SessionListModel) clampScroll() {
 	if available < 1 {
 		available = 1
 	}
+	return available
+}
+
+func (m *SessionListModel) clampScroll() {
+	available := m.visibleRows()
 
 	if m.cursor < m.scrollOffset {
 		m.scrollOffset = m.cursor
