@@ -25,6 +25,7 @@ const (
 	handoffPreviewDiffLineLimit = 100
 	handoffDiffExpandedMarker   = "▼"
 	handoffDiffCollapsedMarker  = "▶"
+	inputOverflowMarker         = "…"
 )
 
 func renderHandoffPreview(m Model) string {
@@ -39,7 +40,7 @@ func renderHandoffPreview(m Model) string {
 	footer := clampPreviewLine(renderFooter(m), lineWidth)
 	prompt := ""
 	if m.SavePromptOpen {
-		prompt = clampPreviewLine(renderSavePrompt(m), lineWidth)
+		prompt = renderSavePrompt(m)
 	}
 	messages := renderHandoffMessages(m, lineWidth)
 
@@ -568,15 +569,72 @@ func handoffDiffPathFromRenderedLine(line string, paths []string) string {
 }
 
 func renderSavePrompt(m Model) string {
-	input := m.SaveInput
-	cursorVisible := true
-	if m.Palette != nil {
-		cursorVisible = m.Palette.CursorVisible
+	lineWidth := previewLineWidth(m.Width)
+	cursorChar := " "
+	if m.Palette == nil || m.Palette.CursorVisible {
+		cursorChar = CursorStyle.Render("|")
 	}
-	if cursorVisible {
-		input += CursorStyle.Render("|")
+
+	contentWidth := lineWidth - SavePromptStyle.GetHorizontalFrameSize()
+	if contentWidth < 1 {
+		contentWidth = 1
 	}
-	return SavePromptStyle.Render(" Save as: " + input + " ")
+	style := SavePromptStyle.Width(contentWidth)
+	content := renderBoundedInputContent(" Save as: ", m.SaveInput, cursorChar, " ", contentWidth)
+	return style.Render(content)
+}
+
+func renderBoundedInputContent(prefix, input, cursor, suffix string, width int) string {
+	inputWidth := width - xansi.StringWidth(prefix) - xansi.StringWidth(cursor) - xansi.StringWidth(suffix)
+	input = renderInputTail(input, inputWidth)
+	return truncateInputToWidth(prefix+input+cursor+suffix, width)
+}
+
+func renderInputTail(input string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if xansi.StringWidth(input) <= width {
+		return input
+	}
+
+	markerWidth := xansi.StringWidth(inputOverflowMarker)
+	if width <= markerWidth {
+		return truncateInputToWidth(inputOverflowMarker, width)
+	}
+	return inputOverflowMarker + truncateInputSuffixToWidth(input, width-markerWidth)
+}
+
+func truncateInputSuffixToWidth(input string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if xansi.StringWidth(input) <= width {
+		return input
+	}
+
+	runes := []rune(input)
+	start := len(runes)
+	used := 0
+	for i := len(runes) - 1; i >= 0; i-- {
+		runeWidth := xansi.StringWidth(string(runes[i]))
+		if used+runeWidth > width {
+			break
+		}
+		used += runeWidth
+		start = i
+	}
+	return string(runes[start:])
+}
+
+func truncateInputToWidth(input string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if xansi.StringWidth(input) <= width {
+		return input
+	}
+	return xansi.Truncate(input, width, "")
 }
 
 func handoffGlamourStyle() glamouransi.StyleConfig {
@@ -735,7 +793,7 @@ func handoffPreviewContentLines(m Model) int {
 	footer := clampPreviewLine(renderFooter(m), lineWidth)
 	prompt := ""
 	if m.SavePromptOpen {
-		prompt = clampPreviewLine(renderSavePrompt(m), lineWidth)
+		prompt = renderSavePrompt(m)
 	}
 	reservedLines := countLines(header) + countLines(footer) + len(renderHandoffMessages(m, lineWidth))
 	if prompt != "" {

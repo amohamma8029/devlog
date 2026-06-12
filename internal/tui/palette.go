@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	xansi "github.com/charmbracelet/x/ansi"
 )
 
 type CommandEntry struct {
@@ -191,12 +192,29 @@ func (p CommandPalette) View() string {
 	}
 
 	menuBox := MenuBoxStyle.Render(strings.TrimRight(menu.String(), "\n"))
+	inputWidth := maxRenderedLineWidth(menuBox)
 
 	cursorChar := " "
 	if p.CursorVisible {
 		cursorChar = CursorStyle.Render("|")
 	}
-	inputDisplay := p.Input + cursorChar
 
-	return menuBox + "\n" + PaletteInputStyle.Render(" " + inputDisplay)
+	contentWidth := inputWidth - PaletteInputStyle.GetHorizontalFrameSize()
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	style := PaletteInputStyle.Width(contentWidth)
+	inputDisplay := renderBoundedInputContent(" ", p.Input, cursorChar, "", contentWidth)
+
+	return menuBox + "\n" + style.Render(inputDisplay)
+}
+
+func maxRenderedLineWidth(rendered string) int {
+	maxWidth := 1
+	for _, line := range strings.Split(rendered, "\n") {
+		if width := xansi.StringWidth(line); width > maxWidth {
+			maxWidth = width
+		}
+	}
+	return maxWidth
 }
