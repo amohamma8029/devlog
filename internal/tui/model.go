@@ -38,6 +38,8 @@ type Model struct {
 	Title          string
 	SavePromptOpen bool
 	SaveInput      string
+	OpenPromptOpen bool
+	OpenInput      string
 	HandoffMsg     string
 }
 
@@ -88,6 +90,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Events = msg.Events
 		m.Title = msg.Title
 		m.ScrollOffset = 0
+		m.OpenPromptOpen = false
+		m.OpenInput = ""
 		m.CurrentView = ActiveSession
 		return m, nil
 
@@ -198,6 +202,14 @@ func (m Model) handleCursorTick() (tea.Model, tea.Cmd) {
 			return CursorTickMsg{}
 		})
 	}
+	if m.CurrentView == ActiveSession && m.ActiveSession == nil && m.OpenPromptOpen {
+		if m.Palette != nil {
+			m.Palette.CursorVisible = !m.Palette.CursorVisible
+		}
+		return m, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+			return CursorTickMsg{}
+		})
+	}
 	return m, nil
 }
 
@@ -256,6 +268,10 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		sl, cmd := m.SessionList.Update(msg)
 		m.SessionList = sl.(SessionListModel)
 		return m, cmd
+	}
+
+	if m.CurrentView == ActiveSession && m.ActiveSession == nil && m.OpenPromptOpen {
+		return m.noSessionKeyHandler(key)
 	}
 
 	if key == "esc" {
@@ -340,17 +356,101 @@ func (m Model) activeSessionKeyHandler(key string) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) noSessionKeyHandler(key string) (tea.Model, tea.Cmd) {
+	if m.OpenPromptOpen {
+		switch key {
+		case "esc":
+			m.OpenPromptOpen = false
+			m.OpenInput = ""
+			return m, nil
+
+		case "enter":
+			return m.handleOpenSessionPrompt()
+
+		case "backspace":
+			if len(m.OpenInput) > 0 {
+				m.OpenInput = m.OpenInput[:len(m.OpenInput)-1]
+			}
+			return m, nil
+
+		default:
+			if len(key) == 1 {
+				m.OpenInput += key
+			}
+			return m, nil
+		}
+	}
+
 	switch key {
 	case "l":
 		m.CurrentView = SessionList
 		return m, m.SessionList.Init()
 
 	case "o":
-		m.NoSessionMsg = "Use `devlog open` to start a session"
-		return m, nil
+		return openSessionPrompt(&m)
 	}
 
 	return m, nil
+}
+
+func openSessionPrompt(m *Model) (tea.Model, tea.Cmd) {
+	m.OpenPromptOpen = true
+	m.OpenInput = ""
+	if m.Palette != nil {
+		m.Palette.CursorVisible = true
+	}
+	return *m, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+		return CursorTickMsg{}
+	})
+}
+
+func (m Model) handleOpenSessionPrompt() (tea.Model, tea.Cmd) {
+	message := strings.TrimSpace(m.OpenInput)
+	m.OpenPromptOpen = false
+	m.OpenInput = ""
+	if message == "" {
+		m.ErrorMessage = "Usage: type a session message"
+		return m, nil
+	}
+
+	return m, func() tea.Msg {
+		branch, err := internalgit.CurrentBranch()
+		if err != nil {
+			return CommandErrorMsg{Error: err}
+		}
+
+		name, email, err := internalgit.AuthorIdentity()
+		if err != nil {
+			return CommandErrorMsg{Error: err}
+		}
+
+		now := time.Now().UTC()
+		sess := store.Session{
+			ID:      now.Format("2006-01-02T150405Z"),
+			Author:  name,
+			Email:   email,
+			Started: now,
+			Branch:  branch,
+			Status:  "active",
+		}
+
+		if err := session.OpenSession(m.Store, sess, message); err != nil {
+			return CommandErrorMsg{Error: err}
+		}
+
+		record, err := m.Store.GetSession(sess.ID)
+		if err != nil {
+			return CommandErrorMsg{Error: err}
+		}
+
+		body, err := m.Store.ReadSessionBody(sess.ID)
+		if err != nil {
+			return CommandErrorMsg{Error: err}
+		}
+
+		events := store.ParseSessionEvents(body)
+		title := extractStartMessage(events)
+		return ActiveSessionLoadedMsg{Session: &record, Events: events, Title: title}
+	}
 }
 
 func (m Model) handleCommand(msg CommandExecutedMsg) (tea.Model, tea.Cmd) {

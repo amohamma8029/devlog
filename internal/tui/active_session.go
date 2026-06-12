@@ -114,7 +114,15 @@ func renderFooter(m Model) string {
 }
 
 func renderNoSession(m Model) string {
+	prompt := ""
+	if m.OpenPromptOpen {
+		prompt = renderOpenSessionPrompt(m)
+	}
+
 	bottomHeight := bottomSectionHeight(m)
+	if prompt != "" {
+		bottomHeight += countLines(prompt)
+	}
 	availHeight := m.Height - bottomHeight
 	if availHeight < 4 {
 		availHeight = 4
@@ -136,6 +144,11 @@ func renderNoSession(m Model) string {
 	}
 	b.WriteString(strings.Repeat("\n", remaining))
 
+	if prompt != "" {
+		b.WriteString("\n")
+		b.WriteString(prompt)
+	}
+
 	if m.Palette.Open {
 		b.WriteString("\n")
 		b.WriteString(m.Palette.View())
@@ -144,6 +157,18 @@ func renderNoSession(m Model) string {
 	b.WriteString(renderFooter(m))
 
 	return b.String()
+}
+
+func renderOpenSessionPrompt(m Model) string {
+	input := m.OpenInput
+	cursorVisible := true
+	if m.Palette != nil {
+		cursorVisible = m.Palette.CursorVisible
+	}
+	if cursorVisible {
+		input += CursorStyle.Render("|")
+	}
+	return SavePromptStyle.Render(" Open session: " + input + " ")
 }
 
 func renderHelpOverlay(m Model) string {
