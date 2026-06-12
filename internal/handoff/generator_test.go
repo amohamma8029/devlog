@@ -341,8 +341,8 @@ func TestGenerateWithDiff(t *testing.T) {
 	if !strings.Contains(out, "```diff") {
 		t.Error("expected raw diff block")
 	}
-	if !strings.Contains(out, "src/auth.go") {
-		t.Error("expected file path in raw diff")
+	if !strings.Contains(out, "#### src/auth.go") {
+		t.Error("expected file heading before raw diff")
 	}
 	if strings.Contains(out, "@@") {
 		t.Error("hunk headers should be stripped from raw diff")
@@ -436,7 +436,7 @@ func TestGenerateWithWarning(t *testing.T) {
 	}
 }
 
-func TestGenerateLargeDiffTruncation(t *testing.T) {
+func TestGenerateWithOptionsLargeDiffTruncation(t *testing.T) {
 	var sb strings.Builder
 	sb.WriteString("diff --git a/src/big.go b/src/big.go\n")
 	sb.WriteString("new file mode 100644\n")
@@ -449,13 +449,50 @@ func TestGenerateLargeDiffTruncation(t *testing.T) {
 		sb.WriteString("+func doSomething() { return }\n")
 	}
 
+	out, err := GenerateWithOptions(sessionNormal, sb.String(), GenerateOptions{DiffLineLimit: 100})
+	if err != nil {
+		t.Fatalf("GenerateWithOptions failed: %v", err)
+	}
+
+	if !strings.Contains(out, "... (truncated, 200 more lines)") {
+		t.Errorf("expected diff truncation message for large diff, got:\n%s", out)
+	}
+}
+
+func TestGenerateDefaultDoesNotTruncateDiff(t *testing.T) {
+	var sb strings.Builder
+	sb.WriteString("diff --git a/src/big.go b/src/big.go\n")
+	sb.WriteString("new file mode 100644\n")
+	sb.WriteString("index 0000000..1234567\n")
+	sb.WriteString("--- /dev/null\n")
+	sb.WriteString("+++ b/src/big.go\n")
+	sb.WriteString("@@ -0,0 +1,250 @@\n")
+
+	for i := 0; i < 250; i++ {
+		sb.WriteString("+func doSomething() { return }\n")
+	}
+
 	out, err := Generate(sessionNormal, sb.String())
 	if err != nil {
 		t.Fatalf("Generate failed: %v", err)
 	}
 
-	if !strings.Contains(out, "diff truncated") {
-		t.Errorf("expected diff truncation message for large diff, got:\n%s", out)
+	if strings.Contains(out, "truncated") {
+		t.Errorf("default Generate should not truncate raw diffs, got:\n%s", out)
+	}
+}
+
+func TestGenerateWithOptionsExcludeRawDiff(t *testing.T) {
+	out, err := GenerateWithOptions(sessionNormal, diffSimple, GenerateOptions{ExcludeRawDiff: true})
+	if err != nil {
+		t.Fatalf("GenerateWithOptions failed: %v", err)
+	}
+
+	if strings.Contains(out, "```diff") {
+		t.Errorf("raw diff block should be excluded, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Tweaked `src/auth.go`") {
+		t.Errorf("prose changes should remain when raw diff is excluded, got:\n%s", out)
 	}
 }
 

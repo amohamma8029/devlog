@@ -9,12 +9,23 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// GenerateOptions controls optional handoff output sections.
+type GenerateOptions struct {
+	ExcludeRawDiff bool
+	DiffLineLimit  int
+}
+
 // Generate produces a narrative handoff summary from raw session file content and a git diff string.
 // Both inputs are plain strings — the generator never touches the filesystem or executes git.
 func Generate(sessionContent, diff string) (string, error) {
+	return GenerateWithOptions(sessionContent, diff, GenerateOptions{})
+}
+
+// GenerateWithOptions produces a narrative handoff summary with caller-controlled diff output.
+func GenerateWithOptions(sessionContent, diff string, opts GenerateOptions) (string, error) {
 	meta, events, err := parseSession(sessionContent)
 	if err != nil {
-		return "", fmt.Errorf("Generate: parse session: %w", err)
+		return "", fmt.Errorf("GenerateWithOptions: parse session: %w", err)
 	}
 
 	status := deriveStatus(events)
@@ -33,7 +44,9 @@ func Generate(sessionContent, diff string) (string, error) {
 	buf.WriteString("## Summary\n")
 	buf.WriteString(formatSummary(events))
 	buf.WriteString(formatProseChanges(diffInfo))
-	buf.WriteString(formatRawDiff(diffInfo))
+	if !opts.ExcludeRawDiff {
+		buf.WriteString(formatRawDiff(diffInfo, opts.DiffLineLimit))
+	}
 
 	return buf.String(), nil
 }
@@ -561,7 +574,7 @@ func fileProse(f diffFile) string {
 
 // ── Raw diff formatting ──────────────────────────────────────────────────────
 
-func formatRawDiff(info diffSummary) string {
+func formatRawDiff(info diffSummary, lineLimit int) string {
 	var nonBinary []diffFile
 	for _, f := range info.files {
 		if !f.isBinary && !f.isSubmodule {
@@ -574,51 +587,34 @@ func formatRawDiff(info diffSummary) string {
 	}
 
 	var buf strings.Builder
-	buf.WriteString("```diff\n")
 
-	lineCount := 0
-	const maxLines = 200
-	truncated := false
-
-	for i, f := range nonBinary {
-		if truncated {
-			break
-		}
-
-		if i > 0 {
-			buf.WriteByte('\n')
-			lineCount++
-		}
-
+	for _, f := range nonBinary {
 		path := f.path
 		if path == "" {
 			path = f.oldPath
 		}
-		buf.WriteString(path)
-		buf.WriteByte('\n')
-		lineCount++
 
-		for _, rl := range f.rawLines {
-			if lineCount >= maxLines {
-				truncated = true
-				break
-			}
+		buf.WriteString("#### ")
+		buf.WriteString(path)
+		buf.WriteString("\n\n")
+		buf.WriteString("```diff\n")
+
+		lines := f.rawLines
+		if lineLimit > 0 && len(lines) > lineLimit {
+			lines = lines[:lineLimit]
+		}
+
+		for _, rl := range lines {
 			buf.WriteString(rl)
 			buf.WriteByte('\n')
-			lineCount++
 		}
+
+		if lineLimit > 0 && len(f.rawLines) > lineLimit {
+			buf.WriteString(fmt.Sprintf("... (truncated, %d more lines)\n", len(f.rawLines)-lineLimit))
+		}
+
+		buf.WriteString("```\n\n")
 	}
 
-	buf.WriteString("```\n")
-
-	if truncated {
-		totalRemaining := 0
-		for _, f := range nonBinary {
-			totalRemaining += len(f.rawLines)
-		}
-		buf.WriteString(fmt.Sprintf("... (diff truncated, %d more lines)\n", totalRemaining))
-	}
-
-	buf.WriteByte('\n')
 	return buf.String()
 }
