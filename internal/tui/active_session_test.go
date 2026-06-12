@@ -112,6 +112,21 @@ func TestRenderActiveSessionDoesNotOverflowHeight(t *testing.T) {
 	}
 }
 
+func TestBottomSectionHeightIncludesTransientMessages(t *testing.T) {
+	m := testModel()
+	m.CurrentView = ActiveSession
+	m.Width = 80
+	m.Height = 24
+
+	withoutMessage := bottomSectionHeight(m)
+	m.ErrorMessage = "Something went wrong"
+	withMessage := bottomSectionHeight(m)
+
+	if withMessage <= withoutMessage {
+		t.Fatalf("bottomSectionHeight with message = %d, want greater than %d", withMessage, withoutMessage)
+	}
+}
+
 func TestRenderNoSession(t *testing.T) {
 	m := testModel()
 	m.CurrentView = ActiveSession

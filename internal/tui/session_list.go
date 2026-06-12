@@ -197,12 +197,6 @@ func (m SessionListModel) View() string {
 		available = 1
 	}
 	visible := available
-	if len(m.filtered) < visible {
-		visible = len(m.filtered)
-	}
-	if visible < 1 {
-		visible = 1
-	}
 
 	m.clampScroll()
 
@@ -211,11 +205,9 @@ func (m SessionListModel) View() string {
 		end = len(m.filtered)
 	}
 
-	var b strings.Builder
+	lines := []string{m.renderHeader()}
 
-	b.WriteString(m.renderHeader())
-	b.WriteString("\n")
-
+	renderedRows := 0
 	for i := m.scrollOffset; i < end; i++ {
 		idx := m.filtered[i]
 		s := m.sessions[idx]
@@ -223,11 +215,15 @@ func (m SessionListModel) View() string {
 		if i == m.cursor {
 			line = cursorRowStyle.Render(line)
 		}
-		b.WriteString(line)
-		b.WriteString("\n")
+		lines = append(lines, line)
+		renderedRows++
+	}
+	for renderedRows < visible {
+		lines = append(lines, "")
+		renderedRows++
 	}
 
-	body := b.String()
+	body := strings.Join(lines, "\n")
 
 	if m.filterMode {
 		filterBar := m.renderFilterBar()

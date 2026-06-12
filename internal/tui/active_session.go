@@ -11,8 +11,9 @@ import (
 
 func renderActiveSession(m Model) string {
 	header := renderHeader(m)
+	bottom := renderBottomSection(m, true)
 
-	bottomHeight := bottomSectionHeight(m)
+	bottomHeight := countLines(bottom)
 	available := m.Height - bottomHeight
 	if available < 0 {
 		available = 0
@@ -39,21 +40,47 @@ func renderActiveSession(m Model) string {
 	b.WriteString(contentTop)
 	b.WriteString(strings.Repeat("\n", padding))
 
-	if m.Palette.Open {
+	if bottom != "" {
 		b.WriteString("\n")
-		b.WriteString(m.Palette.View())
+		b.WriteString(bottom)
 	}
-	b.WriteString("\n")
-	b.WriteString(renderFooter(m))
 
 	return b.String()
 }
 
 func bottomSectionHeight(m Model) int {
-	if m.Palette != nil && m.Palette.Open {
-		return len(PaletteCommands) + 6
+	return countLines(renderBottomSection(m, true))
+}
+
+func renderBottomSection(m Model, includePalette bool) string {
+	var parts []string
+	if m.CurrentView == ActiveSession && m.ActiveSession == nil && m.OpenPromptOpen {
+		parts = append(parts, renderOpenSessionPrompt(m))
 	}
-	return 2
+	if includePalette && m.Palette != nil && m.Palette.Open {
+		parts = append(parts, m.Palette.View())
+	}
+	parts = append(parts, renderTransientMessages(m, m.Width)...)
+	parts = append(parts, renderFooter(m))
+	return strings.Join(parts, "\n")
+}
+
+func renderTransientMessages(m Model, width int) []string {
+	if width <= 0 {
+		width = 80
+	}
+
+	var lines []string
+	if m.ErrorMessage != "" {
+		lines = append(lines, clampPreviewLine(ErrorBannerStyle.Render(" ERROR: "+m.ErrorMessage), width))
+	}
+	if m.HandoffMsg != "" {
+		lines = append(lines, clampPreviewLine(HintStyle.Render(formatHandoffConfirmation(m.HandoffMsg)), width))
+	}
+	if m.NoSessionMsg != "" {
+		lines = append(lines, clampPreviewLine(HintStyle.Render(m.NoSessionMsg), width))
+	}
+	return lines
 }
 
 func renderHeader(m Model) string {
@@ -111,18 +138,11 @@ func renderFooter(m Model) string {
 }
 
 func renderNoSession(m Model) string {
-	prompt := ""
-	if m.OpenPromptOpen {
-		prompt = renderOpenSessionPrompt(m)
-	}
-
-	bottomHeight := bottomSectionHeight(m)
-	if prompt != "" {
-		bottomHeight += countLines(prompt)
-	}
+	bottom := renderBottomSection(m, true)
+	bottomHeight := countLines(bottom)
 	availHeight := m.Height - bottomHeight
-	if availHeight < 4 {
-		availHeight = 4
+	if availHeight < 1 {
+		availHeight = 1
 	}
 
 	msg := "No active session"
@@ -141,17 +161,10 @@ func renderNoSession(m Model) string {
 	}
 	b.WriteString(strings.Repeat("\n", remaining))
 
-	if prompt != "" {
+	if bottom != "" {
 		b.WriteString("\n")
-		b.WriteString(prompt)
+		b.WriteString(bottom)
 	}
-
-	if m.Palette.Open {
-		b.WriteString("\n")
-		b.WriteString(m.Palette.View())
-	}
-	b.WriteString("\n")
-	b.WriteString(renderFooter(m))
 
 	return b.String()
 }
