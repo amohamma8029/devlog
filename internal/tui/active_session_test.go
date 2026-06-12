@@ -226,7 +226,7 @@ func TestPrepareHandoffPreviewMarkdownSplitsDiffByFile(t *testing.T) {
 	if strings.Count(preview, "```diff") != 2 {
 		t.Errorf("expected two diff fences, got %d", strings.Count(preview, "```diff"))
 	}
-	if !strings.Contains(preview, "#### file_a.go") || !strings.Contains(preview, "#### file_b.go") {
+	if !strings.Contains(preview, "#### "+handoffDiffExpandedMarker+" file_a.go") || !strings.Contains(preview, "#### "+handoffDiffExpandedMarker+" file_b.go") {
 		t.Errorf("expected per-file headings in preview markdown, got:\n%s", preview)
 	}
 }

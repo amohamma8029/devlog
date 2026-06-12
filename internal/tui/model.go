@@ -21,26 +21,27 @@ const (
 )
 
 type Model struct {
-	CurrentView    View
-	ActiveSession  *store.SessionRecord
-	Events         []store.SessionEvent
-	Palette        *CommandPalette
-	Store          *store.Store
-	SessionList    SessionListModel
-	Root           string
-	Width          int
-	Height         int
-	ScrollOffset   int
-	ShowHelp       bool
-	ErrorMessage   string
-	NoSessionMsg   string
-	HandoffContent string
-	Title          string
-	SavePromptOpen bool
-	SaveInput      string
-	OpenPromptOpen bool
-	OpenInput      string
-	HandoffMsg     string
+	CurrentView           View
+	ActiveSession         *store.SessionRecord
+	Events                []store.SessionEvent
+	Palette               *CommandPalette
+	Store                 *store.Store
+	SessionList           SessionListModel
+	Root                  string
+	Width                 int
+	Height                int
+	ScrollOffset          int
+	ShowHelp              bool
+	ErrorMessage          string
+	NoSessionMsg          string
+	HandoffContent        string
+	HandoffCollapsedDiffs map[string]bool
+	Title                 string
+	SavePromptOpen        bool
+	SaveInput             string
+	OpenPromptOpen        bool
+	OpenInput             string
+	HandoffMsg            string
 }
 
 func NewModel(s *store.Store, root string) Model {
@@ -132,6 +133,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		} else {
 			m.HandoffContent = msg.Content
+			m.HandoffCollapsedDiffs = nil
 			m.ScrollOffset = 0
 			m.CurrentView = HandoffPreview
 		}
