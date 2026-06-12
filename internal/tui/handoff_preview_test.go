@@ -3,7 +3,10 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	xansi "github.com/charmbracelet/x/ansi"
 )
 
 func TestIsValidFilename(t *testing.T) {
@@ -161,6 +164,105 @@ func TestHandleSaveToFileRejectsExistingFile(t *testing.T) {
 	}
 	if fi.Size() != int64(len("existing content")) {
 		t.Errorf("expected existing file content to be unchanged, got size %d", fi.Size())
+	}
+}
+
+func TestPrepareHandoffPreviewMarkdownTruncatesPerFile(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("## Changes\n\n")
+	b.WriteString("#### src/big.go\n\n")
+	b.WriteString("```diff\n")
+	for i := 0; i < handoffPreviewDiffLineLimit+2; i++ {
+		b.WriteString("+line\n")
+	}
+	b.WriteString("```\n")
+
+	preview := prepareHandoffPreviewMarkdown(b.String())
+	if !strings.Contains(preview, "#### "+handoffDiffExpandedMarker+" src/big.go") {
+		t.Fatalf("expected expanded disclosure marker in preview, got:\n%s", preview)
+	}
+	if !strings.Contains(preview, "... (truncated, 2 more lines)") {
+		t.Fatalf("expected per-file truncation message, got:\n%s", preview)
+	}
+	if strings.Count(preview, "+line") != handoffPreviewDiffLineLimit {
+		t.Fatalf("preview should include exactly %d diff lines, got %d", handoffPreviewDiffLineLimit, strings.Count(preview, "+line"))
+	}
+}
+
+func TestRenderHandoffBodyUsesDisclosureArrowWithoutBullet(t *testing.T) {
+	m := NewModel(nil, "/tmp/root")
+	m.HandoffContent = "#### src/file.go\n\n```diff\n+line\n```"
+	m.Width = 80
+	m.Height = 24
+
+	rendered := xansi.Strip(renderHandoffBody(m))
+	if strings.Contains(rendered, "• "+handoffDiffExpandedMarker+" src/file.go") {
+		t.Fatalf("preview heading should not include bullet before disclosure arrow, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, handoffDiffExpandedMarker+" src/file.go") {
+		t.Fatalf("preview heading should include disclosure arrow, got:\n%s", rendered)
+	}
+}
+
+func TestHandoffMarkdownForSaveOmitsCollapsedDiffsWithoutTruncatingExpanded(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("## Changes\n\n")
+	b.WriteString("#### src/keep.go\n\n")
+	b.WriteString("```diff\n")
+	for i := 0; i < handoffPreviewDiffLineLimit+1; i++ {
+		b.WriteString("+keep\n")
+	}
+	b.WriteString("```\n\n")
+	b.WriteString("#### src/drop.go\n\n")
+	b.WriteString("```diff\n")
+	b.WriteString("+drop\n")
+	b.WriteString("```\n")
+
+	m := NewModel(nil, "/tmp/root")
+	m.HandoffContent = b.String()
+	m.HandoffCollapsedDiffs = map[string]bool{"src/drop.go": true}
+
+	preview := prepareHandoffPreviewMarkdownForModel(m)
+	if !strings.Contains(preview, "#### "+handoffDiffExpandedMarker+" src/keep.go") {
+		t.Fatalf("preview should mark expanded diff, got:\n%s", preview)
+	}
+	if !strings.Contains(preview, "#### "+handoffDiffCollapsedMarker+" src/drop.go") {
+		t.Fatalf("preview should mark collapsed diff, got:\n%s", preview)
+	}
+	if !strings.Contains(preview, "Click heading to expand") {
+		t.Fatalf("collapsed preview should include expansion hint, got:\n%s", preview)
+	}
+
+	saved := handoffMarkdownForSave(m)
+	if !strings.Contains(saved, "#### src/keep.go") {
+		t.Fatalf("save output should include expanded diff heading, got:\n%s", saved)
+	}
+	if strings.Contains(saved, handoffDiffExpandedMarker) || strings.Contains(saved, handoffDiffCollapsedMarker) {
+		t.Fatalf("save output should not include preview disclosure markers, got:\n%s", saved)
+	}
+	if strings.Count(saved, "+keep") != handoffPreviewDiffLineLimit+1 {
+		t.Fatalf("save output should not truncate expanded diff, got %d lines", strings.Count(saved, "+keep"))
+	}
+	if strings.Contains(saved, "src/drop.go") || strings.Contains(saved, "+drop") {
+		t.Fatalf("save output should omit collapsed diff, got:\n%s", saved)
+	}
+	if strings.Contains(saved, "truncated") {
+		t.Fatalf("save output should not include preview truncation marker, got:\n%s", saved)
+	}
+}
+
+func TestToggleAllHandoffDiffsCollapsesAndExpands(t *testing.T) {
+	m := NewModel(nil, "/tmp/root")
+	m.HandoffContent = "#### a.go\n\n```diff\n+a\n```\n\n#### b.go\n\n```diff\n+b\n```"
+
+	toggleAllHandoffDiffs(&m)
+	if len(m.HandoffCollapsedDiffs) != 2 || !m.HandoffCollapsedDiffs["a.go"] || !m.HandoffCollapsedDiffs["b.go"] {
+		t.Fatalf("expected all diffs collapsed, got %#v", m.HandoffCollapsedDiffs)
+	}
+
+	toggleAllHandoffDiffs(&m)
+	if m.HandoffCollapsedDiffs != nil {
+		t.Fatalf("expected all diffs expanded, got %#v", m.HandoffCollapsedDiffs)
 	}
 }
 

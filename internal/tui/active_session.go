@@ -103,7 +103,7 @@ func renderFooter(m Model) string {
 			text = "l: session list  ·  o: open new session  ·  q quit"
 		}
 	} else if m.CurrentView == HandoffPreview {
-		text = "y copy  ·  s save  ·  ↑/↓ line  ·  pgup/pgdn page  ·  home/end jump  ·  q back"
+		text = "y copy  ·  s save  ·  d diffs  ·  ↑/↓ line  ·  pgup/pgdn page  ·  home/end jump  ·  q back"
 	} else {
 		text = "q quit"
 	}
@@ -205,6 +205,8 @@ pgdn   Scroll down one page
 pgup   Scroll up one page
 home   Jump to top
 end    Jump to bottom
+d      Toggle all diffs
+click  Toggle file diff
 q      Go back
 
 No Active Session
