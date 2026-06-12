@@ -142,7 +142,38 @@ func TestHandoffCommandWithCodeChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read output file failed: %v", err)
 	}
-	assertContains(t, string(data), "feature.go")
+	content := string(data)
+	assertContains(t, content, "#### feature.go")
+	assertContains(t, content, "```diff")
+}
+
+func TestHandoffCommandNoDiffFlagExcludesRawDiff(t *testing.T) {
+	requireCmdTestGit(t)
+
+	root := initCmdTestRepo(t)
+	sess := writeCmdTestSession(t, root)
+	appendCmdTestEvent(t, root, sess.ID, "Note", "implemented feature Y")
+	t.Chdir(root)
+
+	if err := os.WriteFile(filepath.Join(root, "feature.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatalf("write file failed: %v", err)
+	}
+
+	_, err := executeHandoffCommand("--no-diff")
+	if err != nil {
+		t.Fatalf("handoff command with --no-diff failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, ".devlog", "handoffs", sess.ID+".md"))
+	if err != nil {
+		t.Fatalf("read output file failed: %v", err)
+	}
+	content := string(data)
+	assertContains(t, content, "## Changes")
+	assertContains(t, content, "feature.go")
+	if strings.Contains(content, "```diff") {
+		t.Fatalf("--no-diff output should omit raw diff blocks, got:\n%s", content)
+	}
 }
 
 func TestRootCommandIncludesHandoffCommand(t *testing.T) {
