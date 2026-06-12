@@ -677,3 +677,29 @@ func TestHandleViewKeyQNavigatesBackFromHandoffNoPrompt(t *testing.T) {
 		t.Errorf("should navigate to ActiveSession, got %v", updated.CurrentView)
 	}
 }
+
+func TestHandleViewKeyEscNavigatesBackFromHandoffNoPrompt(t *testing.T) {
+	s, root := newTestStore(t)
+	const sessionID = "2026-01-15T140000Z"
+	writeTestSession(t, s, sessionID, "feat/a", "Alice", "auth", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	m := NewModel(s, root)
+	m.CurrentView = HandoffPreview
+	m.SavePromptOpen = false
+	m.ActiveSession = &store.SessionRecord{
+		Session: store.Session{ID: sessionID, Author: "Alice", Branch: "feat/a"},
+	}
+
+	msg := tea.KeyMsg{Type: tea.KeyEsc}
+	updatedModel, cmd := m.Update(msg)
+	if cmd != nil {
+		t.Fatal("esc without save prompt should not quit")
+	}
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if updated.CurrentView != ActiveSession {
+		t.Errorf("should navigate to ActiveSession, got %v", updated.CurrentView)
+	}
+}
