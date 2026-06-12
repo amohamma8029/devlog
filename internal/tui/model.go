@@ -93,11 +93,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ScrollOffset = 0
 		m.OpenPromptOpen = false
 		m.OpenInput = ""
-		m.CurrentView = ActiveSession
-		return m, nil
+		changed := m.setView(ActiveSession)
+		return m, clearScreenIfChanged(changed)
 
 	case NavigationMsg:
-		m.CurrentView = msg.Target
+		m.setView(msg.Target)
 		m.ActiveSession = msg.Session
 		if msg.Session == nil {
 			return m, func() tea.Msg { return ActiveSessionLoadedMsg{} }
@@ -135,7 +135,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.HandoffContent = msg.Content
 			m.HandoffCollapsedDiffs = nil
 			m.ScrollOffset = 0
-			m.CurrentView = HandoffPreview
+			m.setView(HandoffPreview)
 		}
 		return m, tea.ClearScreen
 
@@ -284,16 +284,16 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.CurrentView == HandoffPreview {
 			if m.ActiveSession != nil {
-				m.CurrentView = ActiveSession
+				changed := m.setView(ActiveSession)
+				return m, clearScreenIfChanged(changed)
 			} else {
-				m.CurrentView = SessionList
-				return m, m.SessionList.Init()
+				changed := m.setView(SessionList)
+				return m, tea.Batch(clearScreenIfChanged(changed), m.SessionList.Init())
 			}
-			return m, nil
 		}
 		if m.CurrentView == SessionList {
-			m.CurrentView = ActiveSession
-			return m, nil
+			changed := m.setView(ActiveSession)
+			return m, clearScreenIfChanged(changed)
 		}
 		return m, tea.Quit
 	}
@@ -303,15 +303,15 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// save prompt open: fall through to handleHandoffKey below
 		} else if m.CurrentView == HandoffPreview {
 			if m.ActiveSession != nil {
-				m.CurrentView = ActiveSession
+				changed := m.setView(ActiveSession)
+				return m, clearScreenIfChanged(changed)
 			} else {
-				m.CurrentView = SessionList
+				m.setView(SessionList)
 				return m, m.SessionList.Init()
 			}
-			return m, nil
 		} else if m.CurrentView == SessionList {
-			m.CurrentView = ActiveSession
-			return m, nil
+			changed := m.setView(ActiveSession)
+			return m, clearScreenIfChanged(changed)
 		} else {
 			return m, tea.Quit
 		}
@@ -411,7 +411,7 @@ func (m Model) noSessionKeyHandler(key string) (tea.Model, tea.Cmd) {
 
 	switch key {
 	case "l":
-		m.CurrentView = SessionList
+		m.setView(SessionList)
 		return m, m.SessionList.Init()
 
 	case "o":
@@ -580,7 +580,7 @@ func (m Model) handleCommand(msg CommandExecutedMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "/list":
-		m.CurrentView = SessionList
+		m.setView(SessionList)
 		return m, m.SessionList.Init()
 
 	default:
@@ -616,23 +616,11 @@ func (m Model) View() string {
 			v = renderNoSession(m)
 		}
 	case SessionList:
-		v = m.SessionList.View()
+		v = renderSessionList(m)
 	case HandoffPreview:
 		v = renderHandoffPreview(m)
 	default:
 		v = "<devlog TUI>"
-	}
-
-	if m.ErrorMessage != "" {
-		v += "\n" + ErrorBannerStyle.Render(" ERROR: "+m.ErrorMessage)
-	}
-
-	if m.HandoffMsg != "" {
-		v += "\n" + HintStyle.Render(formatHandoffConfirmation(m.HandoffMsg))
-	}
-
-	if m.NoSessionMsg != "" {
-		v += "\n" + HintStyle.Render(m.NoSessionMsg)
 	}
 
 	// Force view to fill terminal height so no stale content persists on resize.
@@ -640,6 +628,52 @@ func (m Model) View() string {
 	v = lipgloss.Place(m.Width, m.Height, lipgloss.Left, lipgloss.Top, v)
 
 	return v
+}
+
+func (m *Model) setView(view View) bool {
+	changed := m.CurrentView != view
+	if changed {
+		m.clearTransientMessages()
+		if view != HandoffPreview {
+			m.SavePromptOpen = false
+			m.SaveInput = ""
+		}
+	}
+	m.CurrentView = view
+	return changed
+}
+
+func (m *Model) clearTransientMessages() {
+	m.ErrorMessage = ""
+	m.HandoffMsg = ""
+	m.NoSessionMsg = ""
+}
+
+func clearScreenIfChanged(changed bool) tea.Cmd {
+	if changed {
+		return tea.ClearScreen
+	}
+	return nil
+}
+
+func renderSessionList(m Model) string {
+	bottom := renderBottomSection(m, false)
+	bottomHeight := countLines(bottom)
+	contentHeight := m.Height - bottomHeight
+	if contentHeight < 1 {
+		contentHeight = 1
+	}
+
+	sl := m.SessionList
+	sl.width = m.Width
+	sl.height = contentHeight
+	sl.cw = calcColumnWidths(m.Width)
+
+	content := lipgloss.Place(m.Width, contentHeight, lipgloss.Left, lipgloss.Top, sl.View())
+	if bottom == "" {
+		return content
+	}
+	return content + "\n" + bottom
 }
 
 func extractStartMessage(events []store.SessionEvent) string {

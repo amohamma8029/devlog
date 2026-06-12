@@ -694,11 +694,12 @@ func handleHandoffKey(m *Model, key string) (tea.Model, tea.Cmd) {
 
 	case "q":
 		if m.ActiveSession != nil {
-			m.CurrentView = ActiveSession
+			changed := m.setView(ActiveSession)
+			return *m, clearScreenIfChanged(changed)
 		} else {
-			m.CurrentView = SessionList
+			changed := m.setView(SessionList)
+			return *m, clearScreenIfChanged(changed)
 		}
-		return *m, nil
 	}
 
 	return *m, nil
