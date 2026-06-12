@@ -16,12 +16,15 @@ import (
 )
 
 const (
-	handoffCopyButton         = "[y Copy]"
-	handoffSaveButton         = "[s Save]"
-	maxHandoffPreviewWidth    = 72
-	defaultHandoffPreviewRows = 18
-	terminalSafetyCols        = 4
-	terminalSafetyRows        = 1
+	handoffCopyButton           = "[y Copy]"
+	handoffSaveButton           = "[s Save]"
+	maxHandoffPreviewWidth      = 72
+	defaultHandoffPreviewRows   = 18
+	terminalSafetyCols          = 4
+	terminalSafetyRows          = 1
+	handoffPreviewDiffLineLimit = 100
+	handoffDiffExpandedMarker   = "▼"
+	handoffDiffCollapsedMarker  = "▶"
 )
 
 func renderHandoffPreview(m Model) string {
@@ -216,7 +219,7 @@ func renderHandoffBody(m Model) string {
 		width = 1
 	}
 
-	previewMarkdown := prepareHandoffPreviewMarkdown(m.HandoffContent)
+	previewMarkdown := prepareHandoffPreviewMarkdownForModel(m)
 
 	r, err := glamour.NewTermRenderer(
 		glamour.WithStyles(handoffGlamourStyle()),
@@ -236,13 +239,100 @@ func renderHandoffBody(m Model) string {
 }
 
 func prepareHandoffPreviewMarkdown(content string) string {
+	return formatHandoffMarkdown(content, nil, handoffMarkdownOptions{
+		DiffLineLimit:               handoffPreviewDiffLineLimit,
+		IncludeCollapsedPlaceholder: true,
+		ShowDisclosureArrows:        true,
+	})
+}
+
+func prepareHandoffPreviewMarkdownForModel(m Model) string {
+	return formatHandoffMarkdown(m.HandoffContent, m.HandoffCollapsedDiffs, handoffMarkdownOptions{
+		DiffLineLimit:               handoffPreviewDiffLineLimit,
+		IncludeCollapsedPlaceholder: true,
+		ShowDisclosureArrows:        true,
+	})
+}
+
+func handoffMarkdownForSave(m Model) string {
+	return formatHandoffMarkdown(m.HandoffContent, m.HandoffCollapsedDiffs, handoffMarkdownOptions{
+		OmitCollapsed: true,
+	})
+}
+
+type handoffMarkdownOptions struct {
+	DiffLineLimit               int
+	OmitCollapsed               bool
+	IncludeCollapsedPlaceholder bool
+	ShowDisclosureArrows        bool
+}
+
+func formatHandoffMarkdown(content string, collapsed map[string]bool, opts handoffMarkdownOptions) string {
+	content = normalizeLegacyDiffFences(content)
+	lines := strings.Split(content, "\n")
+	var out []string
+
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		if !isHandoffDiffHeading(line) {
+			out = append(out, line)
+			continue
+		}
+
+		fenceStart := nextNonBlankLine(lines, i+1)
+		if fenceStart >= len(lines) || strings.TrimSpace(lines[fenceStart]) != "```diff" {
+			out = append(out, line)
+			continue
+		}
+
+		fenceEnd := fenceStart + 1
+		for ; fenceEnd < len(lines); fenceEnd++ {
+			if strings.TrimSpace(lines[fenceEnd]) == "```" {
+				break
+			}
+		}
+		if fenceEnd >= len(lines) {
+			out = append(out, line)
+			continue
+		}
+
+		path := handoffDiffPathFromHeading(line)
+		if collapsed != nil && collapsed[path] {
+			if opts.OmitCollapsed {
+				i = fenceEnd
+				continue
+			}
+			out = append(out, formatHandoffDiffHeading(path, true, opts), "")
+			if opts.IncludeCollapsedPlaceholder {
+				out = append(out, "_Diff collapsed. Click heading to expand._", "")
+			}
+			i = fenceEnd
+			continue
+		}
+
+		out = append(out, formatHandoffDiffHeading(path, false, opts), "", "```diff")
+		diffLines := lines[fenceStart+1 : fenceEnd]
+		if opts.DiffLineLimit > 0 && len(diffLines) > opts.DiffLineLimit {
+			out = append(out, diffLines[:opts.DiffLineLimit]...)
+			out = append(out, fmt.Sprintf("... (truncated, %d more lines)", len(diffLines)-opts.DiffLineLimit))
+		} else {
+			out = append(out, diffLines...)
+		}
+		out = append(out, "```", "")
+		i = fenceEnd
+	}
+
+	return strings.Join(out, "\n")
+}
+
+func normalizeLegacyDiffFences(content string) string {
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	lines := strings.Split(content, "\n")
 	var out []string
 
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
-		if strings.TrimSpace(line) != "```diff" {
+		if strings.TrimSpace(line) != "```diff" || previousNonBlankIsDiffHeading(lines, i) {
 			out = append(out, line)
 			continue
 		}
@@ -324,6 +414,159 @@ func isPreviewDiffFileHeader(line string) bool {
 	return !strings.HasPrefix(trimmed, "+") && !strings.HasPrefix(trimmed, "-")
 }
 
+func isHandoffDiffHeading(line string) bool {
+	return strings.HasPrefix(strings.TrimSpace(line), "#### ")
+}
+
+func handoffDiffPathFromHeading(line string) string {
+	path := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "#### "))
+	return strings.TrimSpace(trimHandoffDiffDisclosureMarker(path))
+}
+
+func formatHandoffDiffHeading(path string, collapsed bool, opts handoffMarkdownOptions) string {
+	if !opts.ShowDisclosureArrows {
+		return "#### " + path
+	}
+	marker := handoffDiffExpandedMarker
+	if collapsed {
+		marker = handoffDiffCollapsedMarker
+	}
+	return "#### " + marker + " " + path
+}
+
+func trimHandoffDiffDisclosureMarker(path string) string {
+	path = strings.TrimSpace(path)
+	for _, marker := range []string{handoffDiffExpandedMarker, handoffDiffCollapsedMarker} {
+		if strings.HasPrefix(path, marker+" ") {
+			return strings.TrimSpace(strings.TrimPrefix(path, marker))
+		}
+	}
+	return path
+}
+
+func nextNonBlankLine(lines []string, start int) int {
+	for i := start; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) != "" {
+			return i
+		}
+	}
+	return len(lines)
+}
+
+func previousNonBlankIsDiffHeading(lines []string, index int) bool {
+	for i := index - 1; i >= 0; i-- {
+		if strings.TrimSpace(lines[i]) == "" {
+			continue
+		}
+		return isHandoffDiffHeading(lines[i])
+	}
+	return false
+}
+
+func handoffDiffPaths(content string) []string {
+	content = normalizeLegacyDiffFences(content)
+	lines := strings.Split(content, "\n")
+	var paths []string
+
+	for i := 0; i < len(lines); i++ {
+		if !isHandoffDiffHeading(lines[i]) {
+			continue
+		}
+		fenceStart := nextNonBlankLine(lines, i+1)
+		if fenceStart < len(lines) && strings.TrimSpace(lines[fenceStart]) == "```diff" {
+			paths = append(paths, handoffDiffPathFromHeading(lines[i]))
+		}
+	}
+
+	return paths
+}
+
+func toggleAllHandoffDiffs(m *Model) {
+	paths := handoffDiffPaths(m.HandoffContent)
+	if len(paths) == 0 {
+		return
+	}
+
+	shouldCollapse := false
+	for _, path := range paths {
+		if m.HandoffCollapsedDiffs == nil || !m.HandoffCollapsedDiffs[path] {
+			shouldCollapse = true
+			break
+		}
+	}
+
+	if shouldCollapse {
+		m.HandoffCollapsedDiffs = make(map[string]bool, len(paths))
+		for _, path := range paths {
+			m.HandoffCollapsedDiffs[path] = true
+		}
+		return
+	}
+
+	m.HandoffCollapsedDiffs = nil
+}
+
+func toggleHandoffDiff(m *Model, path string) {
+	if strings.TrimSpace(path) == "" {
+		return
+	}
+	if m.HandoffCollapsedDiffs == nil {
+		m.HandoffCollapsedDiffs = make(map[string]bool)
+	}
+	if m.HandoffCollapsedDiffs[path] {
+		delete(m.HandoffCollapsedDiffs, path)
+		if len(m.HandoffCollapsedDiffs) == 0 {
+			m.HandoffCollapsedDiffs = nil
+		}
+		return
+	}
+	m.HandoffCollapsedDiffs[path] = true
+}
+
+func handoffDiffPathAtScreenLine(m Model, screenY int) string {
+	paths := handoffDiffPaths(m.HandoffContent)
+	if len(paths) == 0 {
+		return ""
+	}
+
+	lineWidth := previewLineWidth(m.Width)
+	header := clampPreviewLine(strings.TrimRight(renderHandoffHeader(m), "\n"), lineWidth)
+	headerLines := countLines(header)
+	if screenY < headerLines {
+		return ""
+	}
+
+	bodyLines := clampPreviewLines(splitRenderedLines(renderHandoffBody(m)), lineWidth)
+	contentLines := handoffPreviewContentLines(m)
+	scrollOffset := clampHandoffScrollOffset(m.ScrollOffset, len(bodyLines), contentLines)
+	bodyLineIndex := scrollOffset + screenY - headerLines
+	if bodyLineIndex < 0 || bodyLineIndex >= len(bodyLines) {
+		return ""
+	}
+
+	return handoffDiffPathFromRenderedLine(bodyLines[bodyLineIndex], paths)
+}
+
+func handoffDiffPathFromRenderedLine(line string, paths []string) string {
+	stripped := strings.TrimSpace(xansi.Strip(line))
+	if strings.HasPrefix(stripped, "•") {
+		stripped = strings.TrimSpace(strings.TrimPrefix(stripped, "•"))
+	} else if strings.HasPrefix(stripped, "#### ") {
+		stripped = handoffDiffPathFromHeading(stripped)
+	} else if strings.HasPrefix(stripped, handoffDiffExpandedMarker+" ") || strings.HasPrefix(stripped, handoffDiffCollapsedMarker+" ") {
+		// H4 headings render without a bullet prefix; the disclosure arrow is the marker.
+	} else {
+		return ""
+	}
+	stripped = trimHandoffDiffDisclosureMarker(stripped)
+	for _, path := range paths {
+		if stripped == path {
+			return path
+		}
+	}
+	return ""
+}
+
 func renderSavePrompt(m Model) string {
 	input := m.SaveInput
 	cursorVisible := true
@@ -361,7 +604,7 @@ func handoffGlamourStyle() glamouransi.StyleConfig {
 	style.H3.StylePrimitive.Color = styleStringPtr("116")
 	style.H3.StylePrimitive.Bold = styleBoolPtr(true)
 
-	style.H4.StylePrimitive.Prefix = "• "
+	style.H4.StylePrimitive.Prefix = ""
 	style.H4.StylePrimitive.Color = styleStringPtr("244")
 	style.H4.StylePrimitive.Bold = styleBoolPtr(true)
 
@@ -415,6 +658,11 @@ func handleHandoffKey(m *Model, key string) (tea.Model, tea.Cmd) {
 
 	case "s":
 		return openHandoffSavePrompt(m)
+
+	case "d":
+		toggleAllHandoffDiffs(m)
+		clampHandoffModelScroll(m)
+		return *m, nil
 
 	case "down":
 		m.ScrollOffset++
@@ -511,7 +759,7 @@ func handoffMaxScrollOffset(m Model) int {
 
 func (m Model) handleCopyToClipboard() (tea.Model, tea.Cmd) {
 	return m, func() tea.Msg {
-		err := clipboard.WriteAll(m.HandoffContent)
+		err := clipboard.WriteAll(handoffMarkdownForSave(m))
 		return HandoffCopiedMsg{Error: err}
 	}
 }
@@ -542,6 +790,8 @@ func (m Model) handleSaveToFile() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	content := handoffMarkdownForSave(m)
+
 	return m, func() tea.Msg {
 		dir := filepath.Dir(savePath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
@@ -554,7 +804,7 @@ func (m Model) handleSaveToFile() (tea.Model, tea.Cmd) {
 			}
 			return HandoffSavedMsg{Path: savePath, Error: err}
 		}
-		if _, err := f.WriteString(m.HandoffContent); err != nil {
+		if _, err := f.WriteString(content); err != nil {
 			f.Close()
 			return HandoffSavedMsg{Path: savePath, Error: err}
 		}
@@ -605,6 +855,11 @@ func handleHandoffMouse(m *Model, msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			if bx >= saveStart && bx < saveEnd {
 				return openHandoffSavePrompt(m)
 			}
+		}
+		if path := handoffDiffPathAtScreenLine(*m, by); path != "" {
+			toggleHandoffDiff(m, path)
+			clampHandoffModelScroll(m)
+			return *m, nil
 		}
 	}
 
