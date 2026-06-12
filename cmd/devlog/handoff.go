@@ -15,6 +15,7 @@ import (
 
 func newHandoffCommand() *cobra.Command {
 	var output string
+	var noDiff bool
 
 	cmd := &cobra.Command{
 		Use:          "handoff [session-id]",
@@ -59,7 +60,7 @@ func newHandoffCommand() *cobra.Command {
 				return err
 			}
 
-			handoffText, err := handoff.Generate(sessionContent, diff)
+			handoffText, err := handoff.GenerateWithOptions(sessionContent, diff, handoff.GenerateOptions{ExcludeRawDiff: noDiff})
 			if err != nil {
 				return fmt.Errorf("handoff: generate: %w", err)
 			}
@@ -97,6 +98,7 @@ func newHandoffCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&output, "output", "o", "", "Write handoff to a file instead of stdout")
+	cmd.Flags().BoolVar(&noDiff, "no-diff", false, "Exclude raw diff blocks from the handoff")
 
 	return cmd
 }
