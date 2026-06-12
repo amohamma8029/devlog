@@ -90,6 +90,169 @@ func TestModelSessionListBackKeysReturnToNoSession(t *testing.T) {
 	}
 }
 
+func TestModelNoSessionOpenPromptKeyFlow(t *testing.T) {
+	s, root := newTestStore(t)
+	m := NewModel(s, root)
+	m.CurrentView = ActiveSession
+	m.Width = 80
+	m.Height = 24
+
+	updatedModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from Update, got %T", updatedModel)
+	}
+	if cmd == nil {
+		t.Fatal("expected cursor tick command")
+	}
+	if !updated.OpenPromptOpen {
+		t.Fatal("pressing o should open the session prompt")
+	}
+	if !strings.Contains(updated.View(), "Open session: ") {
+		t.Fatalf("view should render open prompt, got:\n%s", updated.View())
+	}
+
+	updatedModel, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	updated = updatedModel.(Model)
+	updatedModel, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	updated = updatedModel.(Model)
+	if updated.OpenInput != "aq" {
+		t.Fatalf("OpenInput after typing = %q, want aq", updated.OpenInput)
+	}
+
+	updatedModel, _ = updated.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	updated = updatedModel.(Model)
+	if updated.OpenInput != "a" {
+		t.Fatalf("OpenInput after backspace = %q, want a", updated.OpenInput)
+	}
+
+	updatedModel, cmd = updated.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated = updatedModel.(Model)
+	if cmd != nil {
+		t.Fatal("esc in open prompt should not quit")
+	}
+	if updated.OpenPromptOpen {
+		t.Fatal("esc should close open prompt")
+	}
+	if updated.OpenInput != "" {
+		t.Fatalf("OpenInput after esc = %q, want empty", updated.OpenInput)
+	}
+}
+
+func TestModelNoSessionOpenPromptEmptyMessageSetsError(t *testing.T) {
+	s, root := newTestStore(t)
+	m := NewModel(s, root)
+	m.CurrentView = ActiveSession
+	m.OpenPromptOpen = true
+	m.OpenInput = "   "
+
+	updatedModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from Update, got %T", updatedModel)
+	}
+	if cmd != nil {
+		t.Fatal("expected no command for empty open prompt")
+	}
+	if updated.OpenPromptOpen {
+		t.Fatal("empty submit should close open prompt")
+	}
+	if updated.OpenInput != "" {
+		t.Fatalf("OpenInput = %q, want empty", updated.OpenInput)
+	}
+	if updated.ErrorMessage != "Usage: type a session message" {
+		t.Fatalf("ErrorMessage = %q, want usage error", updated.ErrorMessage)
+	}
+}
+
+func TestModelNoSessionOpenPromptCreatesAndLoadsSession(t *testing.T) {
+	t.Setenv("DEVLOG_AUTHOR_NAME", "TUI Tester")
+	t.Setenv("DEVLOG_AUTHOR_EMAIL", "tui@example.com")
+
+	s, root := newTestStore(t)
+	m := NewModel(s, root)
+	m.CurrentView = ActiveSession
+	m.OpenPromptOpen = true
+	m.OpenInput = "Start from the TUI"
+
+	updatedModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from Update, got %T", updatedModel)
+	}
+	if cmd == nil {
+		t.Fatal("expected command for non-empty open prompt")
+	}
+	if updated.OpenPromptOpen || updated.OpenInput != "" {
+		t.Fatalf("prompt should close and clear after submit, open=%v input=%q", updated.OpenPromptOpen, updated.OpenInput)
+	}
+
+	msg := cmd()
+	if errMsg, ok := msg.(CommandErrorMsg); ok {
+		t.Fatalf("open prompt returned error: %v", errMsg.Error)
+	}
+	loaded, ok := msg.(ActiveSessionLoadedMsg)
+	if !ok {
+		t.Fatalf("open prompt returned %T, want ActiveSessionLoadedMsg", msg)
+	}
+	if loaded.Session == nil {
+		t.Fatal("loaded session is nil")
+	}
+	if loaded.Title != "Start from the TUI" {
+		t.Fatalf("Title = %q, want start message", loaded.Title)
+	}
+	if len(loaded.Events) != 1 || loaded.Events[0].Type != "Start" || loaded.Events[0].Body != "Start from the TUI" {
+		t.Fatalf("Events = %#v, want single Start event", loaded.Events)
+	}
+
+	updatedModel, _ = updated.Update(loaded)
+	updated, ok = updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model after ActiveSessionLoadedMsg, got %T", updatedModel)
+	}
+	if updated.CurrentView != ActiveSession {
+		t.Fatalf("CurrentView = %v, want ActiveSession", updated.CurrentView)
+	}
+	if updated.ActiveSession == nil || updated.ActiveSession.ID != loaded.Session.ID {
+		t.Fatalf("ActiveSession = %#v, want loaded session", updated.ActiveSession)
+	}
+
+	records, err := s.ListSessions()
+	if err != nil {
+		t.Fatalf("ListSessions failed: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("session count = %d, want 1", len(records))
+	}
+}
+
+func TestModelNoSessionOpenPromptReportsExistingActiveSession(t *testing.T) {
+	t.Setenv("DEVLOG_AUTHOR_NAME", "TUI Tester")
+	t.Setenv("DEVLOG_AUTHOR_EMAIL", "tui@example.com")
+
+	s, root := newTestStore(t)
+	const activeID = "2026-02-20T090000Z"
+	writeTestSession(t, s, activeID, "feat/current", "Alice", "Current work", time.Date(2026, 2, 20, 9, 0, 0, 0, time.UTC))
+
+	m := NewModel(s, root)
+	m.CurrentView = ActiveSession
+	m.OpenPromptOpen = true
+	m.OpenInput = "Another session"
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected command for non-empty open prompt")
+	}
+	msg := cmd()
+	errMsg, ok := msg.(CommandErrorMsg)
+	if !ok {
+		t.Fatalf("open prompt returned %T, want CommandErrorMsg", msg)
+	}
+	if !strings.Contains(errMsg.Error.Error(), "a session is already active") {
+		t.Fatalf("error = %q, want already active", errMsg.Error.Error())
+	}
+}
+
 func TestModelSessionListFilterReceivesQ(t *testing.T) {
 	s, root := newTestStore(t)
 	writeTestSession(t, s, "2026-01-15T140000Z", "feat/a", "Alice", "quality pass", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
