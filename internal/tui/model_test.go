@@ -37,6 +37,43 @@ func TestModelInit(t *testing.T) {
 	}
 }
 
+func scrollRestorationEvents() []store.SessionEvent {
+	events := []store.SessionEvent{{Type: "Start", Body: "auth"}}
+	start := time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC)
+	for i := 0; i < 20; i++ {
+		events = append(events, store.SessionEvent{Type: "Note", Time: start.Add(time.Duration(i) * time.Minute), Body: "line"})
+	}
+	return events
+}
+
+func TestHandoffGeneratedSavesActiveSessionScroll(t *testing.T) {
+	m := NewModel(&store.Store{}, "/tmp")
+	m.CurrentView = ActiveSession
+	m.ActiveSession = testActiveSession()
+	m.Events = scrollRestorationEvents()
+	m.Width = 80
+	m.Height = 12
+	m.ScrollOffset = 4
+
+	updatedModel, cmd := m.Update(HandoffGeneratedMsg{Content: "# Handoff"})
+	if cmd == nil {
+		t.Fatal("handoff generation should clear the screen")
+	}
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if updated.CurrentView != HandoffPreview {
+		t.Fatalf("CurrentView = %v, want HandoffPreview", updated.CurrentView)
+	}
+	if updated.activeSessionScrollOffset != 4 {
+		t.Fatalf("activeSessionScrollOffset = %d, want 4", updated.activeSessionScrollOffset)
+	}
+	if updated.ScrollOffset != 0 {
+		t.Fatalf("ScrollOffset = %d, want reset to 0 for handoff preview", updated.ScrollOffset)
+	}
+}
+
 func TestModelUpdateQuitOnNoSessionKeys(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -862,6 +899,11 @@ func TestHandleViewKeyQNavigatesBackFromHandoffNoPrompt(t *testing.T) {
 	m := NewModel(s, root)
 	m.CurrentView = HandoffPreview
 	m.SavePromptOpen = false
+	m.Events = scrollRestorationEvents()
+	m.Width = 80
+	m.Height = 12
+	m.ScrollOffset = 9
+	m.activeSessionScrollOffset = 4
 	m.ActiveSession = &store.SessionRecord{
 		Session: store.Session{ID: sessionID, Author: "Alice", Branch: "feat/a"},
 	}
@@ -883,6 +925,9 @@ func TestHandleViewKeyQNavigatesBackFromHandoffNoPrompt(t *testing.T) {
 	if updated.HandoffMsg != "" {
 		t.Fatalf("handoff confirmation should clear on view transition, got %q", updated.HandoffMsg)
 	}
+	if updated.ScrollOffset != 4 {
+		t.Fatalf("ScrollOffset = %d, want restored active session offset 4", updated.ScrollOffset)
+	}
 }
 
 func TestHandleViewKeyEscNavigatesBackFromHandoffNoPrompt(t *testing.T) {
@@ -894,6 +939,11 @@ func TestHandleViewKeyEscNavigatesBackFromHandoffNoPrompt(t *testing.T) {
 	m.CurrentView = HandoffPreview
 	m.SavePromptOpen = false
 	m.HandoffMsg = "Saved to handoff.md"
+	m.Events = scrollRestorationEvents()
+	m.Width = 80
+	m.Height = 12
+	m.ScrollOffset = 9
+	m.activeSessionScrollOffset = 4
 	m.ActiveSession = &store.SessionRecord{
 		Session: store.Session{ID: sessionID, Author: "Alice", Branch: "feat/a"},
 	}
@@ -912,5 +962,8 @@ func TestHandleViewKeyEscNavigatesBackFromHandoffNoPrompt(t *testing.T) {
 	}
 	if updated.HandoffMsg != "" {
 		t.Fatalf("handoff confirmation should clear on view transition, got %q", updated.HandoffMsg)
+	}
+	if updated.ScrollOffset != 4 {
+		t.Fatalf("ScrollOffset = %d, want restored active session offset 4", updated.ScrollOffset)
 	}
 }
