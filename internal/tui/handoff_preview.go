@@ -42,6 +42,9 @@ func renderHandoffPreview(m Model) string {
 	if m.SavePromptOpen {
 		prompt = renderSavePrompt(m)
 	}
+	if m.CollapsedDiffConfirmOpen {
+		prompt = clampPreviewLine(renderCollapsedDiffPrompt(m), lineWidth)
+	}
 	messages := renderHandoffMessages(m, lineWidth)
 
 	height := previewViewportHeight(m.Height)
@@ -644,6 +647,21 @@ func truncateInputToWidth(input string, width int) string {
 	return xansi.Truncate(input, width, "")
 }
 
+func renderCollapsedDiffPrompt(m Model) string {
+	count := countCollapsedDiffs(m)
+	if count == 0 {
+		return ""
+	}
+	var suffix string
+	if count == 1 {
+		suffix = "diff"
+	} else {
+		suffix = "diffs"
+	}
+	text := fmt.Sprintf(" %d collapsed %s will be omitted. Continue? [y/n] ", count, suffix)
+	return SavePromptStyle.Render(text)
+}
+
 func handoffGlamourStyle() glamouransi.StyleConfig {
 	style := styles.DarkStyleConfig
 
@@ -692,7 +710,41 @@ func styleStringPtr(s string) *string { return &s }
 func styleBoolPtr(b bool) *bool       { return &b }
 func styleUintPtr(u uint) *uint       { return &u }
 
+func countCollapsedDiffs(m Model) int {
+	count := 0
+	for _, collapsed := range m.HandoffCollapsedDiffs {
+		if collapsed {
+			count++
+		}
+	}
+	return count
+}
+
 func handleHandoffKey(m *Model, key string) (tea.Model, tea.Cmd) {
+	if m.CollapsedDiffConfirmOpen {
+		switch key {
+		case "y":
+			m.CollapsedDiffConfirmOpen = false
+			action := m.CollapsedDiffConfirmAction
+			m.CollapsedDiffConfirmAction = ""
+			if action == "copy" {
+				return m.handleCopyToClipboard()
+			}
+			if action == "save" {
+				return openHandoffSavePrompt(m)
+			}
+			return *m, nil
+
+		case "n", "esc":
+			m.CollapsedDiffConfirmOpen = false
+			m.CollapsedDiffConfirmAction = ""
+			return *m, nil
+
+		default:
+			return *m, nil
+		}
+	}
+
 	if m.SavePromptOpen {
 		switch key {
 		case "esc":
@@ -719,9 +771,19 @@ func handleHandoffKey(m *Model, key string) (tea.Model, tea.Cmd) {
 
 	switch key {
 	case "y":
+		if countCollapsedDiffs(*m) > 0 {
+			m.CollapsedDiffConfirmOpen = true
+			m.CollapsedDiffConfirmAction = "copy"
+			return *m, nil
+		}
 		return m.handleCopyToClipboard()
 
 	case "s":
+		if countCollapsedDiffs(*m) > 0 {
+			m.CollapsedDiffConfirmOpen = true
+			m.CollapsedDiffConfirmAction = "save"
+			return *m, nil
+		}
 		return openHandoffSavePrompt(m)
 
 	case "d":
