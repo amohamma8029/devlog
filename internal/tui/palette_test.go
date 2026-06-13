@@ -267,3 +267,55 @@ func TestCommandPaletteEnterWithoutSelectionExecutesTypedInput(t *testing.T) {
 		t.Errorf("Input should be cleared, got %q", np.Input)
 	}
 }
+
+func TestVisiblePaletteCommandsActiveSession(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.Input = "/"
+	p.SessionClosed = false
+	visible := visiblePaletteCommands(p)
+	if len(visible) != len(PaletteCommands) {
+		t.Errorf("active session should show all commands, got %d, want %d", len(visible), len(PaletteCommands))
+	}
+}
+
+func TestVisiblePaletteCommandsClosedSession(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.Input = "/"
+	p.SessionClosed = true
+	visible := visiblePaletteCommands(p)
+	if len(visible) != 2 {
+		t.Errorf("closed session should show 2 commands, got %d", len(visible))
+	}
+	for _, cmd := range visible {
+		if cmd.Command == "/note" || cmd.Command == "/block" || cmd.Command == "/close" {
+			t.Errorf("closed session should not show %s", cmd.Command)
+		}
+	}
+}
+
+func TestVisiblePaletteCommandsFilter(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.Input = "/n"
+	p.SessionClosed = false
+	visible := visiblePaletteCommands(p)
+	if len(visible) != 1 {
+		t.Fatalf("filter /n should show 1 command, got %d", len(visible))
+	}
+	if visible[0].Command != "/note" {
+		t.Errorf("filter /n should show /note, got %s", visible[0].Command)
+	}
+}
+
+func TestVisiblePaletteCommandsNoMatch(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.Input = "/xyz"
+	p.SessionClosed = false
+	visible := visiblePaletteCommands(p)
+	if len(visible) != 0 {
+		t.Errorf("filter /xyz should show 0 commands, got %d", len(visible))
+	}
+}

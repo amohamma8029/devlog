@@ -28,6 +28,7 @@ type CommandPalette struct {
 	SelectedIndex int
 	HoverIndex    int
 	CursorVisible bool
+	SessionClosed bool
 	offsetY       int
 }
 
@@ -44,6 +45,20 @@ func (p *CommandPalette) OpenPalette() {
 	p.SelectedIndex = -1
 	p.HoverIndex = -1
 	p.CursorVisible = true
+	p.SessionClosed = false
+}
+
+func visiblePaletteCommands(p CommandPalette) []CommandEntry {
+	var filtered []CommandEntry
+	for _, cmd := range PaletteCommands {
+		if p.SessionClosed && (cmd.Command == "/note" || cmd.Command == "/block" || cmd.Command == "/close") {
+			continue
+		}
+		if p.Input == "" || p.Input == "/" || strings.HasPrefix(strings.ToLower(cmd.Command), strings.ToLower(p.Input)) {
+			filtered = append(filtered, cmd)
+		}
+	}
+	return filtered
 }
 
 func (p *CommandPalette) ClosePalette() {
@@ -73,10 +88,11 @@ func (p *CommandPalette) handleMouse(msg tea.MouseMsg) (tea.Cmd, *CommandPalette
 		return nil, p
 	}
 
+	visible := visiblePaletteCommands(*p)
 	menuY := msg.Y - p.offsetY
 
 	if msg.Button == tea.MouseButtonNone || msg.Action == tea.MouseActionMotion {
-		if menuY >= 0 && menuY < len(PaletteCommands) {
+		if menuY >= 0 && menuY < len(visible) {
 			p.HoverIndex = menuY
 		} else {
 			p.HoverIndex = -1
@@ -88,9 +104,9 @@ func (p *CommandPalette) handleMouse(msg tea.MouseMsg) (tea.Cmd, *CommandPalette
 		return nil, p
 	}
 
-	if menuY >= 0 && menuY < len(PaletteCommands) {
+	if menuY >= 0 && menuY < len(visible) {
 		p.SelectedIndex = menuY
-		entry := PaletteCommands[menuY]
+		entry := visible[menuY]
 		if entry.NoArg {
 			p.ClosePalette()
 			return func() tea.Msg { return CommandExecutedMsg{Input: entry.Command} }, p
@@ -105,14 +121,16 @@ func (p *CommandPalette) handleMouse(msg tea.MouseMsg) (tea.Cmd, *CommandPalette
 }
 
 func (p *CommandPalette) handleKey(msg tea.KeyMsg) (tea.Cmd, *CommandPalette) {
+	visible := visiblePaletteCommands(*p)
+
 	switch msg.String() {
 	case "esc":
 		p.ClosePalette()
 		return nil, p
 
 	case "enter":
-		if p.SelectedIndex >= 0 && p.SelectedIndex < len(PaletteCommands) {
-			entry := PaletteCommands[p.SelectedIndex]
+		if p.SelectedIndex >= 0 && p.SelectedIndex < len(visible) {
+			entry := visible[p.SelectedIndex]
 			if entry.NoArg {
 				p.ClosePalette()
 				return func() tea.Msg { return CommandExecutedMsg{Input: entry.Command} }, p
@@ -134,23 +152,35 @@ func (p *CommandPalette) handleKey(msg tea.KeyMsg) (tea.Cmd, *CommandPalette) {
 		if len(p.Input) > 0 {
 			p.Input = p.Input[:len(p.Input)-1]
 		}
+		if p.SelectedIndex >= len(visible) {
+			p.SelectedIndex = len(visible) - 1
+		}
+		if len(visible) == 0 {
+			p.SelectedIndex = -1
+		}
 
 	case "up":
-		if p.SelectedIndex > 0 {
+		if len(visible) == 0 {
+			p.SelectedIndex = -1
+		} else if p.SelectedIndex > 0 {
 			p.SelectedIndex--
 		} else {
-			p.SelectedIndex = len(PaletteCommands) - 1
+			p.SelectedIndex = len(visible) - 1
 		}
 		p.HoverIndex = -1
 
 	case "down":
-		if p.SelectedIndex < len(PaletteCommands)-1 {
+		if len(visible) == 0 {
+			p.SelectedIndex = -1
+		} else if p.SelectedIndex < len(visible)-1 {
 			p.SelectedIndex++
 		}
 		p.HoverIndex = -1
 
 	case "tab":
-		if p.SelectedIndex < len(PaletteCommands)-1 {
+		if len(visible) == 0 {
+			p.SelectedIndex = -1
+		} else if p.SelectedIndex < len(visible)-1 {
 			p.SelectedIndex++
 		} else {
 			p.SelectedIndex = 0
@@ -177,18 +207,23 @@ func (p CommandPalette) View() string {
 		return ""
 	}
 
+	visible := visiblePaletteCommands(p)
 	var menu strings.Builder
 
-	for i, cmd := range PaletteCommands {
-		line := cmd.Command + "  " + HintStyle.Render(cmd.Description)
-		if i == p.SelectedIndex {
-			menu.WriteString(MenuSelectedStyle.Render(line))
-		} else if i == p.HoverIndex {
-			menu.WriteString(MenuHoverStyle.Render(line))
-		} else {
-			menu.WriteString(MenuStyle.Render(line))
+	if len(visible) == 0 {
+		menu.WriteString(MenuStyle.Render("No matching commands"))
+	} else {
+		for i, cmd := range visible {
+			line := cmd.Command + "  " + HintStyle.Render(cmd.Description)
+			if i == p.SelectedIndex {
+				menu.WriteString(MenuSelectedStyle.Render(line))
+			} else if i == p.HoverIndex {
+				menu.WriteString(MenuHoverStyle.Render(line))
+			} else {
+				menu.WriteString(MenuStyle.Render(line))
+			}
+			menu.WriteByte('\n')
 		}
-		menu.WriteByte('\n')
 	}
 
 	menuBox := MenuBoxStyle.Render(strings.TrimRight(menu.String(), "\n"))
