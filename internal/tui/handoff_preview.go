@@ -775,6 +775,10 @@ func handleHandoffKey(m *Model, key string) (tea.Model, tea.Cmd) {
 	}
 
 	switch key {
+	case "?":
+		m.ShowHelp = true
+		return *m, nil
+
 	case "y":
 		if countCollapsedDiffs(*m) > 0 {
 			m.CollapsedDiffConfirmOpen = true

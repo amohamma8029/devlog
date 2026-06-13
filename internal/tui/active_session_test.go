@@ -436,8 +436,8 @@ func TestRenderHandoffPreviewDoesNotOverflowViewportWidth(t *testing.T) {
 	if !strings.Contains(v, "Handoff Preview") {
 		t.Error("renderHandoffPreview should keep header visible in narrow view")
 	}
-	if !strings.Contains(v, "y copy") {
-		t.Error("renderHandoffPreview should keep footer visible in narrow view")
+	if !strings.Contains(v, "y/s/d") {
+		t.Error("renderHandoffPreview should keep compact footer visible in narrow view")
 	}
 }
 
