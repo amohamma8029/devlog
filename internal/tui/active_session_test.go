@@ -35,6 +35,130 @@ func testModel() Model {
 	}
 }
 
+func testScrollableActiveModel() Model {
+	m := testModel()
+	m.CurrentView = ActiveSession
+	m.ActiveSession = testActiveSession()
+	m.Width = 80
+	m.Height = 10
+	m.Events = []store.SessionEvent{{Type: "Start", Body: "Test title"}}
+	for i := 0; i < 12; i++ {
+		m.Events = append(m.Events, store.SessionEvent{Type: "Note", Time: testEventTime(14, 30), Body: "scrollable note body with enough text to create a multi-line event"})
+	}
+	return m
+}
+
+func TestLineScrollKeyCoalescesHeldRepeats(t *testing.T) {
+	m := testScrollableActiveModel()
+	now := time.Date(2026, 6, 13, 12, 0, 0, 0, time.UTC)
+
+	updatedModel, cmd := m.handleLineScrollKey(scrollDirectionDown, now)
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from handleLineScrollKey, got %T", updatedModel)
+	}
+	if cmd != nil {
+		t.Fatal("direct line scroll should not start a command")
+	}
+	if updated.ScrollOffset != 1 {
+		t.Fatalf("first scroll key ScrollOffset = %d, want 1", updated.ScrollOffset)
+	}
+
+	repeatedModel, cmd := updated.handleLineScrollKey(scrollDirectionDown, now.Add(10*time.Millisecond))
+	repeated, ok := repeatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from repeated scroll key, got %T", repeatedModel)
+	}
+	if cmd != nil {
+		t.Fatal("same-direction repeat should not start a command")
+	}
+	if repeated.ScrollOffset != updated.ScrollOffset {
+		t.Fatalf("same-direction repeat ScrollOffset = %d, want %d", repeated.ScrollOffset, updated.ScrollOffset)
+	}
+	if repeated.scrollDirection != scrollDirectionDown || !repeated.lastLineScroll.Equal(now) {
+		t.Fatalf("same-direction repeat state direction=%d last=%s, want direction down and unchanged timestamp", repeated.scrollDirection, repeated.lastLineScroll)
+	}
+}
+
+func TestLineScrollKeyAcceptsRepeatAfterMinInterval(t *testing.T) {
+	m := testScrollableActiveModel()
+	now := time.Date(2026, 6, 13, 12, 0, 0, 0, time.UTC)
+
+	updatedModel, _ := m.handleLineScrollKey(scrollDirectionDown, now)
+	updated := updatedModel.(Model)
+
+	repeatedModel, cmd := updated.handleLineScrollKey(scrollDirectionDown, now.Add(lineScrollMinInterval))
+	repeated, ok := repeatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from repeated scroll key, got %T", repeatedModel)
+	}
+	if cmd != nil {
+		t.Fatal("direct line scroll should not start a command")
+	}
+	if repeated.ScrollOffset != 2 {
+		t.Fatalf("accepted repeat ScrollOffset = %d, want 2", repeated.ScrollOffset)
+	}
+	if !repeated.lastLineScroll.Equal(now.Add(lineScrollMinInterval)) {
+		t.Fatalf("lastLineScroll = %s, want accepted repeat timestamp", repeated.lastLineScroll)
+	}
+}
+
+func TestLineScrollKeyOppositeDirectionIsImmediate(t *testing.T) {
+	m := testScrollableActiveModel()
+	now := time.Date(2026, 6, 13, 12, 0, 0, 0, time.UTC)
+	m.ScrollOffset = 3
+	m.scrollDirection = scrollDirectionDown
+	m.lastLineScroll = now
+
+	updatedModel, cmd := m.handleLineScrollKey(scrollDirectionUp, now.Add(time.Millisecond))
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from opposite-direction scroll key, got %T", updatedModel)
+	}
+	if cmd != nil {
+		t.Fatal("direct line scroll should not start a command")
+	}
+	if updated.ScrollOffset != 2 {
+		t.Fatalf("opposite-direction ScrollOffset = %d, want 2", updated.ScrollOffset)
+	}
+	if updated.scrollDirection != scrollDirectionUp {
+		t.Fatalf("scrollDirection = %d, want up", updated.scrollDirection)
+	}
+}
+
+func TestHandoffLineScrollKeyCoalescesHeldRepeats(t *testing.T) {
+	m := testModel()
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = strings.Repeat("## Section\n\nLong paragraph body for scrolling.\n\n", 30)
+	m.Width = 80
+	m.Height = 8
+	now := time.Date(2026, 6, 13, 12, 0, 0, 0, time.UTC)
+
+	updatedModel, cmd := m.handleLineScrollKey(scrollDirectionDown, now)
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from handoff scroll key, got %T", updatedModel)
+	}
+	if cmd != nil {
+		t.Fatal("handoff direct line scroll should not start a command")
+	}
+	if updated.ScrollOffset != 1 {
+		t.Fatalf("handoff first scroll ScrollOffset = %d, want 1", updated.ScrollOffset)
+	}
+
+	repeatedModel, cmd := updated.handleLineScrollKey(scrollDirectionDown, now.Add(10*time.Millisecond))
+	repeated, ok := repeatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from handoff repeated scroll key, got %T", repeatedModel)
+	}
+	if cmd != nil {
+		t.Fatal("handoff same-direction repeat should not start a command")
+	}
+	if repeated.ScrollOffset != updated.ScrollOffset {
+		t.Fatalf("handoff same-direction repeat ScrollOffset = %d, want %d", repeated.ScrollOffset, updated.ScrollOffset)
+	}
+}
+
 func TestRenderActiveSessionShowsID(t *testing.T) {
 	m := testModel()
 	m.CurrentView = ActiveSession
@@ -207,6 +331,24 @@ func TestRenderHandoffPreviewShowsContent(t *testing.T) {
 	}
 	if !strings.Contains(v, "Handoff Preview") {
 		t.Error("renderHandoffPreview should show header")
+	}
+}
+
+func TestRenderHandoffPreviewUsesCachedBodyLines(t *testing.T) {
+	m := testModel()
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = "# Uncached content"
+	m.handoffBodyLineWidth = previewLineWidth(80)
+	m.handoffBodyLines = []string{"cached body line"}
+	m.Width = 80
+	m.Height = 8
+
+	v := renderHandoffPreview(m)
+	if !strings.Contains(v, "cached body line") {
+		t.Fatalf("renderHandoffPreview should use cached body lines, got:\n%s", v)
+	}
+	if strings.Contains(v, "Uncached content") {
+		t.Fatalf("renderHandoffPreview should not render uncached body content when cache is valid, got:\n%s", v)
 	}
 }
 
