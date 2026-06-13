@@ -27,34 +27,36 @@ const (
 )
 
 type Model struct {
-	CurrentView               View
-	ActiveSession             *store.SessionRecord
-	Events                    []store.SessionEvent
-	Palette                   *CommandPalette
-	Store                     *store.Store
-	SessionList               SessionListModel
-	Root                      string
-	Width                     int
-	Height                    int
-	ScrollOffset              int
-	activeSessionScrollOffset int
-	ShowHelp                  bool
-	ErrorMessage              string
-	NoSessionMsg              string
-	HandoffContent            string
-	HandoffCollapsedDiffs     map[string]bool
-	Title                     string
-	SavePromptOpen            bool
-	SaveInput                 string
-	OpenPromptOpen            bool
-	OpenInput                 string
-	HandoffMsg                string
-	scrollDirection           int
-	lastLineScroll            time.Time
-	activeTimelineLines       []string
-	activeTimelineWidth       int
-	handoffBodyLines          []string
-	handoffBodyLineWidth      int
+	CurrentView                View
+	ActiveSession              *store.SessionRecord
+	Events                     []store.SessionEvent
+	Palette                    *CommandPalette
+	Store                      *store.Store
+	SessionList                SessionListModel
+	Root                       string
+	Width                      int
+	Height                     int
+	ScrollOffset               int
+	activeSessionScrollOffset  int
+	ShowHelp                   bool
+	ErrorMessage               string
+	NoSessionMsg               string
+	HandoffContent             string
+	HandoffCollapsedDiffs      map[string]bool
+	Title                      string
+	SavePromptOpen             bool
+	SaveInput                  string
+	OpenPromptOpen             bool
+	OpenInput                  string
+	HandoffMsg                 string
+	CollapsedDiffConfirmOpen   bool
+	CollapsedDiffConfirmAction string
+	scrollDirection            int
+	lastLineScroll             time.Time
+	activeTimelineLines        []string
+	activeTimelineWidth        int
+	handoffBodyLines           []string
+	handoffBodyLineWidth       int
 }
 
 func NewModel(s *store.Store, root string) Model {
