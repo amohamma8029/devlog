@@ -20,6 +20,12 @@ const (
 	HandoffPreview
 )
 
+const (
+	scrollDirectionUp     = -1
+	scrollDirectionDown   = 1
+	lineScrollMinInterval = 16 * time.Millisecond
+)
+
 type Model struct {
 	CurrentView           View
 	ActiveSession         *store.SessionRecord
@@ -42,6 +48,12 @@ type Model struct {
 	OpenPromptOpen        bool
 	OpenInput             string
 	HandoffMsg            string
+	scrollDirection       int
+	lastLineScroll        time.Time
+	activeTimelineLines   []string
+	activeTimelineWidth   int
+	handoffBodyLines      []string
+	handoffBodyLineWidth  int
 }
 
 func NewModel(s *store.Store, root string) Model {
@@ -84,6 +96,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Height = msg.Height
 		sl, _ := m.SessionList.Update(msg)
 		m.SessionList = sl.(SessionListModel)
+		m.refreshScrollBodyCaches()
 		return m, nil
 
 	case ActiveSessionLoadedMsg:
@@ -93,6 +106,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ScrollOffset = 0
 		m.OpenPromptOpen = false
 		m.OpenInput = ""
+		m.refreshActiveTimelineCache()
 		changed := m.setView(ActiveSession)
 		return m, clearScreenIfChanged(changed)
 
@@ -135,6 +149,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.HandoffContent = msg.Content
 			m.HandoffCollapsedDiffs = nil
 			m.ScrollOffset = 0
+			m.refreshHandoffBodyCache()
 			m.setView(HandoffPreview)
 		}
 		return m, tea.ClearScreen
@@ -183,6 +198,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		if !m.supportsLineScroll() || !isLineScrollKey(msg.String()) {
+			m.stopLineScroll()
+		}
+
 		return m.handleViewKey(msg)
 	}
 
@@ -213,6 +232,70 @@ func (m Model) handleCursorTick() (tea.Model, tea.Cmd) {
 		})
 	}
 	return m, nil
+}
+
+func (m Model) handleLineScrollKey(direction int, now time.Time) (tea.Model, tea.Cmd) {
+	if direction != scrollDirectionUp && direction != scrollDirectionDown {
+		return m, nil
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	if m.scrollDirection == direction && !m.lastLineScroll.IsZero() && now.Sub(m.lastLineScroll) < lineScrollMinInterval {
+		// Drop buffered repeat events that arrive faster than the UI can use them.
+		return m, nil
+	}
+
+	m.scrollDirection = direction
+	m.lastLineScroll = now
+	m.scrollByLines(direction)
+	return m, nil
+}
+
+func (m *Model) stopLineScroll() {
+	m.scrollDirection = 0
+	m.lastLineScroll = time.Time{}
+}
+
+func (m Model) supportsLineScroll() bool {
+	return m.CurrentView == ActiveSession || m.CurrentView == HandoffPreview
+}
+
+func isLineScrollKey(key string) bool {
+	return key == "up" || key == "down"
+}
+
+func (m *Model) scrollByLines(lines int) {
+	switch m.CurrentView {
+	case ActiveSession:
+		m.ScrollOffset += lines
+		clampActiveSessionModelScroll(m)
+	case HandoffPreview:
+		m.ScrollOffset += lines
+		clampHandoffModelScroll(m)
+	}
+}
+
+func (m *Model) refreshScrollBodyCaches() {
+	m.refreshActiveTimelineCache()
+	m.refreshHandoffBodyCache()
+}
+
+func (m *Model) refreshActiveTimelineCache() {
+	m.activeTimelineLines = buildActiveSessionTimelineLines(*m)
+	m.activeTimelineWidth = m.Width
+}
+
+func (m *Model) refreshHandoffBodyCache() {
+	if m.HandoffContent == "" {
+		m.handoffBodyLines = nil
+		m.handoffBodyLineWidth = 0
+		return
+	}
+	lineWidth := previewLineWidth(m.Width)
+	m.handoffBodyLines = clampPreviewLines(splitRenderedLines(renderHandoffBody(*m)), lineWidth)
+	m.handoffBodyLineWidth = lineWidth
 }
 
 func (m Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -353,14 +436,10 @@ func (m Model) activeSessionKeyHandler(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "down":
-		m.ScrollOffset++
-		clampActiveSessionModelScroll(&m)
-		return m, nil
+		return m.handleLineScrollKey(scrollDirectionDown, time.Now())
 
 	case "up":
-		m.ScrollOffset--
-		clampActiveSessionModelScroll(&m)
-		return m, nil
+		return m.handleLineScrollKey(scrollDirectionUp, time.Now())
 
 	case "pgdown":
 		m.ScrollOffset += activeSessionPageSize(m)
@@ -633,6 +712,7 @@ func (m Model) View() string {
 func (m *Model) setView(view View) bool {
 	changed := m.CurrentView != view
 	if changed {
+		m.stopLineScroll()
 		m.clearTransientMessages()
 		if view != HandoffPreview {
 			m.SavePromptOpen = false

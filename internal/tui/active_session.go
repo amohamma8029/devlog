@@ -337,6 +337,13 @@ func clampActiveSessionModelScroll(m *Model) {
 }
 
 func activeSessionTimelineLines(m Model) []string {
+	if m.activeTimelineLines != nil && m.activeTimelineWidth == m.Width {
+		return m.activeTimelineLines
+	}
+	return buildActiveSessionTimelineLines(m)
+}
+
+func buildActiveSessionTimelineLines(m Model) []string {
 	width := m.Width
 	if width < 40 {
 		width = 40
