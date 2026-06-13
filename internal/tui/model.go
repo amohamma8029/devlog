@@ -419,6 +419,10 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.noSessionKeyHandler(key)
 
 	case SessionList:
+		if key == "?" {
+			m.ShowHelp = true
+			return m, nil
+		}
 		sl, cmd := m.SessionList.Update(msg)
 		m.SessionList = sl.(SessionListModel)
 		return m, cmd

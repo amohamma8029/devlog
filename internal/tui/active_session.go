@@ -125,16 +125,30 @@ func renderFooter(m Model) string {
 	var text string
 	if m.CurrentView == ActiveSession {
 		if m.ActiveSession != nil {
-			text = "/? help  ·  ↑/↓ line  ·  pgup/pgdn page  ·  home/end jump  ·  q quit"
+			if m.Width < 80 {
+				text = "/? help  ·  ↑/↓ scroll  ·  q quit"
+			} else {
+				text = "/? help  ·  ↑/↓ line  ·  pgup/pgdn page  ·  home/end jump  ·  q quit"
+			}
 		} else {
 			text = "l: session list  ·  o: open new session  ·  q quit"
 		}
 	} else if m.CurrentView == HandoffPreview {
-		text = "y copy  ·  s save  ·  d diffs  ·  ↑/↓ line  ·  pgup/pgdn page  ·  home/end jump  ·  q back"
+		if m.Width < 80 {
+			text = "y/s/d  ·  ↑/↓ scroll  ·  ? help  ·  q back"
+		} else {
+			text = "y copy  ·  s save  ·  d diffs  ·  ↑/↓ line  ·  pgup/pgdn page  ·  home/end jump  ·  q back"
+		}
+	} else if m.CurrentView == SessionList {
+		if m.Width < 80 {
+			text = "? help  ·  q quit"
+		} else {
+			text = "h handoff  ·  Enter open  ·  / filter  ·  ↑/↓ navigate  ·  ? help  ·  q quit"
+		}
 	} else {
 		text = "q quit"
 	}
-	return HintStyle.Render(text)
+	return HintStyle.Render(clampPreviewLine(text, m.Width))
 }
 
 func renderNoSession(m Model) string {
