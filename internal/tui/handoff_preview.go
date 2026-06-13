@@ -961,6 +961,11 @@ func isValidFilename(name string) bool {
 }
 
 func handleHandoffMouse(m *Model, msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.Palette != nil && m.Palette.Open {
+		cmd, _ := m.Palette.Update(msg)
+		return *m, cmd
+	}
+
 	action := ParseMouseEvent(msg)
 
 	switch action {
