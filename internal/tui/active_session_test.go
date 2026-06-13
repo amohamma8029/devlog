@@ -551,6 +551,32 @@ func TestHandleHandoffKeyOpensSavePrompt(t *testing.T) {
 	}
 }
 
+func TestHandleHandoffKeyQRestoresActiveSessionScroll(t *testing.T) {
+	m := testModel()
+	m.CurrentView = HandoffPreview
+	m.ActiveSession = testActiveSession()
+	m.Events = scrollRestorationEvents()
+	m.Width = 80
+	m.Height = 12
+	m.ScrollOffset = 9
+	m.activeSessionScrollOffset = 4
+
+	updatedModel, cmd := handleHandoffKey(&m, "q")
+	if cmd == nil {
+		t.Fatal("pressing q should clear the screen when returning to active session")
+	}
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from handleHandoffKey, got %T", updatedModel)
+	}
+	if updated.CurrentView != ActiveSession {
+		t.Fatalf("CurrentView = %v, want ActiveSession", updated.CurrentView)
+	}
+	if updated.ScrollOffset != 4 {
+		t.Fatalf("ScrollOffset = %d, want restored active session offset 4", updated.ScrollOffset)
+	}
+}
+
 func TestHandleHandoffMouseIgnoresHover(t *testing.T) {
 	m := testModel()
 	m.CurrentView = HandoffPreview
