@@ -56,8 +56,7 @@ func renderHandoffPreview(m Model) string {
 		contentLines = 1
 	}
 
-	rendered := renderHandoffBody(m)
-	bodyLines := clampPreviewLines(splitRenderedLines(rendered), lineWidth)
+	bodyLines := handoffBodyLines(m)
 
 	scrollOffset := clampHandoffScrollOffset(m.ScrollOffset, len(bodyLines), contentLines)
 
@@ -237,6 +236,14 @@ func renderHandoffBody(m Model) string {
 	}
 
 	return rendered
+}
+
+func handoffBodyLines(m Model) []string {
+	lineWidth := previewLineWidth(m.Width)
+	if m.handoffBodyLines != nil && m.handoffBodyLineWidth == lineWidth {
+		return m.handoffBodyLines
+	}
+	return clampPreviewLines(splitRenderedLines(renderHandoffBody(m)), lineWidth)
 }
 
 func prepareHandoffPreviewMarkdown(content string) string {
@@ -537,7 +544,7 @@ func handoffDiffPathAtScreenLine(m Model, screenY int) string {
 		return ""
 	}
 
-	bodyLines := clampPreviewLines(splitRenderedLines(renderHandoffBody(m)), lineWidth)
+	bodyLines := handoffBodyLines(m)
 	contentLines := handoffPreviewContentLines(m)
 	scrollOffset := clampHandoffScrollOffset(m.ScrollOffset, len(bodyLines), contentLines)
 	bodyLineIndex := scrollOffset + screenY - headerLines
@@ -719,18 +726,15 @@ func handleHandoffKey(m *Model, key string) (tea.Model, tea.Cmd) {
 
 	case "d":
 		toggleAllHandoffDiffs(m)
+		m.refreshHandoffBodyCache()
 		clampHandoffModelScroll(m)
 		return *m, nil
 
 	case "down":
-		m.ScrollOffset++
-		clampHandoffModelScroll(m)
-		return *m, nil
+		return m.handleLineScrollKey(scrollDirectionDown, time.Now())
 
 	case "up":
-		m.ScrollOffset--
-		clampHandoffModelScroll(m)
-		return *m, nil
+		return m.handleLineScrollKey(scrollDirectionUp, time.Now())
 
 	case "pgdown":
 		m.ScrollOffset += handoffPreviewContentLines(*m)
@@ -783,7 +787,7 @@ func handoffDefaultFilename(m Model) string {
 
 func clampHandoffModelScroll(m *Model) {
 	contentLines := handoffPreviewContentLines(*m)
-	bodyLines := len(clampPreviewLines(splitRenderedLines(renderHandoffBody(*m)), previewLineWidth(m.Width)))
+	bodyLines := len(handoffBodyLines(*m))
 	m.ScrollOffset = clampHandoffScrollOffset(m.ScrollOffset, bodyLines, contentLines)
 }
 
@@ -808,7 +812,7 @@ func handoffPreviewContentLines(m Model) int {
 
 func handoffMaxScrollOffset(m Model) int {
 	contentLines := handoffPreviewContentLines(m)
-	bodyLines := len(clampPreviewLines(splitRenderedLines(renderHandoffBody(m)), previewLineWidth(m.Width)))
+	bodyLines := len(handoffBodyLines(m))
 	maxOffset := bodyLines - contentLines
 	if maxOffset < 0 {
 		return 0
@@ -917,6 +921,7 @@ func handleHandoffMouse(m *Model, msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		if path := handoffDiffPathAtScreenLine(*m, by); path != "" {
 			toggleHandoffDiff(m, path)
+			m.refreshHandoffBodyCache()
 			clampHandoffModelScroll(m)
 			return *m, nil
 		}
