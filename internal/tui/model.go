@@ -27,33 +27,34 @@ const (
 )
 
 type Model struct {
-	CurrentView           View
-	ActiveSession         *store.SessionRecord
-	Events                []store.SessionEvent
-	Palette               *CommandPalette
-	Store                 *store.Store
-	SessionList           SessionListModel
-	Root                  string
-	Width                 int
-	Height                int
-	ScrollOffset          int
-	ShowHelp              bool
-	ErrorMessage          string
-	NoSessionMsg          string
-	HandoffContent        string
-	HandoffCollapsedDiffs map[string]bool
-	Title                 string
-	SavePromptOpen        bool
-	SaveInput             string
-	OpenPromptOpen        bool
-	OpenInput             string
-	HandoffMsg            string
-	scrollDirection       int
-	lastLineScroll        time.Time
-	activeTimelineLines   []string
-	activeTimelineWidth   int
-	handoffBodyLines      []string
-	handoffBodyLineWidth  int
+	CurrentView               View
+	ActiveSession             *store.SessionRecord
+	Events                    []store.SessionEvent
+	Palette                   *CommandPalette
+	Store                     *store.Store
+	SessionList               SessionListModel
+	Root                      string
+	Width                     int
+	Height                    int
+	ScrollOffset              int
+	activeSessionScrollOffset int
+	ShowHelp                  bool
+	ErrorMessage              string
+	NoSessionMsg              string
+	HandoffContent            string
+	HandoffCollapsedDiffs     map[string]bool
+	Title                     string
+	SavePromptOpen            bool
+	SaveInput                 string
+	OpenPromptOpen            bool
+	OpenInput                 string
+	HandoffMsg                string
+	scrollDirection           int
+	lastLineScroll            time.Time
+	activeTimelineLines       []string
+	activeTimelineWidth       int
+	handoffBodyLines          []string
+	handoffBodyLineWidth      int
 }
 
 func NewModel(s *store.Store, root string) Model {
@@ -146,6 +147,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ErrorMessage = msg.Error.Error()
 			return m, nil
 		} else {
+			m.activeSessionScrollOffset = m.ScrollOffset
 			m.HandoffContent = msg.Content
 			m.HandoffCollapsedDiffs = nil
 			m.ScrollOffset = 0
@@ -368,6 +370,7 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.CurrentView == HandoffPreview {
 			if m.ActiveSession != nil {
 				changed := m.setView(ActiveSession)
+				m.restoreActiveSessionScroll()
 				return m, clearScreenIfChanged(changed)
 			} else {
 				changed := m.setView(SessionList)
@@ -387,6 +390,7 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if m.CurrentView == HandoffPreview {
 			if m.ActiveSession != nil {
 				changed := m.setView(ActiveSession)
+				m.restoreActiveSessionScroll()
 				return m, clearScreenIfChanged(changed)
 			} else {
 				m.setView(SessionList)
@@ -734,6 +738,11 @@ func clearScreenIfChanged(changed bool) tea.Cmd {
 		return tea.ClearScreen
 	}
 	return nil
+}
+
+func (m *Model) restoreActiveSessionScroll() {
+	m.ScrollOffset = m.activeSessionScrollOffset
+	clampActiveSessionModelScroll(m)
 }
 
 func renderSessionList(m Model) string {

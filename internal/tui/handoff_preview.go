@@ -757,6 +757,7 @@ func handleHandoffKey(m *Model, key string) (tea.Model, tea.Cmd) {
 	case "q":
 		if m.ActiveSession != nil {
 			changed := m.setView(ActiveSession)
+			m.restoreActiveSessionScroll()
 			return *m, clearScreenIfChanged(changed)
 		} else {
 			changed := m.setView(SessionList)
