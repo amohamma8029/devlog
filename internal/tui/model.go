@@ -512,16 +512,6 @@ func (m Model) noSessionKeyHandler(key string) (tea.Model, tea.Cmd) {
 	case "o":
 		return openSessionPrompt(&m)
 
-	case "/":
-		if m.Palette != nil {
-			m.Palette.OpenPalette()
-			m.Palette.Input = "/"
-			m.Palette.SessionClosed = true
-			return m, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
-				return CursorTickMsg{}
-			})
-		}
-		return m, nil
 	}
 
 	return m, nil
