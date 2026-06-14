@@ -967,3 +967,36 @@ func TestHandleViewKeyEscNavigatesBackFromHandoffNoPrompt(t *testing.T) {
 		t.Fatalf("ScrollOffset = %d, want restored active session offset 4", updated.ScrollOffset)
 	}
 }
+
+func TestHandleViewKeyEscClosesCollapsedDiffConfirm(t *testing.T) {
+	s, root := newTestStore(t)
+	const sessionID = "2026-01-15T140000Z"
+	writeTestSession(t, s, sessionID, "feat/a", "Alice", "auth", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	m := NewModel(s, root)
+	m.CurrentView = HandoffPreview
+	m.CollapsedDiffConfirmOpen = true
+	m.CollapsedDiffConfirmAction = "copy"
+	m.ActiveSession = &store.SessionRecord{
+		Session: store.Session{ID: sessionID, Author: "Alice", Branch: "feat/a"},
+	}
+
+	msg := tea.KeyMsg{Type: tea.KeyEsc}
+	updatedModel, cmd := m.Update(msg)
+	if cmd != nil {
+		t.Fatal("esc with collapsed diff confirm open should not trigger navigation")
+	}
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if updated.CollapsedDiffConfirmOpen {
+		t.Error("esc should close collapsed diff confirm")
+	}
+	if updated.CollapsedDiffConfirmAction != "" {
+		t.Error("collapsed diff confirm action should be cleared after esc")
+	}
+	if updated.CurrentView != HandoffPreview {
+		t.Errorf("should stay on HandoffPreview, got %v", updated.CurrentView)
+	}
+}

@@ -364,6 +364,11 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if key == "esc" {
+		if m.CurrentView == HandoffPreview && m.CollapsedDiffConfirmOpen {
+			m.CollapsedDiffConfirmOpen = false
+			m.CollapsedDiffConfirmAction = ""
+			return m, nil
+		}
 		if m.CurrentView == HandoffPreview && m.SavePromptOpen {
 			m.SavePromptOpen = false
 			m.SaveInput = ""
