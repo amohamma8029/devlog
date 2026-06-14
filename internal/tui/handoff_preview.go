@@ -43,7 +43,7 @@ func renderHandoffPreview(m Model) string {
 		prompt = renderSavePrompt(m)
 	}
 	if m.CollapsedDiffConfirmOpen {
-		prompt = clampPreviewLine(renderCollapsedDiffPrompt(m), lineWidth)
+		prompt = renderCollapsedDiffPrompt(m, lineWidth)
 	}
 	messages := renderHandoffMessages(m, lineWidth)
 
@@ -647,19 +647,24 @@ func truncateInputToWidth(input string, width int) string {
 	return xansi.Truncate(input, width, "")
 }
 
-func renderCollapsedDiffPrompt(m Model) string {
+func renderCollapsedDiffPrompt(m Model, lineWidth int) string {
 	count := countCollapsedDiffs(m)
 	if count == 0 {
 		return ""
 	}
+	contentWidth := lineWidth - WarningPromptStyle.GetHorizontalFrameSize()
+	if contentWidth < 10 {
+		contentWidth = 10
+	}
+	style := WarningPromptStyle.Width(contentWidth)
 	var suffix string
 	if count == 1 {
 		suffix = "diff"
 	} else {
 		suffix = "diffs"
 	}
-	text := fmt.Sprintf(" %d collapsed %s will be omitted. Continue? [y/n] ", count, suffix)
-	return SavePromptStyle.Render(text)
+	text := fmt.Sprintf(" ⚠ Warning: %d %s context excluded — unrecoverable later. Proceed? [y/n] ", count, suffix)
+	return style.Render(text)
 }
 
 func handoffGlamourStyle() glamouransi.StyleConfig {
