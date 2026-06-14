@@ -1,6 +1,6 @@
 # devlog
 
-A CLI tool for structured session journals inside git repos.
+A CLI/TUI tool for structured session journals inside git repos.
 
 Record context, notes, blockers, and handoffs as you work so that a partner — human or AI — can pick up exactly where you left off.
 
@@ -9,6 +9,11 @@ Record context, notes, blockers, and handoffs as you work so that a partner — 
 ```bash
 # Build
 go build -o devlog.exe ./cmd/devlog
+
+# Launch the interactive TUI
+./devlog.exe
+
+# Or use CLI subcommands directly
 
 # Open a session
 ./devlog.exe open "Implement auth middleware"

@@ -17,7 +17,7 @@ go test ./...                              # run after EVERY change; stop on fir
 go test ./... -v                           # verbose output for debugging
 
 ## Stack
-Go 1.22+, Cobra (CLI), Bubble Tea + Bubbles + Lipgloss + Glamour (TUI Phase 2).
+Go 1.22+, Cobra (CLI), Bubble Tea + Bubbles + Lipgloss + Glamour (TUI).
 Storage: YAML front-matter + Markdown body, one file per session in .devlog/sessions/.
 
 ## PROJECT STRUCTURE
@@ -26,7 +26,7 @@ internal/session/    — Session lifecycle (start, stop, list, find active)
 internal/store/      — File I/O for .devlog/sessions/*.md (YAML front-matter + Markdown body)
 internal/handoff/    — Summary artifact generation from session data
 internal/git/        — Repo root detection, branch name, author identity from git config
-internal/tui/        — Bubble Tea interactive interface (Phase 2)
+internal/tui/        — Bubble Tea interactive interface
 
 ## CODE STYLE
 # Conventions — concrete rules beat vague descriptions
@@ -60,7 +60,7 @@ func (s *Store) Write(sess Session) {
 3. internal/store/ reads/writes .devlog/sessions/*.md (YAML front-matter + Markdown body)
 4. internal/handoff/ consumes session data from store/ → generates summary artifact
 5. internal/git/ provides repo root, branch, and author metadata (no git mutations)
-6. internal/tui/ (Phase 2) wraps the same internal/ packages in a Bubble Tea interface
+6. internal/tui/ wraps the same internal/ packages in a Bubble Tea interface
 
 ## GIT WORKFLOW
 # Commit message format — write about user impact, not implementation detail
