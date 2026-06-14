@@ -239,7 +239,7 @@ q      Go back
 No Active Session
 =================
 l      View session list
-o      Hint to open new session
+o      Open new session
 q      Quit
 
 Note: Use terminal selection (Shift+click) to select text.`
