@@ -287,6 +287,14 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 			p.MultiLineLines = append(p.MultiLineLines[:p.MultiLineCursorRow],
 				p.MultiLineLines[p.MultiLineCursorRow+1:]...)
 			p.MultiLineCursorRow--
+		} else if len(p.MultiLineLines[0]) == 0 {
+			p.MultiLine = false
+			p.MultiLineLines = nil
+			if p.MultiLineIsBlocker {
+				p.Input = "/block "
+			} else {
+				p.Input = "/note "
+			}
 		}
 		return nil, p
 
@@ -392,17 +400,19 @@ func (p CommandPalette) View() string {
 func (p CommandPalette) viewMultiLine() string {
 	var b strings.Builder
 
-	header := "Note: "
+	token := "/note"
 	if p.MultiLineIsBlocker {
-		header = "Blocker: "
+		token = "/block"
 	}
+	indent := strings.Repeat(" ", xansi.StringWidth(token)+1)
 
 	for i, line := range p.MultiLineLines {
-		prefix := header
-		if i > 0 {
-			prefix = "       "
+		if i == 0 {
+			b.WriteString(MenuSelectedStyle.Render(token))
+			b.WriteString(" ")
+		} else {
+			b.WriteString(MetadataStyle.Render(indent))
 		}
-		b.WriteString(SectionStyle.Render(prefix))
 
 		cursorChar := " "
 		if i == p.MultiLineCursorRow && p.CursorVisible {
