@@ -46,8 +46,9 @@ var HelpOverlayStyle = lipgloss.NewStyle().
 	Padding(0, 2).
 	BorderForeground(lipgloss.Color("#666666"))
 
-var HelpOverlayBgStyle = lipgloss.NewStyle().
-	Background(lipgloss.Color("#111111"))
+var HelpBackdropStyle = lipgloss.NewStyle().
+	Faint(true).
+	Foreground(lipgloss.Color("#555555"))
 
 var HelpTitleStyle = lipgloss.NewStyle().
 	Bold(true).
