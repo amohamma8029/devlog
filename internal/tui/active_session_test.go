@@ -265,7 +265,7 @@ func TestRenderNoSession(t *testing.T) {
 func TestRenderHelpOverlay(t *testing.T) {
 	m := testModel()
 	m.Width = 80
-	m.Height = 24
+	m.Height = 40
 	v := renderHelpOverlay(m)
 	if !strings.Contains(v, "Press any key to dismiss") {
 		t.Error("renderHelpOverlay should show dismiss footer")
@@ -771,12 +771,35 @@ func TestModelViewErrorBanner(t *testing.T) {
 func TestModelViewHelpOverlay(t *testing.T) {
 	m := testModel()
 	m.CurrentView = ActiveSession
+	m.ActiveSession = testActiveSession()
+	m.Title = "Visible base title"
 	m.ShowHelp = true
 	m.Width = 80
 	m.Height = 24
 	v := m.View()
 	if !strings.Contains(v, "Press any key to dismiss") {
 		t.Error("Model.View() should show help when ShowHelp is true")
+	}
+	if !strings.Contains(v, "Visible base title") {
+		t.Error("Model.View() should preserve the underlying view behind help")
+	}
+}
+
+func TestHelpOverlayMouseDoesNotScrollUnderlyingView(t *testing.T) {
+	m := testScrollableActiveModel()
+	m.ShowHelp = true
+	m.ScrollOffset = 3
+
+	updatedModel, cmd := m.Update(tea.MouseMsg{Button: tea.MouseButtonWheelDown})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model after mouse update, got %T", updatedModel)
+	}
+	if cmd != nil {
+		t.Fatal("help mouse handling should not start a command")
+	}
+	if updated.ScrollOffset != 3 {
+		t.Fatalf("ScrollOffset = %d, want unchanged 3", updated.ScrollOffset)
 	}
 }
 

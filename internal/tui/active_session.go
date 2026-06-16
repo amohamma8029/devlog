@@ -7,6 +7,7 @@ import (
 
 	"github.com/amo/devlog/internal/store"
 	"github.com/charmbracelet/lipgloss"
+	xansi "github.com/charmbracelet/x/ansi"
 )
 
 func renderActiveSession(m Model) string {
@@ -200,13 +201,13 @@ func renderHelpOverlay(m Model) string {
 	useColumns := overlayWidth >= 70
 	availHeight := m.Height - 6
 
-	if availHeight < 18 {
+	if availHeight < 25 {
 		return renderHelpCompact(m, useColumns, overlayWidth)
 	}
 	if useColumns {
 		return renderHelpTwoColumn(m, overlayWidth)
 	}
-	return renderHelpSingleColumn(m)
+	return renderHelpSingleColumn(m, overlayWidth)
 }
 
 func clampOverlayWidth(termWidth int) int {
@@ -251,22 +252,22 @@ func renderHelpTwoColumn(m Model, width int) string {
 	b.WriteByte('\n')
 	b.WriteString(HelpFooterStyle.Render("Press any key to dismiss"))
 
-	rendered := HelpOverlayStyle.Render(b.String())
-	return lipgloss.Place(
-		m.Width, m.Height,
-		lipgloss.Center, lipgloss.Center,
-		rendered,
-		lipgloss.WithWhitespaceBackground(HelpOverlayBgStyle.GetBackground()),
-	)
+	return renderHelpCard(b.String(), width)
 }
 
-func renderHelpSingleColumn(m Model) string {
+func renderHelpSingleColumn(m Model, width int) string {
+	frameWidth := HelpOverlayStyle.GetHorizontalFrameSize()
+	contentWidth := width - frameWidth
+	if contentWidth < 10 {
+		contentWidth = 10
+	}
+
 	var b strings.Builder
 	b.WriteString(HelpTitleStyle.Render(" Help "))
 	b.WriteByte('\n')
 	b.WriteByte('\n')
 
-	colContent := renderHelpSections(60,
+	colContent := renderHelpSections(contentWidth,
 		helpSection{"General", generalEntries()},
 		helpSection{"Session List", sessionListEntries()},
 		helpSection{"Slash Commands", slashCommandEntries()},
@@ -278,13 +279,7 @@ func renderHelpSingleColumn(m Model) string {
 	b.WriteByte('\n')
 	b.WriteString(HelpFooterStyle.Render("Press any key to dismiss"))
 
-	rendered := HelpOverlayStyle.Render(b.String())
-	return lipgloss.Place(
-		m.Width, m.Height,
-		lipgloss.Center, lipgloss.Center,
-		rendered,
-		lipgloss.WithWhitespaceBackground(HelpOverlayBgStyle.GetBackground()),
-	)
+	return renderHelpCard(b.String(), width)
 }
 
 func renderHelpCompact(m Model, twoCol bool, width int) string {
@@ -298,9 +293,10 @@ func renderHelpCompact(m Model, twoCol bool, width int) string {
 		leftWidth := (contentWidth - 3) * 50 / 100
 		rightWidth := contentWidth - 3 - leftWidth
 
-		leftEntries := generalEntries()
+		leftEntries := compactGeneralEntries()
+		leftEntries = append(leftEntries, sessionListEntries()...)
 		rightEntries := slashCommandEntries()
-		rightEntries = append(rightEntries, handoffPreviewEntries()...)
+		rightEntries = append(rightEntries, compactHandoffPreviewEntries()...)
 
 		leftContent := renderHelpEntries(leftWidth, leftEntries)
 		rightContent := renderHelpEntries(rightWidth, rightEntries)
@@ -315,20 +311,15 @@ func renderHelpCompact(m Model, twoCol bool, width int) string {
 		b.WriteByte('\n')
 		b.WriteString(HelpFooterStyle.Render("Press any key to dismiss"))
 
-		rendered := HelpOverlayStyle.Render(b.String())
-		return lipgloss.Place(
-			m.Width, m.Height,
-			lipgloss.Center, lipgloss.Center,
-			rendered,
-			lipgloss.WithWhitespaceBackground(HelpOverlayBgStyle.GetBackground()),
-		)
+		return renderHelpCard(b.String(), width)
 	}
 
-	allEntries := generalEntries()
+	allEntries := compactGeneralEntries()
+	allEntries = append(allEntries, sessionListEntries()...)
 	allEntries = append(allEntries, slashCommandEntries()...)
-	allEntries = append(allEntries, handoffPreviewEntries()...)
+	allEntries = append(allEntries, compactHandoffPreviewEntries()...)
 
-	content := renderHelpEntries(60, allEntries)
+	content := renderHelpEntries(contentWidth, allEntries)
 	var b strings.Builder
 	b.WriteString(HelpTitleStyle.Render(" Help "))
 	b.WriteByte('\n')
@@ -338,13 +329,127 @@ func renderHelpCompact(m Model, twoCol bool, width int) string {
 	b.WriteByte('\n')
 	b.WriteString(HelpFooterStyle.Render("Press any key to dismiss"))
 
-	rendered := HelpOverlayStyle.Render(b.String())
-	return lipgloss.Place(
-		m.Width, m.Height,
-		lipgloss.Center, lipgloss.Center,
-		rendered,
-		lipgloss.WithWhitespaceBackground(HelpOverlayBgStyle.GetBackground()),
-	)
+	return renderHelpCard(b.String(), width)
+}
+
+func renderHelpCard(content string, width int) string {
+	contentWidth := width - HelpOverlayStyle.GetHorizontalFrameSize()
+	if contentWidth < 10 {
+		contentWidth = 10
+	}
+	return HelpOverlayStyle.Width(contentWidth).Render(content)
+}
+
+func renderHelpOverView(m Model, base string) string {
+	help := renderHelpOverlay(m)
+	if m.Width <= 0 || m.Height <= 0 {
+		return help
+	}
+
+	return overlayBlock(xansi.Strip(base), help, m.Width, m.Height)
+}
+
+func overlayBlock(background, foreground string, width, height int) string {
+	if width <= 0 || height <= 0 {
+		return foreground
+	}
+
+	bgLines := fitOverlayLines(background, width, height)
+	outLines := make([]string, len(bgLines))
+	for i, line := range bgLines {
+		outLines[i] = HelpBackdropStyle.Render(line)
+	}
+
+	fgLines := splitRenderedLines(foreground)
+	fgWidth := lipgloss.Width(foreground)
+	if fgWidth > width {
+		fgWidth = width
+	}
+	if fgWidth < 0 {
+		fgWidth = 0
+	}
+
+	x := (width - fgWidth) / 2
+	y := (height - len(fgLines)) / 2
+	if x < 0 {
+		x = 0
+	}
+	if y < 0 {
+		y = 0
+	}
+
+	for i, line := range fgLines {
+		row := y + i
+		if row < 0 || row >= len(outLines) {
+			continue
+		}
+		fg := fitHelpOverlayLine(line, fgWidth)
+		outLines[row] = overlayLine(bgLines[row], fg, x, fgWidth, width)
+	}
+
+	return strings.Join(outLines, "\n")
+}
+
+func fitOverlayLines(s string, width, height int) []string {
+	lines := splitRenderedLines(s)
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	for i := range lines {
+		lines[i] = fitOverlayLine(lines[i], width)
+	}
+	return lines
+}
+
+func overlayLine(background, foreground string, x, fgWidth, width int) string {
+	if fgWidth <= 0 {
+		return fitOverlayLine(background, width)
+	}
+
+	bg := fitOverlayLine(xansi.Strip(background), width)
+	if x > width {
+		x = width
+	}
+	end := x + fgWidth
+	if end > width {
+		end = width
+		foreground = fitOverlayLine(foreground, end-x)
+	}
+
+	left := HelpBackdropStyle.Render(xansi.Cut(bg, 0, x))
+	right := HelpBackdropStyle.Render(xansi.Cut(bg, end, width))
+	return left + foreground + right
+}
+
+func fitOverlayLine(line string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	line = strings.TrimRight(line, "\r")
+	if xansi.StringWidth(line) > width {
+		return xansi.Truncate(line, width, "")
+	}
+	if padding := width - xansi.StringWidth(line); padding > 0 {
+		return line + strings.Repeat(" ", padding)
+	}
+	return line
+}
+
+func fitHelpOverlayLine(line string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	line = strings.TrimRight(line, "\r")
+	if xansi.StringWidth(line) > width {
+		return xansi.Truncate(line, width, "")
+	}
+	if padding := width - xansi.StringWidth(line); padding > 0 {
+		return line + strings.Repeat(" ", padding)
+	}
+	return line
 }
 
 type helpSection struct {
@@ -368,6 +473,17 @@ func generalEntries() []keyEntry {
 		{"home", "Jump to top"},
 		{"end", "Jump to bottom"},
 		{"q", "Quit"},
+	}
+}
+
+func compactGeneralEntries() []keyEntry {
+	return []keyEntry{
+		{"/", "Open command palette"},
+		{"?", "Opens help screen"},
+		{"↑/↓", "Scroll one line"},
+		{"pgup/pgdn", "Scroll one page"},
+		{"home/end", "Jump to top/bottom"},
+		{"q", "Back or quit"},
 	}
 }
 
@@ -401,6 +517,15 @@ func handoffPreviewEntries() []keyEntry {
 		{"end", "Jump to bottom"},
 		{"d", "Toggle all diffs"},
 		{"click", "Toggle file diff"},
+		{"q", "Go back"},
+	}
+}
+
+func compactHandoffPreviewEntries() []keyEntry {
+	return []keyEntry{
+		{"y", "Copy handoff"},
+		{"s", "Save handoff"},
+		{"d", "Toggle all diffs"},
 		{"q", "Go back"},
 	}
 }

@@ -180,6 +180,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleCursorTick()
 
 	case tea.MouseMsg:
+		if m.ShowHelp {
+			return m, nil
+		}
 		return m.handleMouse(msg)
 
 	case tea.KeyMsg:
@@ -699,10 +702,6 @@ func (m Model) reloadEvents() tea.Msg {
 }
 
 func (m Model) View() string {
-	if m.ShowHelp {
-		return renderHelpOverlay(m)
-	}
-
 	var v string
 	switch m.CurrentView {
 	case ActiveSession:
@@ -722,6 +721,10 @@ func (m Model) View() string {
 	// Force view to fill terminal height so no stale content persists on resize.
 	// lipgloss.Place pads with newlines — ANSI-aware, zero flicker.
 	v = lipgloss.Place(m.Width, m.Height, lipgloss.Left, lipgloss.Top, v)
+
+	if m.ShowHelp {
+		return renderHelpOverView(m, v)
+	}
 
 	return v
 }
