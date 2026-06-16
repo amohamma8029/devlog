@@ -267,8 +267,8 @@ func TestRenderHelpOverlay(t *testing.T) {
 	m.Width = 80
 	m.Height = 24
 	v := renderHelpOverlay(m)
-	if !strings.Contains(v, "Keybindings") {
-		t.Error("renderHelpOverlay should show Keybindings")
+	if !strings.Contains(v, "Press any key to dismiss") {
+		t.Error("renderHelpOverlay should show dismiss footer")
 	}
 	if !strings.Contains(v, "/") {
 		t.Error("renderHelpOverlay should show slash command")
@@ -287,6 +287,9 @@ func TestRenderHelpOverlay(t *testing.T) {
 	}
 	if !strings.Contains(v, "/handoff") {
 		t.Error("renderHelpOverlay should show /handoff command")
+	}
+	if !strings.Contains(v, "Session List") {
+		t.Error("renderHelpOverlay should show Session List section")
 	}
 }
 
@@ -772,7 +775,7 @@ func TestModelViewHelpOverlay(t *testing.T) {
 	m.Width = 80
 	m.Height = 24
 	v := m.View()
-	if !strings.Contains(v, "Keybindings") {
+	if !strings.Contains(v, "Press any key to dismiss") {
 		t.Error("Model.View() should show help when ShowHelp is true")
 	}
 }

@@ -126,9 +126,9 @@ func renderFooter(m Model) string {
 	if m.CurrentView == ActiveSession {
 		if m.ActiveSession != nil {
 			if m.Width < 80 {
-				text = "/? help  ·  ↑/↓ scroll  ·  q quit"
+				text = "? help  ·  ↑/↓ scroll  ·  q quit"
 			} else {
-				text = "/? help  ·  ↑/↓ line  ·  pgup/pgdn page  ·  home/end jump  ·  q quit"
+				text = "? help  ·  ↑/↓ line  ·  pgup/pgdn page  ·  home/end jump  ·  q quit"
 			}
 		} else {
 			text = "l: session list  ·  o: open new session  ·  q quit"
@@ -196,60 +196,250 @@ func renderOpenSessionPrompt(m Model) string {
 }
 
 func renderHelpOverlay(m Model) string {
-	content := `Keybindings
-===========
-/      Open command palette
-?      Show this help (dismiss with any key)
-↓      Scroll down one line
-↑      Scroll up one line
-pgdn   Scroll down one page
-pgup   Scroll up one page
-home   Jump to top
-end    Jump to bottom
-q      Quit
+	overlayWidth := clampOverlayWidth(m.Width)
+	useColumns := overlayWidth >= 70
+	availHeight := m.Height - 6
 
-Session List
-============
-h      Generate handoff for active session
-Enter  Open selected session
-/      Filter sessions
+	if availHeight < 18 {
+		return renderHelpCompact(m, useColumns, overlayWidth)
+	}
+	if useColumns {
+		return renderHelpTwoColumn(m, overlayWidth)
+	}
+	return renderHelpSingleColumn(m)
+}
 
-Slash Commands
-==============
-/note <text>    Add a note to the session
-/block <text>   Log a blocker
-/close          Close the active session
-/handoff        Generate handoff summary
-/list           Go to session list
+func clampOverlayWidth(termWidth int) int {
+	w := termWidth - 6
+	if w < 60 {
+		w = 60
+	}
+	if w > 90 {
+		w = 90
+	}
+	return w
+}
 
-Handoff Preview
-===============
-y      Copy to clipboard
-s      Save to file
-↓      Scroll down one line
-↑      Scroll up one line
-pgdn   Scroll down one page
-pgup   Scroll up one page
-home   Jump to top
-end    Jump to bottom
-d      Toggle all diffs
-click  Toggle file diff
-q      Go back
+func renderHelpTwoColumn(m Model, width int) string {
+	frameWidth := HelpOverlayStyle.GetHorizontalFrameSize()
+	contentWidth := width - frameWidth
+	if contentWidth < 10 {
+		contentWidth = 10
+	}
 
-No Active Session
-=================
-l      View session list
-o      Open new session
-q      Quit
+	leftWidth := (contentWidth - 3) * 45 / 100
+	rightWidth := contentWidth - 3 - leftWidth
 
-Note: Use terminal selection (Shift+click) to select text.`
+	leftContent := renderHelpSections(leftWidth,
+		helpSection{"General", generalEntries()},
+		helpSection{"Session List", sessionListEntries()},
+		helpSection{"No Session", noSessionEntries()},
+	)
+	rightContent := renderHelpSections(rightWidth,
+		helpSection{"Slash Commands", slashCommandEntries()},
+		helpSection{"Handoff Preview", handoffPreviewEntries()},
+	)
 
-	rendered := HelpOverlayStyle.Render(content)
+	cols := lipgloss.JoinHorizontal(lipgloss.Top, leftContent, "   ", rightContent)
+
+	var b strings.Builder
+	b.WriteString(HelpTitleStyle.Render(" Help "))
+	b.WriteByte('\n')
+	b.WriteByte('\n')
+	b.WriteString(cols)
+	b.WriteByte('\n')
+	b.WriteByte('\n')
+	b.WriteString(HelpFooterStyle.Render("Press any key to dismiss"))
+
+	rendered := HelpOverlayStyle.Render(b.String())
 	return lipgloss.Place(
 		m.Width, m.Height,
 		lipgloss.Center, lipgloss.Center,
 		rendered,
+		lipgloss.WithWhitespaceBackground(HelpOverlayBgStyle.GetBackground()),
 	)
+}
+
+func renderHelpSingleColumn(m Model) string {
+	var b strings.Builder
+	b.WriteString(HelpTitleStyle.Render(" Help "))
+	b.WriteByte('\n')
+	b.WriteByte('\n')
+
+	colContent := renderHelpSections(60,
+		helpSection{"General", generalEntries()},
+		helpSection{"Session List", sessionListEntries()},
+		helpSection{"Slash Commands", slashCommandEntries()},
+		helpSection{"Handoff Preview", handoffPreviewEntries()},
+		helpSection{"No Session", noSessionEntries()},
+	)
+	b.WriteString(colContent)
+	b.WriteByte('\n')
+	b.WriteByte('\n')
+	b.WriteString(HelpFooterStyle.Render("Press any key to dismiss"))
+
+	rendered := HelpOverlayStyle.Render(b.String())
+	return lipgloss.Place(
+		m.Width, m.Height,
+		lipgloss.Center, lipgloss.Center,
+		rendered,
+		lipgloss.WithWhitespaceBackground(HelpOverlayBgStyle.GetBackground()),
+	)
+}
+
+func renderHelpCompact(m Model, twoCol bool, width int) string {
+	frameWidth := HelpOverlayStyle.GetHorizontalFrameSize()
+	contentWidth := width - frameWidth
+	if contentWidth < 10 {
+		contentWidth = 10
+	}
+
+	if twoCol {
+		leftWidth := (contentWidth - 3) * 50 / 100
+		rightWidth := contentWidth - 3 - leftWidth
+
+		leftEntries := generalEntries()
+		rightEntries := slashCommandEntries()
+		rightEntries = append(rightEntries, handoffPreviewEntries()...)
+
+		leftContent := renderHelpEntries(leftWidth, leftEntries)
+		rightContent := renderHelpEntries(rightWidth, rightEntries)
+		cols := lipgloss.JoinHorizontal(lipgloss.Top, leftContent, "   ", rightContent)
+
+		var b strings.Builder
+		b.WriteString(HelpTitleStyle.Render(" Help "))
+		b.WriteByte('\n')
+		b.WriteByte('\n')
+		b.WriteString(cols)
+		b.WriteByte('\n')
+		b.WriteByte('\n')
+		b.WriteString(HelpFooterStyle.Render("Press any key to dismiss"))
+
+		rendered := HelpOverlayStyle.Render(b.String())
+		return lipgloss.Place(
+			m.Width, m.Height,
+			lipgloss.Center, lipgloss.Center,
+			rendered,
+			lipgloss.WithWhitespaceBackground(HelpOverlayBgStyle.GetBackground()),
+		)
+	}
+
+	allEntries := generalEntries()
+	allEntries = append(allEntries, slashCommandEntries()...)
+	allEntries = append(allEntries, handoffPreviewEntries()...)
+
+	content := renderHelpEntries(60, allEntries)
+	var b strings.Builder
+	b.WriteString(HelpTitleStyle.Render(" Help "))
+	b.WriteByte('\n')
+	b.WriteByte('\n')
+	b.WriteString(content)
+	b.WriteByte('\n')
+	b.WriteByte('\n')
+	b.WriteString(HelpFooterStyle.Render("Press any key to dismiss"))
+
+	rendered := HelpOverlayStyle.Render(b.String())
+	return lipgloss.Place(
+		m.Width, m.Height,
+		lipgloss.Center, lipgloss.Center,
+		rendered,
+		lipgloss.WithWhitespaceBackground(HelpOverlayBgStyle.GetBackground()),
+	)
+}
+
+type helpSection struct {
+	name    string
+	entries []keyEntry
+}
+
+type keyEntry struct {
+	key  string
+	desc string
+}
+
+func generalEntries() []keyEntry {
+	return []keyEntry{
+		{"/", "Open command palette"},
+		{"?", "Opens help screen"},
+		{"↓", "Scroll down one line"},
+		{"↑", "Scroll up one line"},
+		{"pgdn", "Scroll down one page"},
+		{"pgup", "Scroll up one page"},
+		{"home", "Jump to top"},
+		{"end", "Jump to bottom"},
+		{"q", "Quit"},
+	}
+}
+
+func sessionListEntries() []keyEntry {
+	return []keyEntry{
+		{"h", "Generate handoff"},
+		{"Enter", "Open selected session"},
+		{"/", "Filter sessions"},
+	}
+}
+
+func slashCommandEntries() []keyEntry {
+	return []keyEntry{
+		{"/note", "<text>  Add a note to the session"},
+		{"/block", "<text>  Log a blocker"},
+		{"/close", "Close the active session"},
+		{"/handoff", "Generate handoff summary"},
+		{"/list", "Go to session list"},
+	}
+}
+
+func handoffPreviewEntries() []keyEntry {
+	return []keyEntry{
+		{"y", "Copy to clipboard"},
+		{"s", "Save to file"},
+		{"↓", "Scroll down one line"},
+		{"↑", "Scroll up one line"},
+		{"pgdn", "Scroll down one page"},
+		{"pgup", "Scroll up one page"},
+		{"home", "Jump to top"},
+		{"end", "Jump to bottom"},
+		{"d", "Toggle all diffs"},
+		{"click", "Toggle file diff"},
+		{"q", "Go back"},
+	}
+}
+
+func noSessionEntries() []keyEntry {
+	return []keyEntry{
+		{"l", "View session list"},
+		{"o", "Open new session"},
+		{"q", "Quit"},
+	}
+}
+
+func renderHelpSections(width int, sections ...helpSection) string {
+	var b strings.Builder
+	for i, sec := range sections {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(HelpSectionStyle.Render("  " + sec.name))
+		b.WriteByte('\n')
+		b.WriteString(HelpDividerStyle.Render("  ─────"))
+		b.WriteByte('\n')
+		for _, e := range sec.entries {
+			line := HelpKeyStyle.Render("  "+e.key+" ") + HelpDescStyle.Render(e.desc)
+			b.WriteString(lipgloss.NewStyle().Width(width).Render(line))
+			b.WriteByte('\n')
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func renderHelpEntries(width int, entries []keyEntry) string {
+	var b strings.Builder
+	for _, e := range entries {
+		line := HelpKeyStyle.Render("  "+e.key+" ") + HelpDescStyle.Render(e.desc)
+		b.WriteString(lipgloss.NewStyle().Width(width).Render(line))
+		b.WriteByte('\n')
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func countLines(s string) int {

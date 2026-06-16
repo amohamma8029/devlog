@@ -43,8 +43,31 @@ var MenuBoxStyle = lipgloss.NewStyle().
 
 var HelpOverlayStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
-	Padding(1, 2).
-	BorderForeground(lipgloss.Color("#888888"))
+	Padding(0, 2).
+	BorderForeground(lipgloss.Color("#666666"))
+
+var HelpOverlayBgStyle = lipgloss.NewStyle().
+	Background(lipgloss.Color("#111111"))
+
+var HelpTitleStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(lipgloss.Color("#FFFFFF"))
+
+var HelpKeyStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#81A1C1"))
+
+var HelpDescStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#AAAAAA"))
+
+var HelpSectionStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(lipgloss.Color("#FFFFFF"))
+
+var HelpDividerStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#555555"))
+
+var HelpFooterStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#555555"))
 
 var ErrorBannerStyle = lipgloss.NewStyle().
 	Background(lipgloss.Color("#AA0000")).
