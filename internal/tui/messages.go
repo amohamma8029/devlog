@@ -36,3 +36,8 @@ type HandoffSavedMsg struct {
 type HandoffCopiedMsg struct {
 	Error error
 }
+
+type MultiLineNoteMsg struct {
+	Body      string
+	IsBlocker bool
+}

@@ -770,16 +770,34 @@ func splitLines(text string, maxWidth int) []string {
 	}
 
 	var result []string
-	para := strings.TrimSpace(text)
-	if para == "" {
+	for _, rawLine := range strings.Split(text, "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+		wrapped := wrapLine(line, maxWidth)
+		result = append(result, wrapped...)
+	}
+	if len(result) == 0 {
 		return []string{""}
 	}
+	return result
+}
 
-	words := strings.Fields(para)
+func wrapLine(text string, maxWidth int) []string {
+	if maxWidth < 1 {
+		maxWidth = 1
+	}
+	if len(text) <= maxWidth {
+		return []string{text}
+	}
+
+	words := strings.Fields(text)
 	if len(words) == 0 {
 		return []string{""}
 	}
 
+	var result []string
 	var line string
 	for _, word := range words {
 		if line == "" {
@@ -793,10 +811,6 @@ func splitLines(text string, maxWidth int) []string {
 	}
 	if line != "" {
 		result = append(result, line)
-	}
-
-	if len(result) == 0 {
-		result = append(result, "")
 	}
 	return result
 }

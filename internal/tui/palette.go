@@ -22,14 +22,19 @@ var PaletteCommands = []CommandEntry{
 }
 
 type CommandPalette struct {
-	Open          bool
-	Input         string
-	History       []string
-	SelectedIndex int
-	HoverIndex    int
-	CursorVisible bool
-	SessionClosed bool
-	offsetY       int
+	Open              bool
+	Input             string
+	History           []string
+	SelectedIndex     int
+	HoverIndex        int
+	CursorVisible     bool
+	SessionClosed     bool
+	offsetY           int
+	MultiLine         bool
+	MultiLineLines    []string
+	MultiLineCursorRow int
+	MultiLineCursorCol int
+	MultiLineIsBlocker bool
 }
 
 func NewCommandPalette() CommandPalette {
@@ -46,6 +51,17 @@ func (p *CommandPalette) OpenPalette() {
 	p.HoverIndex = -1
 	p.CursorVisible = true
 	p.SessionClosed = false
+	p.MultiLine = false
+	p.MultiLineLines = nil
+}
+
+func (p *CommandPalette) EnterMultiLine(isBlocker bool) {
+	p.MultiLine = true
+	p.MultiLineLines = []string{""}
+	p.MultiLineCursorRow = 0
+	p.MultiLineCursorCol = 0
+	p.MultiLineIsBlocker = isBlocker
+	p.Input = ""
 }
 
 func visiblePaletteCommands(p CommandPalette) []CommandEntry {
@@ -65,6 +81,8 @@ func (p *CommandPalette) ClosePalette() {
 	p.Open = false
 	p.SelectedIndex = -1
 	p.HoverIndex = -1
+	p.MultiLine = false
+	p.MultiLineLines = nil
 }
 
 func (p *CommandPalette) Update(msg tea.Msg) (tea.Cmd, *CommandPalette) {
@@ -114,6 +132,11 @@ func (p *CommandPalette) handleMouse(msg tea.MouseMsg) (tea.Cmd, *CommandPalette
 		p.Input = entry.Command + " "
 		p.SelectedIndex = -1
 		p.HoverIndex = -1
+		if entry.Command == "/note" {
+			p.EnterMultiLine(false)
+		} else if entry.Command == "/block" {
+			p.EnterMultiLine(true)
+		}
 		return nil, p
 	}
 
@@ -121,6 +144,10 @@ func (p *CommandPalette) handleMouse(msg tea.MouseMsg) (tea.Cmd, *CommandPalette
 }
 
 func (p *CommandPalette) handleKey(msg tea.KeyMsg) (tea.Cmd, *CommandPalette) {
+	if p.MultiLine {
+		return p.handleMultiLineKey(msg)
+	}
+
 	visible := visiblePaletteCommands(*p)
 
 	switch msg.String() {
@@ -138,9 +165,23 @@ func (p *CommandPalette) handleKey(msg tea.KeyMsg) (tea.Cmd, *CommandPalette) {
 			p.Input = entry.Command + " "
 			p.SelectedIndex = -1
 			p.HoverIndex = -1
+			if entry.Command == "/note" {
+				p.EnterMultiLine(false)
+			} else if entry.Command == "/block" {
+				p.EnterMultiLine(true)
+			}
 			return nil, p
 		}
 		if p.Input != "" {
+			trimmed := strings.TrimSpace(p.Input)
+			if trimmed == "/note" {
+				p.EnterMultiLine(false)
+				return nil, p
+			}
+			if trimmed == "/block" {
+				p.EnterMultiLine(true)
+				return nil, p
+			}
 			p.History = append(p.History, p.Input)
 			input := p.Input
 			p.Input = ""
@@ -192,10 +233,110 @@ func (p *CommandPalette) handleKey(msg tea.KeyMsg) (tea.Cmd, *CommandPalette) {
 			p.Input += string(msg.Runes[0])
 			p.SelectedIndex = -1
 			p.HoverIndex = -1
+			if msg.Runes[0] == ' ' {
+				trimmed := strings.TrimSpace(p.Input)
+				if trimmed == "/note" {
+					p.EnterMultiLine(false)
+				} else if trimmed == "/block" {
+					p.EnterMultiLine(true)
+				}
+			}
 		}
 	}
 
 	return nil, p
+}
+
+func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPalette) {
+	if msg.Alt && msg.Type == tea.KeyEnter {
+		line := p.MultiLineLines[p.MultiLineCursorRow]
+		left := line[:p.MultiLineCursorCol]
+		right := line[p.MultiLineCursorCol:]
+		p.MultiLineLines[p.MultiLineCursorRow] = left
+		p.MultiLineLines = append(p.MultiLineLines[:p.MultiLineCursorRow+1],
+			append([]string{right}, p.MultiLineLines[p.MultiLineCursorRow+1:]...)...)
+		p.MultiLineCursorRow++
+		p.MultiLineCursorCol = 0
+		return nil, p
+	}
+
+	switch msg.String() {
+	case "enter":
+		body := strings.TrimSpace(strings.Join(p.MultiLineLines, "\n"))
+		isBlocker := p.MultiLineIsBlocker
+		p.ClosePalette()
+		if body == "" {
+			return nil, p
+		}
+		return func() tea.Msg {
+			return MultiLineNoteMsg{Body: body, IsBlocker: isBlocker}
+		}, p
+
+	case "esc":
+		p.ClosePalette()
+		return nil, p
+
+	case "backspace":
+		if p.MultiLineCursorCol > 0 {
+			line := p.MultiLineLines[p.MultiLineCursorRow]
+			p.MultiLineLines[p.MultiLineCursorRow] = line[:p.MultiLineCursorCol-1] + line[p.MultiLineCursorCol:]
+			p.MultiLineCursorCol--
+		} else if p.MultiLineCursorRow > 0 {
+			p.MultiLineCursorCol = len(p.MultiLineLines[p.MultiLineCursorRow-1])
+			p.MultiLineLines[p.MultiLineCursorRow-1] += p.MultiLineLines[p.MultiLineCursorRow]
+			p.MultiLineLines = append(p.MultiLineLines[:p.MultiLineCursorRow],
+				p.MultiLineLines[p.MultiLineCursorRow+1:]...)
+			p.MultiLineCursorRow--
+		}
+		return nil, p
+
+	case "left":
+		if p.MultiLineCursorCol > 0 {
+			p.MultiLineCursorCol--
+		} else if p.MultiLineCursorRow > 0 {
+			p.MultiLineCursorRow--
+			p.MultiLineCursorCol = len(p.MultiLineLines[p.MultiLineCursorRow])
+		}
+		return nil, p
+
+	case "right":
+		if p.MultiLineCursorCol < len(p.MultiLineLines[p.MultiLineCursorRow]) {
+			p.MultiLineCursorCol++
+		} else if p.MultiLineCursorRow < len(p.MultiLineLines)-1 {
+			p.MultiLineCursorRow++
+			p.MultiLineCursorCol = 0
+		}
+		return nil, p
+
+	case "up":
+		if p.MultiLineCursorRow > 0 {
+			p.MultiLineCursorRow--
+			if p.MultiLineCursorCol > len(p.MultiLineLines[p.MultiLineCursorRow]) {
+				p.MultiLineCursorCol = len(p.MultiLineLines[p.MultiLineCursorRow])
+			}
+		}
+		return nil, p
+
+	case "down":
+		if p.MultiLineCursorRow < len(p.MultiLineLines)-1 {
+			p.MultiLineCursorRow++
+			if p.MultiLineCursorCol > len(p.MultiLineLines[p.MultiLineCursorRow]) {
+				p.MultiLineCursorCol = len(p.MultiLineLines[p.MultiLineCursorRow])
+			}
+		}
+		return nil, p
+
+	default:
+		if len(msg.Runes) == 1 {
+			r := msg.Runes[0]
+			if r >= 32 {
+				line := p.MultiLineLines[p.MultiLineCursorRow]
+				p.MultiLineLines[p.MultiLineCursorRow] = line[:p.MultiLineCursorCol] + string(r) + line[p.MultiLineCursorCol:]
+				p.MultiLineCursorCol++
+			}
+		}
+		return nil, p
+	}
 }
 
 func (p *CommandPalette) SetOffset(offset int) {
@@ -205,6 +346,10 @@ func (p *CommandPalette) SetOffset(offset int) {
 func (p CommandPalette) View() string {
 	if !p.Open {
 		return ""
+	}
+
+	if p.MultiLine {
+		return p.viewMultiLine()
 	}
 
 	visible := visiblePaletteCommands(p)
@@ -242,6 +387,49 @@ func (p CommandPalette) View() string {
 	inputDisplay := renderBoundedInputContent(" ", p.Input, cursorChar, "", contentWidth)
 
 	return menuBox + "\n" + style.Render(inputDisplay)
+}
+
+func (p CommandPalette) viewMultiLine() string {
+	var b strings.Builder
+
+	header := "Note: "
+	if p.MultiLineIsBlocker {
+		header = "Blocker: "
+	}
+
+	for i, line := range p.MultiLineLines {
+		prefix := header
+		if i > 0 {
+			prefix = "       "
+		}
+		b.WriteString(SectionStyle.Render(prefix))
+
+		cursorChar := " "
+		if i == p.MultiLineCursorRow && p.CursorVisible {
+			cursorChar = CursorStyle.Render("|")
+		}
+
+		if i == p.MultiLineCursorRow {
+			left := line[:p.MultiLineCursorCol]
+			right := line[p.MultiLineCursorCol:]
+			b.WriteString(MetadataStyle.Render(left))
+			b.WriteString(cursorChar)
+			if right == "" {
+				right = " "
+			}
+			b.WriteString(MetadataStyle.Render(right))
+		} else {
+			display := line
+			if display == "" {
+				display = " "
+			}
+			b.WriteString(MetadataStyle.Render(display))
+		}
+		b.WriteByte('\n')
+	}
+
+	b.WriteString(HintStyle.Render("Alt+Enter new line  ·  Enter submit  ·  Esc cancel"))
+	return MenuBoxStyle.Render(b.String())
 }
 
 func maxRenderedLineWidth(rendered string) int {
