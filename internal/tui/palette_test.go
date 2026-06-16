@@ -232,11 +232,14 @@ func TestCommandPaletteEnterWithMenuSelectionFillsInput(t *testing.T) {
 	p.SelectedIndex = 0
 	msg := tea.KeyMsg{Type: tea.KeyEnter}
 	_, np := p.Update(msg)
-	if np.Input != "/note " {
-		t.Errorf("Input = %q, want '/note '", np.Input)
+	if !np.MultiLine {
+		t.Error("/note selection should enter multi-line mode")
 	}
-	if np.SelectedIndex != -1 {
-		t.Errorf("SelectedIndex = %d, want -1 after filling input", np.SelectedIndex)
+	if np.MultiLineIsBlocker {
+		t.Error("/note should not be a blocker")
+	}
+	if len(np.MultiLineLines) != 1 || np.MultiLineLines[0] != "" {
+		t.Errorf("MultiLineLines = %v, want [\"\"]", np.MultiLineLines)
 	}
 }
 

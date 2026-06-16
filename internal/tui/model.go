@@ -135,6 +135,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case CommandExecutedMsg:
 		return m.handleCommand(msg)
 
+	case MultiLineNoteMsg:
+		return m.handleMultiLineSubmit(msg)
+
 	case CommandErrorMsg:
 		m.ErrorMessage = msg.Error.Error()
 		return m, nil
@@ -852,4 +855,35 @@ func formatInt(n int64) string {
 		buf[i] = '-'
 	}
 	return string(buf[i:])
+}
+
+func (m Model) handleMultiLineSubmit(msg MultiLineNoteMsg) (tea.Model, tea.Cmd) {
+	body := msg.Body
+	if body == "" {
+		return m, nil
+	}
+	if m.ActiveSession == nil {
+		m.ErrorMessage = "No session displayed"
+		return m, nil
+	}
+	if m.ActiveSession.Closed {
+		eventLabel := "notes"
+		if msg.IsBlocker {
+			eventLabel = "blockers"
+		}
+		m.ErrorMessage = "Cannot add " + eventLabel + " to a closed session"
+		return m, nil
+	}
+	eventType := "Note"
+	if msg.IsBlocker {
+		eventType = "Blocker"
+	}
+	sessionID := m.ActiveSession.ID
+	return m, func() tea.Msg {
+		err := m.Store.AppendEvent(sessionID, eventType, body)
+		if err != nil {
+			return CommandErrorMsg{Error: err}
+		}
+		return m.reloadEvents()
+	}
 }
