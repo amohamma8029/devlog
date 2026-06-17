@@ -21,6 +21,18 @@ type ActiveSessionLoadedMsg struct {
 	Title   string
 }
 
+type ActiveSessionRefreshTickMsg struct{}
+
+type ActiveSessionRefreshResultMsg struct {
+	SessionID string
+	Metadata  store.SessionFileMetadata
+	Changed   bool
+	Events    []store.SessionEvent
+	Title     string
+	Closed    bool
+	Error     error
+}
+
 type CursorTickMsg struct{}
 
 type NavigationMsg struct {

@@ -828,6 +828,210 @@ func TestHandleCommandNoteAppendsToDisplayedOpenSession(t *testing.T) {
 	}
 }
 
+func TestActiveSessionRefreshLoadsExternalNoteAndBlock(t *testing.T) {
+	s, root := newTestStore(t)
+	const sessionID = "2026-02-20T090000Z"
+	writeTestSession(t, s, sessionID, "feat/current", "Alice", "Current work", time.Date(2026, 2, 20, 9, 0, 0, 0, time.UTC))
+	rec, err := s.GetSession(sessionID)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+	metadata, err := s.ReadSessionFileMetadata(sessionID)
+	if err != nil {
+		t.Fatalf("ReadSessionFileMetadata failed: %v", err)
+	}
+	p := NewCommandPalette()
+	p.Open = true
+	p.MultiLine = true
+	p.MultiLineLines = []string{"draft note"}
+	m := NewModel(s, root)
+	m.CurrentView = ActiveSession
+	m.ActiveSession = &rec
+	m.Events = []store.SessionEvent{{Type: "Start", Body: "Current work"}}
+	m.Title = "Current work"
+	m.ScrollOffset = 3
+	m.ErrorMessage = "keep me"
+	m.Palette = &p
+	m.activeSessionMetadata = metadata
+	m.activeSessionMetadataKnown = true
+
+	if err := s.AppendEvent(sessionID, "Note", "external note"); err != nil {
+		t.Fatalf("AppendEvent note failed: %v", err)
+	}
+	if err := s.AppendEvent(sessionID, "Blocker", "external blocker"); err != nil {
+		t.Fatalf("AppendEvent blocker failed: %v", err)
+	}
+
+	msg := m.checkActiveSessionRefreshCmd()()
+	result, ok := msg.(ActiveSessionRefreshResultMsg)
+	if !ok {
+		t.Fatalf("refresh command returned %T, want ActiveSessionRefreshResultMsg", msg)
+	}
+	if result.Error != nil {
+		t.Fatalf("refresh command returned error: %v", result.Error)
+	}
+	if !result.Changed {
+		t.Fatal("refresh should report changed metadata after external appends")
+	}
+
+	updatedModel, nextCmd := m.Update(result)
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if nextCmd == nil {
+		t.Fatal("refresh result should schedule the next refresh tick")
+	}
+	if len(updated.Events) != 3 {
+		t.Fatalf("events length = %d, want start, note, blocker", len(updated.Events))
+	}
+	if updated.Events[1].Type != "Note" || updated.Events[1].Body != "external note" {
+		t.Fatalf("note event = %#v, want external note", updated.Events[1])
+	}
+	if updated.Events[2].Type != "Blocker" || updated.Events[2].Body != "external blocker" {
+		t.Fatalf("blocker event = %#v, want external blocker", updated.Events[2])
+	}
+	if updated.CurrentView != ActiveSession {
+		t.Fatalf("CurrentView = %v, want ActiveSession", updated.CurrentView)
+	}
+	if updated.ScrollOffset != 3 {
+		t.Fatalf("ScrollOffset = %d, want preserved 3", updated.ScrollOffset)
+	}
+	if updated.ErrorMessage != "keep me" {
+		t.Fatalf("ErrorMessage = %q, want preserved", updated.ErrorMessage)
+	}
+	if updated.Palette == nil || !updated.Palette.Open || !updated.Palette.MultiLine || updated.Palette.MultiLineLines[0] != "draft note" {
+		t.Fatalf("palette composer state was not preserved: %#v", updated.Palette)
+	}
+}
+
+func TestActiveSessionRefreshUnchangedMetadataNoops(t *testing.T) {
+	s, root := newTestStore(t)
+	const sessionID = "2026-02-20T090000Z"
+	writeTestSession(t, s, sessionID, "feat/current", "Alice", "Current work", time.Date(2026, 2, 20, 9, 0, 0, 0, time.UTC))
+	rec, err := s.GetSession(sessionID)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+	metadata, err := s.ReadSessionFileMetadata(sessionID)
+	if err != nil {
+		t.Fatalf("ReadSessionFileMetadata failed: %v", err)
+	}
+	m := NewModel(s, root)
+	m.CurrentView = ActiveSession
+	m.ActiveSession = &rec
+	m.Events = []store.SessionEvent{{Type: "Start", Body: "Current work"}}
+	m.activeSessionMetadata = metadata
+	m.activeSessionMetadataKnown = true
+
+	msg := m.checkActiveSessionRefreshCmd()()
+	result, ok := msg.(ActiveSessionRefreshResultMsg)
+	if !ok {
+		t.Fatalf("refresh command returned %T, want ActiveSessionRefreshResultMsg", msg)
+	}
+	if result.Error != nil {
+		t.Fatalf("refresh command returned error: %v", result.Error)
+	}
+	if result.Changed {
+		t.Fatal("refresh should not report changed when metadata is unchanged")
+	}
+
+	updatedModel, nextCmd := m.Update(result)
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if nextCmd == nil {
+		t.Fatal("refresh result should schedule the next refresh tick")
+	}
+	if len(updated.Events) != 1 || updated.Events[0].Body != "Current work" {
+		t.Fatalf("events changed unexpectedly: %#v", updated.Events)
+	}
+}
+
+func TestActiveSessionRefreshExternalCloseUpdatesClosedState(t *testing.T) {
+	s, root := newTestStore(t)
+	const sessionID = "2026-02-20T090000Z"
+	writeTestSession(t, s, sessionID, "feat/current", "Alice", "Current work", time.Date(2026, 2, 20, 9, 0, 0, 0, time.UTC))
+	rec, err := s.GetSession(sessionID)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+	metadata, err := s.ReadSessionFileMetadata(sessionID)
+	if err != nil {
+		t.Fatalf("ReadSessionFileMetadata failed: %v", err)
+	}
+	p := NewCommandPalette()
+	p.Open = true
+	m := NewModel(s, root)
+	m.CurrentView = ActiveSession
+	m.ActiveSession = &rec
+	m.Events = []store.SessionEvent{{Type: "Start", Body: "Current work"}}
+	m.Palette = &p
+	m.activeSessionMetadata = metadata
+	m.activeSessionMetadataKnown = true
+
+	closeTestSession(t, s, sessionID)
+	msg := m.checkActiveSessionRefreshCmd()()
+	result, ok := msg.(ActiveSessionRefreshResultMsg)
+	if !ok {
+		t.Fatalf("refresh command returned %T, want ActiveSessionRefreshResultMsg", msg)
+	}
+	if result.Error != nil {
+		t.Fatalf("refresh command returned error: %v", result.Error)
+	}
+
+	updatedModel, _ := m.Update(result)
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if updated.ActiveSession == nil || !updated.ActiveSession.Closed {
+		t.Fatalf("ActiveSession.Closed = %#v, want closed", updated.ActiveSession)
+	}
+	if updated.Palette == nil || !updated.Palette.SessionClosed {
+		t.Fatal("palette should know the session is closed")
+	}
+
+	updatedModel, cmd := updated.Update(CommandExecutedMsg{Input: "/note should fail"})
+	updated, ok = updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if cmd != nil {
+		t.Fatal("/note on externally closed session should not append")
+	}
+	if updated.ErrorMessage != "Cannot add notes to a closed session" {
+		t.Fatalf("ErrorMessage = %q, want closed session error", updated.ErrorMessage)
+	}
+}
+
+func TestActiveSessionRefreshIgnoresStaleSessionResult(t *testing.T) {
+	m := NewModel(&store.Store{}, "/tmp")
+	m.ActiveSession = &store.SessionRecord{Session: store.Session{ID: "current"}}
+	m.Events = []store.SessionEvent{{Type: "Start", Body: "current work"}}
+
+	updatedModel, nextCmd := m.Update(ActiveSessionRefreshResultMsg{
+		SessionID: "previous",
+		Changed:   true,
+		Events:    []store.SessionEvent{{Type: "Start", Body: "stale work"}},
+		Title:     "stale work",
+	})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if nextCmd == nil {
+		t.Fatal("stale refresh result should still schedule the next refresh tick")
+	}
+	if len(updated.Events) != 1 || updated.Events[0].Body != "current work" {
+		t.Fatalf("stale refresh result changed events: %#v", updated.Events)
+	}
+	if updated.Title != "" {
+		t.Fatalf("stale refresh result changed title to %q", updated.Title)
+	}
+}
+
 func TestHandleViewKeyEscClosesHandoffSavePrompt(t *testing.T) {
 	s, root := newTestStore(t)
 	const sessionID = "2026-01-15T140000Z"

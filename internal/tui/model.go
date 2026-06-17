@@ -24,6 +24,7 @@ const (
 	scrollDirectionUp     = -1
 	scrollDirectionDown   = 1
 	lineScrollMinInterval = 16 * time.Millisecond
+	activeRefreshInterval = time.Second
 )
 
 type Model struct {
@@ -57,6 +58,8 @@ type Model struct {
 	activeTimelineWidth        int
 	handoffBodyLines           []string
 	handoffBodyLineWidth       int
+	activeSessionMetadata      store.SessionFileMetadata
+	activeSessionMetadataKnown bool
 }
 
 func NewModel(s *store.Store, root string) Model {
@@ -89,6 +92,7 @@ func (m Model) Init() tea.Cmd {
 			return ActiveSessionLoadedMsg{Session: active, Events: events, Title: title}
 		},
 		m.SessionList.Init(),
+		activeSessionRefreshTickCmd(),
 	)
 }
 
@@ -109,9 +113,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ScrollOffset = 0
 		m.OpenPromptOpen = false
 		m.OpenInput = ""
+		m.activeSessionMetadataKnown = false
 		m.refreshActiveTimelineCache()
 		changed := m.setView(ActiveSession)
 		return m, clearScreenIfChanged(changed)
+
+	case ActiveSessionRefreshTickMsg:
+		return m, m.checkActiveSessionRefreshCmd()
+
+	case ActiveSessionRefreshResultMsg:
+		m.applyActiveSessionRefresh(msg)
+		return m, activeSessionRefreshTickCmd()
 
 	case NavigationMsg:
 		m.setView(msg.Target)
@@ -306,6 +318,81 @@ func (m *Model) refreshHandoffBodyCache() {
 	lineWidth := previewLineWidth(m.Width)
 	m.handoffBodyLines = clampPreviewLines(splitRenderedLines(renderHandoffBody(*m)), lineWidth)
 	m.handoffBodyLineWidth = lineWidth
+}
+
+func activeSessionRefreshTickCmd() tea.Cmd {
+	return tea.Tick(activeRefreshInterval, func(t time.Time) tea.Msg {
+		return ActiveSessionRefreshTickMsg{}
+	})
+}
+
+func (m Model) checkActiveSessionRefreshCmd() tea.Cmd {
+	if m.Store == nil || m.ActiveSession == nil {
+		return func() tea.Msg { return ActiveSessionRefreshResultMsg{} }
+	}
+
+	sessionID := m.ActiveSession.ID
+	known := m.activeSessionMetadataKnown
+	previous := m.activeSessionMetadata
+	return func() tea.Msg {
+		metadata, err := m.Store.ReadSessionFileMetadata(sessionID)
+		if err != nil {
+			return ActiveSessionRefreshResultMsg{SessionID: sessionID, Error: err}
+		}
+		if known && metadata.Equal(previous) {
+			return ActiveSessionRefreshResultMsg{SessionID: sessionID, Metadata: metadata}
+		}
+
+		body, err := m.Store.ReadSessionBody(sessionID)
+		if err != nil {
+			return ActiveSessionRefreshResultMsg{SessionID: sessionID, Metadata: metadata, Error: err}
+		}
+
+		events := store.ParseSessionEvents(body)
+		return ActiveSessionRefreshResultMsg{
+			SessionID: sessionID,
+			Metadata:  metadata,
+			Changed:   true,
+			Events:    events,
+			Title:     extractStartMessage(events),
+			Closed:    sessionEventsClosed(events),
+		}
+	}
+}
+
+func (m *Model) applyActiveSessionRefresh(msg ActiveSessionRefreshResultMsg) {
+	if msg.SessionID == "" || m.ActiveSession == nil || msg.SessionID != m.ActiveSession.ID {
+		return
+	}
+	if msg.Error != nil {
+		m.ErrorMessage = msg.Error.Error()
+		return
+	}
+
+	m.activeSessionMetadata = msg.Metadata
+	m.activeSessionMetadataKnown = true
+	if !msg.Changed {
+		return
+	}
+
+	m.Events = msg.Events
+	m.Title = msg.Title
+	record := *m.ActiveSession
+	record.Closed = msg.Closed
+	m.ActiveSession = &record
+	if m.Palette != nil {
+		m.Palette.SessionClosed = msg.Closed
+	}
+	m.refreshActiveTimelineCache()
+}
+
+func sessionEventsClosed(events []store.SessionEvent) bool {
+	for _, event := range events {
+		if event.Type == "Stop" {
+			return true
+		}
+	}
+	return false
 }
 
 func (m Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
