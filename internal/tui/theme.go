@@ -32,6 +32,13 @@ var MenuSelectedStyle = lipgloss.NewStyle().
 	Background(lipgloss.Color("#444444")).
 	Foreground(lipgloss.Color("#FFFFFF"))
 
+var ComposerBlockerTokenStyle = MenuSelectedStyle.
+	Background(lipgloss.Color("#AA0000")).
+	Foreground(lipgloss.Color("#FFFFFF"))
+
+var ComposerBodyStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#FFFFFF"))
+
 var MenuHoverStyle = lipgloss.NewStyle().
 	Padding(0, 1).
 	Background(lipgloss.Color("#333333")).

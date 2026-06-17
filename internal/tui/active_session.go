@@ -59,6 +59,7 @@ func renderBottomSection(m Model, includePalette bool) string {
 		parts = append(parts, renderOpenSessionPrompt(m))
 	}
 	if includePalette && m.Palette != nil && m.Palette.Open {
+		m.Palette.SetWidth(m.Width)
 		parts = append(parts, m.Palette.View())
 	}
 	parts = append(parts, renderTransientMessages(m, m.Width)...)

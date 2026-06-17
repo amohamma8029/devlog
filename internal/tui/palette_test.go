@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	xansi "github.com/charmbracelet/x/ansi"
 )
 
@@ -57,6 +58,70 @@ func TestCommandPaletteViewConstrainsInputBoxWidth(t *testing.T) {
 	}
 	if !strings.Contains(content, "tail|") {
 		t.Fatalf("overflowed palette input should keep input tail and cursor visible, got %q", content)
+	}
+}
+
+func TestCommandPaletteMultiLineComposerStylesBlocker(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.CursorVisible = true
+	p.EnterMultiLine(true)
+	p.MultiLineLines = []string{"blocked"}
+	p.MultiLineCursorCol = len("blocked")
+
+	v := p.View()
+	if !strings.Contains(v, ComposerBlockerTokenStyle.Render("/block")) {
+		t.Fatalf("blocker composer should render /block with blocker token style, got:\n%s", v)
+	}
+	if !strings.Contains(v, ComposerBodyStyle.Render("blocked")) {
+		t.Fatalf("blocker composer should render body with composer body style, got:\n%s", v)
+	}
+}
+
+func TestComposerBlockerTokenStyleUsesRedBoxWithWhiteText(t *testing.T) {
+	if got, want := ComposerBlockerTokenStyle.GetBackground(), lipgloss.Color("#AA0000"); got != want {
+		t.Fatalf("blocker token background = %v, want %v", got, want)
+	}
+	if got, want := ComposerBlockerTokenStyle.GetForeground(), lipgloss.Color("#FFFFFF"); got != want {
+		t.Fatalf("blocker token foreground = %v, want %v", got, want)
+	}
+}
+
+func TestCommandPaletteMultiLineComposerStylesNoteBody(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.CursorVisible = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"note body"}
+	p.MultiLineCursorCol = len("note body")
+
+	v := p.View()
+	if !strings.Contains(v, MenuSelectedStyle.Render("/note")) {
+		t.Fatalf("note composer should keep selected token style, got:\n%s", v)
+	}
+	if !strings.Contains(v, ComposerBodyStyle.Render("note body")) {
+		t.Fatalf("note composer should render body with composer body style, got:\n%s", v)
+	}
+}
+
+func TestCommandPaletteMultiLineShortcutHintAdaptsToWidth(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.SetWidth(30)
+
+	v := p.View()
+	if strings.Contains(xansi.Strip(v), "Alt+Enter new line") {
+		t.Fatalf("narrow composer should use a shorter shortcut hint, got:\n%s", v)
+	}
+	if !strings.Contains(xansi.Strip(v), "Alt+Enter") || !strings.Contains(xansi.Strip(v), "Esc") {
+		t.Fatalf("narrow composer should keep essential shortcut labels, got:\n%s", v)
+	}
+
+	for i, line := range strings.Split(v, "\n") {
+		if got := xansi.StringWidth(line); got > 30 {
+			t.Fatalf("composer line %d width = %d, want <= 30: %q", i, got, line)
+		}
 	}
 }
 
