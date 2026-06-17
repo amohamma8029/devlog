@@ -404,7 +404,8 @@ func (p CommandPalette) viewMultiLine() string {
 	if p.MultiLineIsBlocker {
 		token = "/block"
 	}
-	indent := strings.Repeat(" ", xansi.StringWidth(token)+1)
+	tokenWidth := xansi.StringWidth(token) + 1 + MenuSelectedStyle.GetHorizontalFrameSize()
+	indent := strings.Repeat(" ", tokenWidth)
 
 	for i, line := range p.MultiLineLines {
 		if i == 0 {
