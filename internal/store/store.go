@@ -41,6 +41,17 @@ type SessionEvent struct {
 	Body string
 }
 
+// SessionFileMetadata is the cheap-to-read state used to detect session file changes.
+type SessionFileMetadata struct {
+	ModTime time.Time
+	Size    int64
+}
+
+// Equal reports whether two metadata snapshots describe the same session file state.
+func (m SessionFileMetadata) Equal(other SessionFileMetadata) bool {
+	return m.Size == other.Size && m.ModTime.Equal(other.ModTime)
+}
+
 // Store reads and writes devlog files under a repository root.
 type Store struct {
 	root string
@@ -199,6 +210,28 @@ func (s *Store) ReadSessionContent(sessionID string) (string, error) {
 
 	content := strings.ReplaceAll(string(data), "\r\n", "\n")
 	return content, nil
+}
+
+// ReadSessionFileMetadata reads file metadata without loading the session body.
+func (s *Store) ReadSessionFileMetadata(sessionID string) (SessionFileMetadata, error) {
+	if err := validateSessionID("ReadSessionFileMetadata", sessionID); err != nil {
+		return SessionFileMetadata{}, err
+	}
+
+	path, err := s.sessionPath(sessionID)
+	if err != nil {
+		return SessionFileMetadata{}, fmt.Errorf("ReadSessionFileMetadata: resolve session path: %w", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return SessionFileMetadata{}, fmt.Errorf("ReadSessionFileMetadata: session file not found: %s", path)
+		}
+		return SessionFileMetadata{}, fmt.Errorf("ReadSessionFileMetadata: stat file: %w", err)
+	}
+
+	return SessionFileMetadata{ModTime: info.ModTime(), Size: info.Size()}, nil
 }
 
 // ParseSessionEvents parses a Markdown body (from a session file) into structured events.
