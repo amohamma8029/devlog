@@ -498,6 +498,41 @@ func TestReadSessionBody(t *testing.T) {
 	}
 }
 
+func TestReadSessionFileMetadata(t *testing.T) {
+	root := t.TempDir()
+	store := newTestStore(t, root)
+	sess := testSession()
+
+	if err := store.WriteSession(sess, "Implement auth middleware"); err != nil {
+		t.Fatalf("WriteSession failed: %v", err)
+	}
+
+	before, err := store.ReadSessionFileMetadata(sess.ID)
+	if err != nil {
+		t.Fatalf("ReadSessionFileMetadata failed: %v", err)
+	}
+	if before.Size <= 0 {
+		t.Fatalf("metadata size = %d, want positive size", before.Size)
+	}
+	if before.ModTime.IsZero() {
+		t.Fatal("metadata mod time should be set")
+	}
+
+	if err := store.AppendEvent(sess.ID, "Note", "Refactored JWT package"); err != nil {
+		t.Fatalf("AppendEvent failed: %v", err)
+	}
+	after, err := store.ReadSessionFileMetadata(sess.ID)
+	if err != nil {
+		t.Fatalf("ReadSessionFileMetadata after append failed: %v", err)
+	}
+	if after.Size <= before.Size {
+		t.Fatalf("metadata size after append = %d, want > %d", after.Size, before.Size)
+	}
+	if before.Equal(after) {
+		t.Fatal("metadata should change after append")
+	}
+}
+
 func TestExtractMarkdownBody(t *testing.T) {
 	content := "---\nid: test\n---\n\n## Start\n\nImplement auth middleware\n"
 
