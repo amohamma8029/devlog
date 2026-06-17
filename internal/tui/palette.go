@@ -22,16 +22,17 @@ var PaletteCommands = []CommandEntry{
 }
 
 type CommandPalette struct {
-	Open              bool
-	Input             string
-	History           []string
-	SelectedIndex     int
-	HoverIndex        int
-	CursorVisible     bool
-	SessionClosed     bool
-	offsetY           int
-	MultiLine         bool
-	MultiLineLines    []string
+	Open               bool
+	Input              string
+	History            []string
+	SelectedIndex      int
+	HoverIndex         int
+	CursorVisible      bool
+	SessionClosed      bool
+	offsetY            int
+	width              int
+	MultiLine          bool
+	MultiLineLines     []string
 	MultiLineCursorRow int
 	MultiLineCursorCol int
 	MultiLineIsBlocker bool
@@ -351,6 +352,10 @@ func (p *CommandPalette) SetOffset(offset int) {
 	p.offsetY = offset
 }
 
+func (p *CommandPalette) SetWidth(width int) {
+	p.width = width
+}
+
 func (p CommandPalette) View() string {
 	if !p.Open {
 		return ""
@@ -401,15 +406,17 @@ func (p CommandPalette) viewMultiLine() string {
 	var b strings.Builder
 
 	token := "/note"
+	tokenStyle := MenuSelectedStyle
 	if p.MultiLineIsBlocker {
 		token = "/block"
+		tokenStyle = ComposerBlockerTokenStyle
 	}
 	tokenWidth := xansi.StringWidth(token) + 1 + MenuSelectedStyle.GetHorizontalFrameSize()
 	indent := strings.Repeat(" ", tokenWidth)
 
 	for i, line := range p.MultiLineLines {
 		if i == 0 {
-			b.WriteString(MenuSelectedStyle.Render(token))
+			b.WriteString(tokenStyle.Render(token))
 			b.WriteString(" ")
 		} else {
 			b.WriteString(MetadataStyle.Render(indent))
@@ -423,24 +430,43 @@ func (p CommandPalette) viewMultiLine() string {
 		if i == p.MultiLineCursorRow {
 			left := line[:p.MultiLineCursorCol]
 			right := line[p.MultiLineCursorCol:]
-			b.WriteString(MetadataStyle.Render(left))
+			b.WriteString(ComposerBodyStyle.Render(left))
 			b.WriteString(cursorChar)
 			if right == "" {
 				right = " "
 			}
-			b.WriteString(MetadataStyle.Render(right))
+			b.WriteString(ComposerBodyStyle.Render(right))
 		} else {
 			display := line
 			if display == "" {
 				display = " "
 			}
-			b.WriteString(MetadataStyle.Render(display))
+			b.WriteString(ComposerBodyStyle.Render(display))
 		}
 		b.WriteByte('\n')
 	}
 
-	b.WriteString(HintStyle.Render("Alt+Enter new line  ·  Enter submit  ·  Esc cancel"))
+	hintWidth := p.width - MenuBoxStyle.GetHorizontalFrameSize()
+	b.WriteString(HintStyle.Render(composerShortcutHint(hintWidth)))
 	return MenuBoxStyle.Render(b.String())
+}
+
+func composerShortcutHint(width int) string {
+	options := []string{
+		"Alt+Enter new line  ·  Enter submit  ·  Esc cancel",
+		"Alt+Enter line  ·  Enter submit  ·  Esc cancel",
+		"Alt+Enter line  ·  Enter submit  ·  Esc",
+		"Alt+Enter  ·  Enter  ·  Esc",
+	}
+	if width <= 0 {
+		return options[0]
+	}
+	for _, option := range options {
+		if xansi.StringWidth(option) <= width {
+			return option
+		}
+	}
+	return truncateInputToWidth(options[len(options)-1], width)
 }
 
 func maxRenderedLineWidth(rendered string) int {
