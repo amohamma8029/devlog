@@ -106,9 +106,16 @@ var NoSessionStyle = lipgloss.NewStyle().
 var ConnectorStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("#555555"))
 
+var ComposerSelectionStyle = lipgloss.NewStyle().
+	Reverse(true)
+
 var CursorStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#FFFFFF")).
-	Bold(true)
+	Background(lipgloss.Color("#FFFFFF")).
+	Foreground(lipgloss.Color("#000000"))
+
+var CursorSelectionStyle = lipgloss.NewStyle().
+	Background(lipgloss.Color("#FFFF00")).
+	Foreground(lipgloss.Color("#000000"))
 
 var IDParenStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("#888888"))
