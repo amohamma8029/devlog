@@ -60,22 +60,26 @@ func newStatusCommand() *cobra.Command {
 func renderStatus(active *store.SessionRecord, events []store.SessionEvent, number int, now time.Time) string {
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "Active session\n")
-	fmt.Fprintf(&b, "ID: %s\n", active.ID)
-	fmt.Fprintf(&b, "Author: %s\n", formatStatusAuthor(active.Author, active.Email))
-	fmt.Fprintf(&b, "Branch: %s\n", active.Branch)
-	fmt.Fprintf(&b, "Started: %s\n", active.Started.UTC().Format(time.RFC3339))
-	fmt.Fprintf(&b, "Duration: %s\n", formatStatusDuration(now.Sub(active.Started.UTC())))
+	b.WriteString(cliSessionTitleWithID(statusSessionTitle(events, active.ID), active.ID))
+	b.WriteByte('\n')
+	writeCLIBranchField(&b, active.Branch, false)
+	writeCLIField(&b, "author", formatStatusAuthor(active.Author, active.Email))
+	writeCLIField(&b, "started", active.Started.UTC().Format(time.RFC3339))
+	writeCLIField(&b, "duration", formatStatusDuration(now.Sub(active.Started.UTC())))
 
 	b.WriteString("\n")
 	if number == 0 {
-		b.WriteString("Recent events (all)\n")
+		b.WriteString(cliTitleStyle.Render("Recent events (all)"))
+		b.WriteByte('\n')
 	} else {
-		fmt.Fprintf(&b, "Recent events (last %d)\n", number)
+		b.WriteString(cliTitleStyle.Render(fmt.Sprintf("Recent events (last %d)", number)))
+		b.WriteByte('\n')
 	}
 	writeRecentStatusEvents(&b, recentStatusEvents(events, number))
 
-	b.WriteString("\nBlockers\n")
+	b.WriteString("\n")
+	b.WriteString(cliBlockerTitle("Blockers"))
+	b.WriteByte('\n')
 	writeStatusBlockers(&b, events)
 
 	return b.String()
@@ -131,16 +135,24 @@ func formatStatusDuration(d time.Duration) string {
 }
 
 func recentStatusEvents(events []store.SessionEvent, number int) []store.SessionEvent {
-	if number == 0 || number >= len(events) {
-		return events
+	var visible []store.SessionEvent
+	for _, event := range events {
+		if event.Type == "Start" {
+			continue
+		}
+		visible = append(visible, event)
 	}
 
-	return events[len(events)-number:]
+	if number == 0 || number >= len(visible) {
+		return visible
+	}
+
+	return visible[len(visible)-number:]
 }
 
 func writeRecentStatusEvents(b *strings.Builder, events []store.SessionEvent) {
 	if len(events) == 0 {
-		b.WriteString("None\n")
+		b.WriteString("  None\n")
 		return
 	}
 
@@ -150,12 +162,17 @@ func writeRecentStatusEvents(b *strings.Builder, events []store.SessionEvent) {
 }
 
 func writeStatusEvent(b *strings.Builder, event store.SessionEvent) {
+	var line string
 	if event.Time.IsZero() {
-		fmt.Fprintf(b, "- %s: %s\n", event.Type, oneLineStatusBody(event.Body))
+		line = cliBulletLine(fmt.Sprintf("%s: %s", event.Type, oneLineStatusBody(event.Body)))
+		b.WriteString(cliEventText(event.Type, line))
+		b.WriteByte('\n')
 		return
 	}
 
-	fmt.Fprintf(b, "- %s %s: %s\n", formatStatusEventTime(event.Time), event.Type, oneLineStatusBody(event.Body))
+	line = cliBulletLine(fmt.Sprintf("%s %s: %s", formatStatusEventTime(event.Time), event.Type, oneLineStatusBody(event.Body)))
+	b.WriteString(cliEventText(event.Type, line))
+	b.WriteByte('\n')
 }
 
 func writeStatusBlockers(b *strings.Builder, events []store.SessionEvent) {
@@ -166,20 +183,39 @@ func writeStatusBlockers(b *strings.Builder, events []store.SessionEvent) {
 		}
 
 		found = true
+		var line string
 		if event.Time.IsZero() {
-			fmt.Fprintf(b, "- %s\n", oneLineStatusBody(event.Body))
+			line = cliBulletLine(oneLineStatusBody(event.Body))
+			b.WriteString(cliBlockerStyle.Render(line))
+			b.WriteByte('\n')
 			continue
 		}
-		fmt.Fprintf(b, "- %s: %s\n", formatStatusEventTime(event.Time), oneLineStatusBody(event.Body))
+		line = cliBulletLine(fmt.Sprintf("%s: %s", formatStatusEventTime(event.Time), oneLineStatusBody(event.Body)))
+		b.WriteString(cliBlockerStyle.Render(line))
+		b.WriteByte('\n')
 	}
 
 	if !found {
-		b.WriteString("None\n")
+		b.WriteString("  None\n")
 	}
 }
 
 func formatStatusEventTime(t time.Time) string {
 	return t.UTC().Format(statusEventTimeLayout)
+}
+
+func statusSessionTitle(events []store.SessionEvent, fallback string) string {
+	for _, event := range events {
+		if event.Type == "Start" {
+			for _, line := range strings.Split(event.Body, "\n") {
+				line = strings.TrimSpace(line)
+				if line != "" {
+					return line
+				}
+			}
+		}
+	}
+	return fallback
 }
 
 func oneLineStatusBody(body string) string {

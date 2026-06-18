@@ -57,7 +57,7 @@ func newOpenCommand() *cobra.Command {
 				return err
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Opened session %s on branch %s\n", sess.ID, sess.Branch)
+			_, err = fmt.Fprint(cmd.OutOrStdout(), renderCLISessionConfirmation("Opened session", "", false, message, sess.ID, sess.Branch, false))
 			return err
 		},
 	}

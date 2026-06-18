@@ -32,10 +32,14 @@ func TestBlockCommandAppendsBlockerWithFlag(t *testing.T) {
 		t.Fatal("expected session file to contain blocker body")
 	}
 
-	wantOut := "Logged blocker in session " + sess.ID + "\n"
-	if out != wantOut {
-		t.Fatalf("expected output %q, got %q", wantOut, out)
-	}
+	assertContains(t, out, "Logged blocker")
+	assertContains(t, out, "→")
+	assertContains(t, out, "waiting for API review")
+	assertContains(t, out, cliBlockerStyle.Render("Logged blocker"))
+	assertContains(t, out, cliBlockerTextStyle.Render("waiting for API review"))
+	assertContains(t, out, "session: start message ("+sess.ID+")")
+	assertNotContains(t, out, "id: "+sess.ID)
+	assertContains(t, out, "branch: feat/test (active)")
 }
 
 func TestBlockCommandAppendsBlockerWithPositionalMessage(t *testing.T) {

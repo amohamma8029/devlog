@@ -92,7 +92,8 @@ func newHandoffCommand() *cobra.Command {
 			if err := f.Close(); err != nil {
 				return fmt.Errorf("handoff: close output file: %w", err)
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Handoff written to %s\n", savePath)
+			title := sessionTitle(s, rec.ID)
+			_, err = fmt.Fprint(cmd.OutOrStdout(), renderCLIHandoffConfirmation(displayHandoffPath(root, savePath), title, rec.ID, rec.Branch, rec.Closed))
 			return err
 		},
 	}
@@ -154,4 +155,31 @@ func sessionFilePath(root, sessionID string) (string, error) {
 		return "", fmt.Errorf("handoff: session ID is empty")
 	}
 	return filepath.Join(root, ".devlog", "sessions", sessionID+".md"), nil
+}
+
+func displayHandoffPath(root, path string) string {
+	if rel, err := filepath.Rel(root, path); err == nil && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".." && !filepath.IsAbs(rel) {
+		return filepath.ToSlash(rel)
+	}
+
+	home, err := os.UserHomeDir()
+	if err == nil && home != "" {
+		if rel, err := filepath.Rel(home, path); err == nil && rel != "." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && rel != ".." && !filepath.IsAbs(rel) {
+			return "~/" + filepath.ToSlash(rel)
+		}
+		if samePath(home, path) {
+			return "~"
+		}
+	}
+
+	return path
+}
+
+func samePath(a, b string) bool {
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	if errA != nil || errB != nil {
+		return false
+	}
+	return absA == absB
 }

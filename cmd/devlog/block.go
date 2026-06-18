@@ -41,7 +41,8 @@ func newBlockCommand() *cobra.Command {
 				return err
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Logged blocker in session %s\n", active.ID)
+			title := sessionTitle(s, active.ID)
+			_, err = fmt.Fprint(cmd.OutOrStdout(), renderCLISessionConfirmation("Logged blocker", body, true, title, active.ID, active.Branch, false))
 			return err
 		},
 	}

@@ -63,17 +63,9 @@ func filterListSessions(records []store.SessionRecord, activeOnly bool, branch s
 	return filtered
 }
 
-func padField(s string, width int) string {
-	w := runewidth.StringWidth(s)
-	if w >= width {
-		return s
-	}
-	return s + strings.Repeat(" ", width-w)
-}
-
 func renderListTable(records []store.SessionRecord, root string, now time.Time) string {
 	if len(records) == 0 {
-		return "No sessions found.\n"
+		return cliTitleStyle.Render("Sessions") + "\n  No sessions found.\n"
 	}
 
 	s, err := store.New(root)
@@ -82,31 +74,26 @@ func renderListTable(records []store.SessionRecord, root string, now time.Time) 
 	}
 
 	var b strings.Builder
-
-	b.WriteString(padField("TITLE", 22) + "  " +
-		padField("BRANCH", 20) + "  " +
-		padField("STATUS", 7) + "  " +
-		padField("STARTED", 20) + "  " +
-		"DURATION\n")
+	b.WriteString(cliTitleStyle.Render("Sessions"))
+	b.WriteByte('\n')
 
 	for _, r := range records {
-		status := "active"
-		if r.Closed {
-			status = "closed"
-		}
-
-		b.WriteString(
-			padField(truncateListField(listTitle(s, r.ID), 22), 22) + "  " +
-				padField(truncateListField(r.Branch, 20), 20) + "  " +
-				padField(status, 7) + "  " +
-				padField(r.Started.Format(time.RFC3339), 20) + "  " +
-				computeListDuration(r, root, now) + "\n")
+		title := truncateListField(sessionTitle(s, r.ID), 64)
+		branch := truncateListField(r.Branch, 64)
+		b.WriteString("  ")
+		b.WriteString(cliSessionRef(title, r.ID))
+		b.WriteByte('\n')
+		writeCLIBranchField(&b, branch, r.Closed)
+		writeCLIField(&b, "started", r.Started.Format(time.RFC3339))
+		writeCLIField(&b, "duration", computeListDuration(r, root, now))
+		b.WriteByte('\n')
 	}
 
-	return b.String()
+	return strings.TrimRight(b.String(), "\n") + "\n"
+
 }
 
-func listTitle(s *store.Store, sessionID string) string {
+func sessionTitle(s *store.Store, sessionID string) string {
 	if s == nil {
 		return sessionID
 	}

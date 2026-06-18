@@ -41,7 +41,8 @@ func newNoteCommand() *cobra.Command {
 				return err
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Added note to session %s\n", active.ID)
+			title := sessionTitle(s, active.ID)
+			_, err = fmt.Fprint(cmd.OutOrStdout(), renderCLISessionConfirmation("Added note", body, false, title, active.ID, active.Branch, false))
 			return err
 		},
 	}
