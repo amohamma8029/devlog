@@ -41,6 +41,9 @@ type CommandPalette struct {
 	SelectionAnchorRow int
 	SelectionAnchorCol int
 	HasSelection       bool
+	InputCursorPos     int
+	InputHasSelection  bool
+	InputSelAnchor     int
 }
 
 func NewCommandPalette() CommandPalette {
@@ -60,6 +63,8 @@ func (p *CommandPalette) OpenPalette() {
 	p.MultiLine = false
 	p.MultiLineLines = nil
 	p.HasSelection = false
+	p.InputCursorPos = 0
+	p.InputHasSelection = false
 }
 
 func (p *CommandPalette) EnterMultiLine(isBlocker bool) {
@@ -74,6 +79,13 @@ func (p *CommandPalette) EnterMultiLine(isBlocker bool) {
 
 func (p *CommandPalette) clearSelection() {
 	p.HasSelection = false
+}
+
+func (p *CommandPalette) inputSelBounds() (start, end int) {
+	if p.InputSelAnchor < p.InputCursorPos {
+		return p.InputSelAnchor, p.InputCursorPos
+	}
+	return p.InputCursorPos, p.InputSelAnchor
 }
 
 func (p *CommandPalette) startSelection() {
@@ -156,6 +168,7 @@ func (p *CommandPalette) ClosePalette() {
 	p.MultiLine = false
 	p.MultiLineLines = nil
 	p.HasSelection = false
+	p.InputHasSelection = false
 }
 
 func (p *CommandPalette) Update(msg tea.Msg) (tea.Cmd, *CommandPalette) {
@@ -215,7 +228,6 @@ func (p *CommandPalette) handleMouse(msg tea.MouseMsg) (tea.Cmd, *CommandPalette
 		}
 		return nil, p
 	}
-
 	return nil, p
 }
 
@@ -239,6 +251,8 @@ func (p *CommandPalette) handleKey(msg tea.KeyMsg) (tea.Cmd, *CommandPalette) {
 				return func() tea.Msg { return CommandExecutedMsg{Input: entry.Command} }, p
 			}
 			p.Input = entry.Command + " "
+			p.InputCursorPos = len(p.Input)
+			p.InputHasSelection = false
 			p.SelectedIndex = -1
 			p.HoverIndex = -1
 			if entry.Command == "/note" {
@@ -266,8 +280,14 @@ func (p *CommandPalette) handleKey(msg tea.KeyMsg) (tea.Cmd, *CommandPalette) {
 		}
 
 	case "backspace":
-		if len(p.Input) > 0 {
-			p.Input = p.Input[:len(p.Input)-1]
+		if p.InputHasSelection {
+			start, end := p.inputSelBounds()
+			p.Input = p.Input[:start] + p.Input[end:]
+			p.InputCursorPos = start
+			p.InputHasSelection = false
+		} else if p.InputCursorPos > 0 {
+			p.Input = p.Input[:p.InputCursorPos-1] + p.Input[p.InputCursorPos:]
+			p.InputCursorPos--
 		}
 		if p.SelectedIndex >= len(visible) {
 			p.SelectedIndex = len(visible) - 1
@@ -304,12 +324,113 @@ func (p *CommandPalette) handleKey(msg tea.KeyMsg) (tea.Cmd, *CommandPalette) {
 		}
 		p.HoverIndex = -1
 
+	case "left":
+		p.InputHasSelection = false
+		if p.InputCursorPos > 0 {
+			p.InputCursorPos--
+		}
+
+	case "right":
+		p.InputHasSelection = false
+		if p.InputCursorPos < len(p.Input) {
+			p.InputCursorPos++
+		}
+
+	case "home":
+		p.InputHasSelection = false
+		p.InputCursorPos = 0
+
+	case "end":
+		p.InputHasSelection = false
+		p.InputCursorPos = len(p.Input)
+
+	case "shift+left":
+		if !p.InputHasSelection {
+			p.InputSelAnchor = p.InputCursorPos
+			p.InputHasSelection = true
+		}
+		if p.InputCursorPos > 0 {
+			p.InputCursorPos--
+		}
+
+	case "shift+right":
+		if !p.InputHasSelection {
+			p.InputSelAnchor = p.InputCursorPos
+			p.InputHasSelection = true
+		}
+		if p.InputCursorPos < len(p.Input) {
+			p.InputCursorPos++
+		}
+
+	case "shift+home":
+		if !p.InputHasSelection {
+			p.InputSelAnchor = p.InputCursorPos
+			p.InputHasSelection = true
+		}
+		p.InputCursorPos = 0
+
+	case "shift+end":
+		if !p.InputHasSelection {
+			p.InputSelAnchor = p.InputCursorPos
+			p.InputHasSelection = true
+		}
+		p.InputCursorPos = len(p.Input)
+
+	case "ctrl+c":
+		if p.InputHasSelection {
+			start, end := p.inputSelBounds()
+			text := p.Input[start:end]
+			if text != "" {
+				return func() tea.Msg {
+					clipboard.WriteAll(text)
+					return ClipboardActionMsg{Action: "copy"}
+				}, p
+			}
+		}
+		return nil, p
+
+	case "ctrl+x":
+		if p.InputHasSelection {
+			start, end := p.inputSelBounds()
+			text := p.Input[start:end]
+			if text != "" {
+				p.Input = p.Input[:start] + p.Input[end:]
+				p.InputCursorPos = start
+				p.InputHasSelection = false
+				return func() tea.Msg {
+					clipboard.WriteAll(text)
+					return ClipboardActionMsg{Action: "cut"}
+				}, p
+			}
+		}
+		return nil, p
+
+	case "ctrl+v":
+		p.InputHasSelection = false
+		return func() tea.Msg {
+			text, err := clipboard.ReadAll()
+			if err != nil || text == "" {
+				return nil
+			}
+			return pasteMsg{text: text}
+		}, p
+
 	default:
 		if len(msg.Runes) == 1 {
-			p.Input += string(msg.Runes[0])
+			r := msg.Runes[0]
+			if r >= 32 {
+				if p.InputHasSelection {
+					start, end := p.inputSelBounds()
+					p.Input = p.Input[:start] + p.Input[end:]
+					p.InputCursorPos = start
+					p.InputHasSelection = false
+				}
+				p.Input = p.Input[:p.InputCursorPos] + string(r) + p.Input[p.InputCursorPos:]
+				p.InputCursorPos++
+			}
 			p.SelectedIndex = -1
 			p.HoverIndex = -1
-			if msg.Runes[0] == ' ' {
+			if r == ' ' {
 				trimmed := strings.TrimSpace(p.Input)
 				if trimmed == "/note" {
 					p.EnterMultiLine(false)
@@ -326,6 +447,13 @@ func (p *CommandPalette) handleKey(msg tea.KeyMsg) (tea.Cmd, *CommandPalette) {
 func (p *CommandPalette) handlePaste(msg pasteMsg) (tea.Cmd, *CommandPalette) {
 	text := msg.text
 	if text == "" {
+		return nil, p
+	}
+
+	if !p.MultiLine {
+		pasteLines := strings.Split(text, "\n")
+		p.Input = p.Input[:p.InputCursorPos] + pasteLines[0] + p.Input[p.InputCursorPos:]
+		p.InputCursorPos += len(pasteLines[0])
 		return nil, p
 	}
 
@@ -405,7 +533,7 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 			if text != "" {
 				return func() tea.Msg {
 					clipboard.WriteAll(text)
-					return nil
+					return ClipboardActionMsg{Action: "copy"}
 				}, p
 			}
 		}
@@ -418,7 +546,7 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 				p.deleteSelection()
 				return func() tea.Msg {
 					clipboard.WriteAll(text)
-					return nil
+					return ClipboardActionMsg{Action: "cut"}
 				}, p
 			}
 		}
@@ -537,6 +665,7 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 		if !p.HasSelection {
 			p.startSelection()
 		}
+		p.MultiLineCursorRow = 0
 		p.MultiLineCursorCol = 0
 		return nil, p
 
@@ -544,6 +673,7 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 		if !p.HasSelection {
 			p.startSelection()
 		}
+		p.MultiLineCursorRow = len(p.MultiLineLines) - 1
 		p.MultiLineCursorCol = len(p.MultiLineLines[p.MultiLineCursorRow])
 		return nil, p
 
@@ -642,17 +772,25 @@ func (p CommandPalette) View() string {
 	menuBox := MenuBoxStyle.Render(strings.TrimRight(menu.String(), "\n"))
 	inputWidth := maxRenderedLineWidth(menuBox)
 
-	cursorChar := " "
-	if p.CursorVisible {
-		cursorChar = CursorStyle.Render("|")
-	}
-
 	contentWidth := inputWidth - PaletteInputStyle.GetHorizontalFrameSize()
 	if contentWidth < 1 {
 		contentWidth = 1
 	}
 	style := PaletteInputStyle.Width(contentWidth)
-	inputDisplay := renderBoundedInputContent(" ", p.Input, cursorChar, "", contentWidth)
+
+	var inputDisplay string
+	if p.CursorVisible {
+		if p.InputCursorPos < len(p.Input) {
+			pos := p.InputCursorPos
+			cursorChar := string([]rune(p.Input)[pos])
+			inputWithCursor := p.Input[:pos] + CursorStyle.Render(cursorChar) + p.Input[pos+1:]
+			inputDisplay = renderBoundedInputContent(" ", inputWithCursor, "", "", contentWidth)
+		} else {
+			inputDisplay = renderBoundedInputContent(" ", p.Input, CursorStyle.Render(" "), "", contentWidth)
+		}
+	} else {
+		inputDisplay = renderBoundedInputContent(" ", p.Input, " ", "", contentWidth)
+	}
 
 	return menuBox + "\n" + style.Render(inputDisplay)
 }
@@ -760,12 +898,12 @@ func renderLineWithCursorAndSelection(b *strings.Builder, line string, cursorCol
 		if !cursorPlaced && cursorCol >= from && cursorCol < to {
 			pos := cursorCol
 			char := string(line[pos])
-			cursorCharStyle := CursorStyle
+			cursorStyle := CursorStyle
 			if inSelection {
-				cursorCharStyle = CursorSelectionStyle
+				cursorStyle = CursorSelectionStyle
 			}
 			b.WriteString(baseStyle.Render(line[from:pos]))
-			b.WriteString(cursorCharStyle.Render(char))
+			b.WriteString(cursorStyle.Render(char))
 			b.WriteString(baseStyle.Render(line[pos+1 : to]))
 			cursorPlaced = true
 		} else {
@@ -773,7 +911,7 @@ func renderLineWithCursorAndSelection(b *strings.Builder, line string, cursorCol
 		}
 	}
 
-	if !cursorPlaced {
+	if !cursorPlaced && cursorCol >= len(line) {
 		b.WriteString(CursorStyle.Render(" "))
 	}
 }

@@ -157,6 +157,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case ClipboardActionMsg:
+		if msg.Action == "copy" {
+			m.HandoffMsg = "Copied to clipboard"
+		} else if msg.Action == "cut" {
+			m.HandoffMsg = "Cut to clipboard"
+		}
+		return m, nil
+
 	case CommandErrorMsg:
 		m.ErrorMessage = msg.Error.Error()
 		return m, nil
@@ -404,6 +412,7 @@ func sessionEventsClosed(events []store.SessionEvent) bool {
 
 func (m Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	cmd, _ := m.Palette.Update(msg)
+	m.HandoffMsg = ""
 	if cmd != nil {
 		return m, cmd
 	}
@@ -540,6 +549,7 @@ func (m Model) activeSessionKeyHandler(key string) (tea.Model, tea.Cmd) {
 		if m.Palette != nil {
 			m.Palette.OpenPalette()
 			m.Palette.Input = "/"
+			m.Palette.InputCursorPos = 1
 			m.Palette.SessionClosed = m.ActiveSession == nil || m.ActiveSession.Closed
 			return m, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
 				return CursorTickMsg{}

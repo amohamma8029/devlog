@@ -34,6 +34,7 @@ func TestCommandPaletteViewConstrainsInputBoxWidth(t *testing.T) {
 	p.Open = true
 	p.CursorVisible = true
 	p.Input = strings.Repeat("a", 100) + "tail"
+	p.InputCursorPos = len(p.Input)
 
 	v := p.View()
 	lines := strings.Split(v, "\n")
@@ -57,8 +58,8 @@ func TestCommandPaletteViewConstrainsInputBoxWidth(t *testing.T) {
 	if !strings.Contains(content, inputOverflowMarker) {
 		t.Fatalf("overflowed palette input should show overflow marker, got %q", content)
 	}
-	if !strings.Contains(content, "tail|") {
-		t.Fatalf("overflowed palette input should keep input tail and cursor visible, got %q", content)
+	if !strings.Contains(content, "tail") {
+		t.Fatalf("overflowed palette input should keep input tail visible, got %q", content)
 	}
 }
 
@@ -200,6 +201,7 @@ func TestCommandPaletteUpdateBackspace(t *testing.T) {
 	p := NewCommandPalette()
 	p.Open = true
 	p.Input = "abc"
+	p.InputCursorPos = len(p.Input)
 	msg := tea.KeyMsg{Type: tea.KeyBackspace}
 	_, np := p.Update(msg)
 	if np.Input != "ab" {
@@ -221,6 +223,7 @@ func TestCommandPaletteUpdateWithRunes(t *testing.T) {
 	p := NewCommandPalette()
 	p.Open = true
 	p.Input = "a"
+	p.InputCursorPos = len(p.Input)
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}}
 	_, np := p.Update(msg)
 	if np.Input != "ab" {
