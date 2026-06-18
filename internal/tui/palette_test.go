@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	xansi "github.com/charmbracelet/x/ansi"
@@ -386,4 +387,492 @@ func TestVisiblePaletteCommandsNoMatch(t *testing.T) {
 	if len(visible) != 0 {
 		t.Errorf("filter /xyz should show 0 commands, got %d", len(visible))
 	}
+}
+
+func TestMultiLineShiftLeftSelectsText(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"hello"}
+	p.MultiLineCursorCol = 5
+
+	msg := tea.KeyMsg{Type: tea.KeyShiftLeft}
+	_, np := p.Update(msg)
+	if !np.HasSelection {
+		t.Fatal("shift+left should start selection")
+	}
+	if np.MultiLineCursorCol != 4 {
+		t.Fatalf("cursor col = %d, want 4", np.MultiLineCursorCol)
+	}
+
+	sr, sc, er, ec := np.normalizedSelection()
+	if sr != 0 || sc != 4 || er != 0 || ec != 5 {
+		t.Fatalf("normalized selection = (%d, %d, %d, %d), want (0, 4, 0, 5)", sr, sc, er, ec)
+	}
+}
+
+func TestMultiLineShiftRightSelectsText(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"hello"}
+	p.MultiLineCursorCol = 0
+
+	msg := tea.KeyMsg{Type: tea.KeyShiftRight}
+	_, np := p.Update(msg)
+	if !np.HasSelection {
+		t.Fatal("shift+right should start selection")
+	}
+	if np.MultiLineCursorCol != 1 {
+		t.Fatalf("cursor col = %d, want 1", np.MultiLineCursorCol)
+	}
+}
+
+func TestMultiLineUnshiftedArrowClearsSelection(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"hello"}
+	p.MultiLineCursorCol = 5
+
+	_, np := p.Update(tea.KeyMsg{Type: tea.KeyShiftLeft})
+	if !np.HasSelection {
+		t.Fatal("shift+left should start selection")
+	}
+
+	_, np = np.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	if np.HasSelection {
+		t.Fatal("unshifted left should clear selection")
+	}
+}
+
+func TestMultiLineBackspaceDeletesSelection(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"hello"}
+	p.MultiLineCursorCol = 4
+	p.HasSelection = true
+	p.SelectionAnchorRow = 0
+	p.SelectionAnchorCol = 1
+
+	msg := tea.KeyMsg{Type: tea.KeyBackspace}
+	_, np := p.Update(msg)
+	if np.HasSelection {
+		t.Fatal("backspace should clear selection after delete")
+	}
+	if np.MultiLineLines[0] != "ho" {
+		t.Fatalf("lines[0] = %q, want 'ho'", np.MultiLineLines[0])
+	}
+	if np.MultiLineCursorCol != 1 {
+		t.Fatalf("cursor col = %d, want 1", np.MultiLineCursorCol)
+	}
+}
+
+func TestMultiLineDeleteDeletesSelection(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"hello"}
+	p.MultiLineCursorCol = 3
+	p.HasSelection = true
+	p.SelectionAnchorRow = 0
+	p.SelectionAnchorCol = 3
+
+	_, np := p.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
+	// Now selection: row 0, col 3 to row 0, col 4
+	if !np.HasSelection || np.MultiLineCursorCol != 4 {
+		t.Fatal("shift+right should extend selection")
+	}
+
+	msg := tea.KeyMsg{Type: tea.KeyDelete}
+	_, np = np.Update(msg)
+	if np.HasSelection {
+		t.Fatal("delete should clear selection after delete")
+	}
+	if np.MultiLineLines[0] != "helo" {
+		t.Fatalf("lines[0] = %q, want 'helo'", np.MultiLineLines[0])
+	}
+}
+
+func TestMultiLineTypingReplacesSelection(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"hello"}
+	p.MultiLineCursorCol = 0
+	p.HasSelection = true
+	p.SelectionAnchorRow = 0
+	p.SelectionAnchorCol = 0
+
+	_, np := p.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
+	_, np = np.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
+	if !np.HasSelection {
+		t.Fatal("two shift+right should select 'he'")
+	}
+
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}}
+	_, np = np.Update(msg)
+	if np.HasSelection {
+		t.Fatal("typing should clear selection")
+	}
+	if np.MultiLineLines[0] != "Xllo" {
+		t.Fatalf("lines[0] = %q, want 'Xllo'", np.MultiLineLines[0])
+	}
+}
+
+func TestMultiLineCtrlCWithSelection(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"copy me"}
+	p.MultiLineCursorCol = 0
+	p.HasSelection = true
+	p.SelectionAnchorRow = 0
+	p.SelectionAnchorCol = 0
+
+	_, np := p.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
+	_, np = np.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
+	_, np = np.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
+	_, np = np.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
+	if !np.HasSelection {
+		t.Fatal("shift+right x4 should select 'copy'")
+	}
+
+	cmd, np := p.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+
+	testSkipIfClipboardUnavailable(t, cmd, np)
+	if !np.HasSelection {
+		t.Fatal("ctrl+c should preserve selection")
+	}
+}
+
+func TestMultiLineCtrlCWithoutSelection(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"hello"}
+	p.MultiLineCursorCol = 0
+
+	cmd, np := p.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if np.Open != true {
+		t.Fatal("ctrl+c without selection should keep palette open")
+	}
+	if cmd != nil {
+		t.Fatal("ctrl+c without selection should return nil cmd")
+	}
+}
+
+func TestMultiLineCtrlXWithSelection(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"cut me"}
+	p.MultiLineCursorCol = 0
+
+	_, np := p.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
+	_, np = np.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
+	_, np = np.Update(tea.KeyMsg{Type: tea.KeyShiftRight})
+	if !np.HasSelection {
+		t.Fatal("shift+right x3 should select 'cut'")
+	}
+
+	cmd, np := p.Update(tea.KeyMsg{Type: tea.KeyCtrlX})
+
+	testSkipIfClipboardUnavailable(t, cmd, np)
+	if np.HasSelection {
+		t.Fatal("ctrl+x should clear selection")
+	}
+	if np.MultiLineLines[0] != " me" {
+		t.Fatalf("lines[0] = %q, want ' me'", np.MultiLineLines[0])
+	}
+}
+
+func TestMultiLineCtrlVInsertsClipboard(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"before"}
+	p.MultiLineCursorCol = 3
+
+	testSetClipboard(t, "PASTE")
+	cmd, _ := p.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
+	if cmd == nil {
+		t.Skip("clipboard unavailable; skipping paste test")
+	}
+
+	msg := <-testCmdResult(cmd)
+	if paste, ok := msg.(pasteMsg); ok {
+		_, np := p.Update(paste)
+		expected := "befPASTEore"
+		if np.MultiLineLines[0] != expected {
+			t.Fatalf("lines[0] = %q, want %q", np.MultiLineLines[0], expected)
+		}
+		if np.MultiLineCursorCol != 8 {
+			t.Fatalf("cursor col = %d, want 8", np.MultiLineCursorCol)
+		}
+	}
+}
+
+func TestMultiLineShiftHomeSelectsToLineStart(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"hello"}
+	p.MultiLineCursorCol = 3
+
+	_, np := p.Update(tea.KeyMsg{Type: tea.KeyShiftHome})
+	if !np.HasSelection {
+		t.Fatal("shift+home should start selection")
+	}
+	if np.MultiLineCursorCol != 0 {
+		t.Fatalf("cursor col = %d, want 0", np.MultiLineCursorCol)
+	}
+	sr, sc, er, ec := np.normalizedSelection()
+	if sr != 0 || sc != 0 || er != 0 || ec != 3 {
+		t.Fatalf("normalized selection = (%d, %d, %d, %d), want (0, 0, 0, 3)", sr, sc, er, ec)
+	}
+}
+
+func TestMultiLineShiftEndSelectsToLineEnd(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"hello"}
+	p.MultiLineCursorCol = 1
+
+	_, np := p.Update(tea.KeyMsg{Type: tea.KeyShiftEnd})
+	if !np.HasSelection {
+		t.Fatal("shift+end should start selection")
+	}
+	if np.MultiLineCursorCol != 5 {
+		t.Fatalf("cursor col = %d, want 5", np.MultiLineCursorCol)
+	}
+}
+
+func TestMultiLineHomeMovesToLineStart(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"hello"}
+	p.MultiLineCursorCol = 3
+
+	_, np := p.Update(tea.KeyMsg{Type: tea.KeyHome})
+	if np.HasSelection {
+		t.Fatal("home should clear selection")
+	}
+	if np.MultiLineCursorCol != 0 {
+		t.Fatalf("cursor col = %d, want 0", np.MultiLineCursorCol)
+	}
+}
+
+func TestMultiLineEndMovesToLineEnd(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"hello"}
+	p.MultiLineCursorCol = 2
+
+	_, np := p.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	if np.HasSelection {
+		t.Fatal("end should clear selection")
+	}
+	if np.MultiLineCursorCol != 5 {
+		t.Fatalf("cursor col = %d, want 5", np.MultiLineCursorCol)
+	}
+}
+
+func TestMultiLineCrossLineSelectionUp(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"line1", "line2"}
+	p.MultiLineCursorRow = 1
+	p.MultiLineCursorCol = 2
+
+	_, np := p.Update(tea.KeyMsg{Type: tea.KeyShiftUp})
+	if !np.HasSelection {
+		t.Fatal("shift+up should start selection")
+	}
+	if np.MultiLineCursorRow != 0 {
+		t.Fatalf("cursor row = %d, want 0", np.MultiLineCursorRow)
+	}
+}
+
+func TestMultiLineCrossLineSelectionDown(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"line1", "line2"}
+	p.MultiLineCursorRow = 0
+	p.MultiLineCursorCol = 2
+
+	_, np := p.Update(tea.KeyMsg{Type: tea.KeyShiftDown})
+	if !np.HasSelection {
+		t.Fatal("shift+down should start selection")
+	}
+	if np.MultiLineCursorRow != 1 {
+		t.Fatalf("cursor row = %d, want 1", np.MultiLineCursorRow)
+	}
+}
+
+func TestMultiLineSelectedTextSingleLine(t *testing.T) {
+	p := NewCommandPalette()
+	setMultiLineSelection(&p, "hello", 4, 0, 1)
+	got := p.selectedText()
+	if got != "ell" {
+		t.Fatalf("selectedText = %q, want 'ell'", got)
+	}
+}
+
+func TestMultiLineSelectedTextMultiLine(t *testing.T) {
+	p := NewCommandPalette()
+	p.MultiLineLines = []string{"abc", "def", "ghi"}
+	p.HasSelection = true
+	p.SelectionAnchorRow = 0
+	p.SelectionAnchorCol = 1
+	p.MultiLineCursorRow = 2
+	p.MultiLineCursorCol = 2
+
+	got := p.selectedText()
+	if got != "bc\ndef\ngh" {
+		t.Fatalf("selectedText = %q, want 'bc\ndef\ngh'", got)
+	}
+}
+
+func TestMultiLineDeleteSelectionCrossLine(t *testing.T) {
+	p := NewCommandPalette()
+	p.MultiLineLines = []string{"abc", "def", "ghi"}
+	p.HasSelection = true
+	p.SelectionAnchorRow = 0
+	p.SelectionAnchorCol = 1
+	p.MultiLineCursorRow = 2
+	p.MultiLineCursorCol = 2
+
+	p.deleteSelection()
+	if p.HasSelection {
+		t.Fatal("deleteSelection should clear selection")
+	}
+	if len(p.MultiLineLines) != 1 {
+		t.Fatalf("lines length = %d, want 1", len(p.MultiLineLines))
+	}
+	if p.MultiLineLines[0] != "ai" {
+		t.Fatalf("lines[0] = %q, want 'ai'", p.MultiLineLines[0])
+	}
+}
+
+func TestMultiLineOpenPaletteClearsSelection(t *testing.T) {
+	p := NewCommandPalette()
+	p.HasSelection = true
+	p.SelectionAnchorRow = 0
+	p.SelectionAnchorCol = 0
+
+	p.OpenPalette()
+	if p.HasSelection {
+		t.Fatal("OpenPalette should clear selection")
+	}
+}
+
+func TestMultiLineClosePaletteClearsSelection(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.HasSelection = true
+	p.SelectionAnchorRow = 0
+	p.SelectionAnchorCol = 0
+
+	p.ClosePalette()
+	if p.HasSelection {
+		t.Fatal("ClosePalette should clear selection")
+	}
+}
+
+func TestMultiLineEnterMultiLineClearsSelection(t *testing.T) {
+	p := NewCommandPalette()
+	p.HasSelection = true
+	p.SelectionAnchorRow = 0
+	p.SelectionAnchorCol = 0
+
+	p.EnterMultiLine(false)
+	if p.HasSelection {
+		t.Fatal("EnterMultiLine should clear selection")
+	}
+}
+
+func TestMultiLineViewRendersSelectionStyle(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.CursorVisible = false
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"select me"}
+	p.HasSelection = true
+	p.SelectionAnchorRow = 0
+	p.SelectionAnchorCol = 0
+	p.MultiLineCursorRow = 0
+	p.MultiLineCursorCol = 6
+
+	v := p.View()
+	selStyled := ComposerSelectionStyle.Render("select")
+	if !strings.Contains(v, selStyled) {
+		t.Fatalf("view should contain selected text with selection style, got:\n%s", v)
+	}
+}
+
+func TestMultiLineViewRendersSelectionAndCursor(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.CursorVisible = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"select me"}
+	p.HasSelection = true
+	p.SelectionAnchorRow = 0
+	p.SelectionAnchorCol = 0
+	p.MultiLineCursorRow = 0
+	p.MultiLineCursorCol = 6
+
+	v := p.View()
+	if !strings.Contains(v, CursorStyle.Render(" ")) {
+		t.Fatalf("view should contain cursor-styled character, got:\n%s", v)
+	}
+	selStyled := ComposerSelectionStyle.Render("select")
+	if !strings.Contains(v, selStyled) {
+		t.Fatalf("view should contain selected text with selection style, got:\n%s", v)
+	}
+}
+
+func TestComposerShortcutHintIncludesClipboard(t *testing.T) {
+	hint := composerShortcutHint(200)
+	if !strings.Contains(hint, "Ctrl+C") || !strings.Contains(hint, "Ctrl+X") || !strings.Contains(hint, "Ctrl+V") {
+		t.Fatalf("wide hint should include clipboard shortcuts, got: %q", hint)
+	}
+}
+
+func setMultiLineSelection(p *CommandPalette, line string, cursorCol, anchorRow, anchorCol int) {
+	p.MultiLineLines = []string{line}
+	p.MultiLineCursorRow = 0
+	p.MultiLineCursorCol = cursorCol
+	p.HasSelection = true
+	p.SelectionAnchorRow = anchorRow
+	p.SelectionAnchorCol = anchorCol
+}
+
+func testSkipIfClipboardUnavailable(t *testing.T, cmd tea.Cmd, p *CommandPalette) {
+	t.Helper()
+	if cmd == nil {
+		t.Skip("clipboard unavailable; skipping clipboard test")
+	}
+}
+
+func testSetClipboard(t *testing.T, text string) {
+	t.Helper()
+	if err := clipboard.WriteAll(text); err != nil {
+		t.Skipf("clipboard write unavailable: %v", err)
+	}
+}
+
+func testCmdResult(cmd tea.Cmd) <-chan tea.Msg {
+	ch := make(chan tea.Msg, 1)
+	go func() {
+		ch <- cmd()
+	}()
+	return ch
 }
