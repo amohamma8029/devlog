@@ -150,6 +150,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case MultiLineNoteMsg:
 		return m.handleMultiLineSubmit(msg)
 
+	case pasteMsg:
+		if m.Palette != nil && m.Palette.Open {
+			cmd, _ := m.Palette.Update(msg)
+			return m, cmd
+		}
+		return m, nil
+
 	case CommandErrorMsg:
 		m.ErrorMessage = msg.Error.Error()
 		return m, nil
