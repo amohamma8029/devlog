@@ -53,3 +53,7 @@ type MultiLineNoteMsg struct {
 	Body      string
 	IsBlocker bool
 }
+
+type pasteMsg struct {
+	text string
+}
