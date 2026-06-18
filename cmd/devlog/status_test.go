@@ -23,18 +23,22 @@ func TestStatusCommandShowsActiveSessionEventsAndBlockers(t *testing.T) {
 		t.Fatalf("status command failed: %v", err)
 	}
 
-	assertContains(t, out, "Active session")
-	assertContains(t, out, "ID: "+sess.ID)
-	assertContains(t, out, "Author: Test Author")
-	assertContains(t, out, "Branch: feat/test")
-	assertContains(t, out, "Started: 2026-01-15T14:00:00Z")
-	assertContains(t, out, "Duration: ")
+	assertContains(t, out, "start message")
+	assertContains(t, out, "("+sess.ID+")")
+	assertContains(t, out, cliMutedStyle.Render("("+sess.ID+")"))
+	assertNotContains(t, out, "id: "+sess.ID)
+	assertContains(t, out, "author: Test Author")
+	assertContains(t, out, "branch: feat/test (active)")
+	assertContains(t, out, "started: 2026-01-15T14:00:00Z")
+	assertContains(t, out, "duration: ")
 	assertContains(t, out, "Recent events (last 10)")
+	assertContains(t, out, "•")
 	assertContains(t, out, " UTC Note: wrote status tests")
 	assertContains(t, out, "Note: wrote status tests")
 	assertContains(t, out, "Blocker: waiting for review")
-	assertContains(t, out, "Start: start message")
+	assertNotContains(t, out, "Start: start message")
 	assertContains(t, out, "Blockers")
+	assertContains(t, out, cliBlockerStyle.Render("Blockers"))
 	assertContains(t, out, " UTC: waiting for review")
 	assertContains(t, out, "waiting for review")
 }
@@ -72,7 +76,7 @@ func TestStatusCommandLimitsRecentEvents(t *testing.T) {
 	assertContains(t, out, "second note")
 	assertContains(t, out, "old blocker")
 	assertNotContains(t, out, "first note")
-	assertNotContains(t, out, "start message")
+	assertNotContains(t, out, "Start: start message")
 }
 
 func TestStatusCommandShowsAllRecentEventsWhenNumberIsZero(t *testing.T) {
@@ -93,6 +97,7 @@ func TestStatusCommandShowsAllRecentEventsWhenNumberIsZero(t *testing.T) {
 	assertContains(t, out, "first note")
 	assertContains(t, out, "second note")
 	assertContains(t, out, "start message")
+	assertNotContains(t, out, "Start: start message")
 }
 
 func TestRootCommandIncludesStatusCommand(t *testing.T) {

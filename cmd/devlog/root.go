@@ -16,9 +16,10 @@ func newRootCommand() *cobra.Command {
 	var showVersion bool
 
 	cmd := &cobra.Command{
-		Use:           "devlog",
-		Short:         "Record structured coding session journals inside git repos.",
-		SilenceErrors: true,
+		Use:               "devlog",
+		Short:             "Record structured coding session journals inside git repos.",
+		SilenceErrors:     true,
+		CompletionOptions: cobra.CompletionOptions{HiddenDefaultCmd: true},
 		Long: `devlog records structured coding session journals inside a git repository.
 
 Open a session to capture context, add notes and blockers as you work,
@@ -26,7 +27,7 @@ check status to see where things stand, and close when done. Sessions are
 stored as Markdown files under .devlog/sessions/.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if showVersion {
-				_, err := fmt.Fprintf(cmd.OutOrStdout(), "devlog version %s\n", version)
+				_, err := fmt.Fprint(cmd.OutOrStdout(), renderCLIConfirmation("devlog", cliField{"version", version}))
 				return err
 			}
 
@@ -35,6 +36,7 @@ stored as Markdown files under .devlog/sessions/.`,
 	}
 
 	cmd.Flags().BoolVarP(&showVersion, "version", "v", false, "Print the version and exit")
+	configureCLIHelp(cmd)
 	cmd.AddCommand(newOpenCommand())
 	cmd.AddCommand(newNoteCommand())
 	cmd.AddCommand(newBlockCommand())

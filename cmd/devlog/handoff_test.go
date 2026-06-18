@@ -23,7 +23,17 @@ func TestHandoffCommandWritesToDefaultPath(t *testing.T) {
 	}
 
 	expectedPath := filepath.Join(root, ".devlog", "handoffs", sess.ID+".md")
-	assertContains(t, out, "Handoff written to "+expectedPath)
+	expectedDisplayPath := ".devlog/handoffs/" + sess.ID + ".md"
+	assertContains(t, out, "Handoff written")
+	assertContains(t, out, "path: "+expectedDisplayPath)
+	assertContains(t, out, "session: start message ("+sess.ID+")")
+	assertNotContains(t, out, "id: "+sess.ID)
+	assertContains(t, out, "branch: feat/test (active)")
+	if strings.Index(out, "path:") < strings.Index(out, "branch:") {
+		t.Fatalf("path should render below session metadata, got:\n%s", out)
+	}
+	assertNotContains(t, out, "# Handoff:")
+	assertNotContains(t, out, "## Summary")
 
 	data, err := os.ReadFile(expectedPath)
 	if err != nil {
@@ -73,7 +83,8 @@ func TestHandoffCommandWritesToCustomFilename(t *testing.T) {
 	}
 
 	expectedPath := filepath.Join(root, ".devlog", "handoffs", "my-handoff.md")
-	assertContains(t, out, "Handoff written to "+expectedPath)
+	assertContains(t, out, "Handoff written")
+	assertContains(t, out, "path: .devlog/handoffs/my-handoff.md")
 
 	data, err := os.ReadFile(expectedPath)
 	if err != nil {

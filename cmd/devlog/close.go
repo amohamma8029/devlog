@@ -31,11 +31,13 @@ func newCloseCommand() *cobra.Command {
 				return err
 			}
 
+			title := sessionTitle(s, active.ID)
+
 			if err := session.CloseActiveSession(s); err != nil {
 				return err
 			}
 
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Closed session %s.\n", active.ID)
+			_, err = fmt.Fprint(cmd.OutOrStdout(), renderCLISessionConfirmation("Closed session", "", false, title, active.ID, active.Branch, true))
 			return err
 		},
 	}

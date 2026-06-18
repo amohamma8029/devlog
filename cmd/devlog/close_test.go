@@ -20,10 +20,10 @@ func TestCloseCommandClosesActiveSession(t *testing.T) {
 		t.Fatalf("close command failed: %v", err)
 	}
 
-	wantOut := "Closed session " + sess.ID + ".\n"
-	if out != wantOut {
-		t.Fatalf("expected output %q, got %q", wantOut, out)
-	}
+	assertContains(t, out, "Closed session")
+	assertContains(t, out, "session: start message ("+sess.ID+")")
+	assertNotContains(t, out, "id: "+sess.ID)
+	assertContains(t, out, "branch: feat/test (closed)")
 
 	s, err := store.New(root)
 	if err != nil {

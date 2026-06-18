@@ -37,11 +37,15 @@ func TestListCommandListsAllSessions(t *testing.T) {
 	if !strings.Contains(out, "closed") {
 		t.Fatal("expected output to contain closed status")
 	}
-	for _, col := range []string{"TITLE", "BRANCH", "STATUS", "STARTED", "DURATION"} {
-		if !strings.Contains(out, col) {
-			t.Fatalf("expected table to contain %q column, got: %s", col, out)
+	for _, field := range []string{"branch:", "started:", "duration:"} {
+		if !strings.Contains(out, field) {
+			t.Fatalf("expected output to contain %q field, got: %s", field, out)
 		}
 	}
+	if strings.Contains(out, "id:") {
+		t.Fatalf("expected list output to consolidate ids into title lines, got: %s", out)
+	}
+	assertNotContains(t, out, "TITLE")
 }
 
 func TestComputeListDurationUsesFullStopTimestampAcrossMidnight(t *testing.T) {
