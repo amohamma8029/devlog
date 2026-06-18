@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"sort"
 	"strings"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
 )
@@ -36,6 +38,9 @@ type CommandPalette struct {
 	MultiLineCursorRow int
 	MultiLineCursorCol int
 	MultiLineIsBlocker bool
+	SelectionAnchorRow int
+	SelectionAnchorCol int
+	HasSelection       bool
 }
 
 func NewCommandPalette() CommandPalette {
@@ -54,6 +59,7 @@ func (p *CommandPalette) OpenPalette() {
 	p.SessionClosed = false
 	p.MultiLine = false
 	p.MultiLineLines = nil
+	p.HasSelection = false
 }
 
 func (p *CommandPalette) EnterMultiLine(isBlocker bool) {
@@ -63,6 +69,71 @@ func (p *CommandPalette) EnterMultiLine(isBlocker bool) {
 	p.MultiLineCursorCol = 0
 	p.MultiLineIsBlocker = isBlocker
 	p.Input = ""
+	p.HasSelection = false
+}
+
+func (p *CommandPalette) clearSelection() {
+	p.HasSelection = false
+}
+
+func (p *CommandPalette) startSelection() {
+	p.SelectionAnchorRow = p.MultiLineCursorRow
+	p.SelectionAnchorCol = p.MultiLineCursorCol
+	p.HasSelection = true
+}
+
+func (p *CommandPalette) normalizedSelection() (startRow, startCol, endRow, endCol int) {
+	if !p.HasSelection {
+		return -1, -1, -1, -1
+	}
+	ar, ac := p.SelectionAnchorRow, p.SelectionAnchorCol
+	cr, cc := p.MultiLineCursorRow, p.MultiLineCursorCol
+	if ar < cr || (ar == cr && ac <= cc) {
+		return ar, ac, cr, cc
+	}
+	return cr, cc, ar, ac
+}
+
+func (p *CommandPalette) selectedText() string {
+	if !p.HasSelection {
+		return ""
+	}
+	sr, sc, er, ec := p.normalizedSelection()
+	if sr == er {
+		return p.MultiLineLines[sr][sc:ec]
+	}
+	var parts []string
+	parts = append(parts, p.MultiLineLines[sr][sc:])
+	for r := sr + 1; r < er; r++ {
+		parts = append(parts, p.MultiLineLines[r])
+	}
+	parts = append(parts, p.MultiLineLines[er][:ec])
+	return strings.Join(parts, "\n")
+}
+
+func (p *CommandPalette) deleteSelection() {
+	if !p.HasSelection {
+		return
+	}
+	sr, sc, er, ec := p.normalizedSelection()
+	if sr == er {
+		line := p.MultiLineLines[sr]
+		p.MultiLineLines[sr] = line[:sc] + line[ec:]
+		p.MultiLineCursorRow = sr
+		p.MultiLineCursorCol = sc
+		p.HasSelection = false
+		return
+	}
+	left := p.MultiLineLines[sr][:sc]
+	right := p.MultiLineLines[er][ec:]
+	p.MultiLineLines[sr] = left + right
+	p.MultiLineLines = append(
+		p.MultiLineLines[:sr+1],
+		p.MultiLineLines[er+1:]...,
+	)
+	p.MultiLineCursorRow = sr
+	p.MultiLineCursorCol = sc
+	p.HasSelection = false
 }
 
 func visiblePaletteCommands(p CommandPalette) []CommandEntry {
@@ -84,6 +155,7 @@ func (p *CommandPalette) ClosePalette() {
 	p.HoverIndex = -1
 	p.MultiLine = false
 	p.MultiLineLines = nil
+	p.HasSelection = false
 }
 
 func (p *CommandPalette) Update(msg tea.Msg) (tea.Cmd, *CommandPalette) {
@@ -97,6 +169,9 @@ func (p *CommandPalette) Update(msg tea.Msg) (tea.Cmd, *CommandPalette) {
 
 	case tea.KeyMsg:
 		return p.handleKey(msg)
+
+	case pasteMsg:
+		return p.handlePaste(msg)
 	}
 
 	return nil, p
@@ -248,8 +323,55 @@ func (p *CommandPalette) handleKey(msg tea.KeyMsg) (tea.Cmd, *CommandPalette) {
 	return nil, p
 }
 
+func (p *CommandPalette) handlePaste(msg pasteMsg) (tea.Cmd, *CommandPalette) {
+	text := msg.text
+	if text == "" {
+		return nil, p
+	}
+
+	pasteLines := strings.Split(text, "\n")
+	if len(pasteLines) == 0 {
+		return nil, p
+	}
+
+	cursorLine := p.MultiLineLines[p.MultiLineCursorRow]
+	left := cursorLine[:p.MultiLineCursorCol]
+	right := cursorLine[p.MultiLineCursorCol:]
+
+	p.MultiLineLines[p.MultiLineCursorRow] = left + pasteLines[0]
+
+	numMiddle := len(pasteLines) - 2
+	for j := 0; j < numMiddle; j++ {
+		insertIdx := p.MultiLineCursorRow + 1 + j
+		p.MultiLineLines = append(
+			p.MultiLineLines[:insertIdx],
+			append([]string{pasteLines[1+j]}, p.MultiLineLines[insertIdx:]...)...,
+		)
+	}
+
+	if len(pasteLines) > 1 {
+		insertIdx := p.MultiLineCursorRow + 1 + numMiddle
+		p.MultiLineLines = append(
+			p.MultiLineLines[:insertIdx],
+			append([]string{pasteLines[len(pasteLines)-1] + right}, p.MultiLineLines[insertIdx:]...)...,
+		)
+	} else {
+		p.MultiLineLines[p.MultiLineCursorRow] += right
+	}
+
+	p.MultiLineCursorRow += len(pasteLines) - 1
+	if len(pasteLines) > 1 {
+		p.MultiLineCursorCol = len(pasteLines[len(pasteLines)-1])
+	} else {
+		p.MultiLineCursorCol = len(left) + len(pasteLines[0])
+	}
+
+	return nil, p
+}
+
 func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPalette) {
 	if msg.Alt && msg.Type == tea.KeyEnter {
+		p.HasSelection = false
 		line := p.MultiLineLines[p.MultiLineCursorRow]
 		left := line[:p.MultiLineCursorCol]
 		right := line[p.MultiLineCursorCol:]
@@ -277,7 +399,46 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 		p.ClosePalette()
 		return nil, p
 
+	case "ctrl+c":
+		if p.HasSelection {
+			text := p.selectedText()
+			if text != "" {
+				return func() tea.Msg {
+					clipboard.WriteAll(text)
+					return nil
+				}, p
+			}
+		}
+		return nil, p
+
+	case "ctrl+x":
+		if p.HasSelection {
+			text := p.selectedText()
+			if text != "" {
+				p.deleteSelection()
+				return func() tea.Msg {
+					clipboard.WriteAll(text)
+					return nil
+				}, p
+			}
+		}
+		return nil, p
+
+	case "ctrl+v":
+		p.HasSelection = false
+		return func() tea.Msg {
+			text, err := clipboard.ReadAll()
+			if err != nil || text == "" {
+				return nil
+			}
+			return pasteMsg{text: text}
+		}, p
+
 	case "backspace":
+		if p.HasSelection {
+			p.deleteSelection()
+			return nil, p
+		}
 		if p.MultiLineCursorCol > 0 {
 			line := p.MultiLineLines[p.MultiLineCursorRow]
 			p.MultiLineLines[p.MultiLineCursorRow] = line[:p.MultiLineCursorCol-1] + line[p.MultiLineCursorCol:]
@@ -299,7 +460,95 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 		}
 		return nil, p
 
+	case "delete":
+		if p.HasSelection {
+			p.deleteSelection()
+			return nil, p
+		}
+		line := p.MultiLineLines[p.MultiLineCursorRow]
+		if p.MultiLineCursorCol < len(line) {
+			p.MultiLineLines[p.MultiLineCursorRow] = line[:p.MultiLineCursorCol] + line[p.MultiLineCursorCol+1:]
+		} else if p.MultiLineCursorRow < len(p.MultiLineLines)-1 {
+			p.MultiLineLines[p.MultiLineCursorRow] += p.MultiLineLines[p.MultiLineCursorRow+1]
+			p.MultiLineLines = append(p.MultiLineLines[:p.MultiLineCursorRow+1],
+				p.MultiLineLines[p.MultiLineCursorRow+2:]...)
+		}
+		return nil, p
+
+	case "home":
+		p.HasSelection = false
+		p.MultiLineCursorCol = 0
+		return nil, p
+
+	case "end":
+		p.HasSelection = false
+		p.MultiLineCursorCol = len(p.MultiLineLines[p.MultiLineCursorRow])
+		return nil, p
+
+	case "shift+left":
+		if !p.HasSelection {
+			p.startSelection()
+		}
+		if p.MultiLineCursorCol > 0 {
+			p.MultiLineCursorCol--
+		} else if p.MultiLineCursorRow > 0 {
+			p.MultiLineCursorRow--
+			p.MultiLineCursorCol = len(p.MultiLineLines[p.MultiLineCursorRow])
+		}
+		return nil, p
+
+	case "shift+right":
+		if !p.HasSelection {
+			p.startSelection()
+		}
+		if p.MultiLineCursorCol < len(p.MultiLineLines[p.MultiLineCursorRow]) {
+			p.MultiLineCursorCol++
+		} else if p.MultiLineCursorRow < len(p.MultiLineLines)-1 {
+			p.MultiLineCursorRow++
+			p.MultiLineCursorCol = 0
+		}
+		return nil, p
+
+	case "shift+up":
+		if !p.HasSelection {
+			p.startSelection()
+		}
+		if p.MultiLineCursorRow > 0 {
+			p.MultiLineCursorRow--
+			if p.MultiLineCursorCol > len(p.MultiLineLines[p.MultiLineCursorRow]) {
+				p.MultiLineCursorCol = len(p.MultiLineLines[p.MultiLineCursorRow])
+			}
+		}
+		return nil, p
+
+	case "shift+down":
+		if !p.HasSelection {
+			p.startSelection()
+		}
+		if p.MultiLineCursorRow < len(p.MultiLineLines)-1 {
+			p.MultiLineCursorRow++
+			if p.MultiLineCursorCol > len(p.MultiLineLines[p.MultiLineCursorRow]) {
+				p.MultiLineCursorCol = len(p.MultiLineLines[p.MultiLineCursorRow])
+			}
+		}
+		return nil, p
+
+	case "shift+home":
+		if !p.HasSelection {
+			p.startSelection()
+		}
+		p.MultiLineCursorCol = 0
+		return nil, p
+
+	case "shift+end":
+		if !p.HasSelection {
+			p.startSelection()
+		}
+		p.MultiLineCursorCol = len(p.MultiLineLines[p.MultiLineCursorRow])
+		return nil, p
+
 	case "left":
+		p.HasSelection = false
 		if p.MultiLineCursorCol > 0 {
 			p.MultiLineCursorCol--
 		} else if p.MultiLineCursorRow > 0 {
@@ -309,6 +558,7 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 		return nil, p
 
 	case "right":
+		p.HasSelection = false
 		if p.MultiLineCursorCol < len(p.MultiLineLines[p.MultiLineCursorRow]) {
 			p.MultiLineCursorCol++
 		} else if p.MultiLineCursorRow < len(p.MultiLineLines)-1 {
@@ -318,6 +568,7 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 		return nil, p
 
 	case "up":
+		p.HasSelection = false
 		if p.MultiLineCursorRow > 0 {
 			p.MultiLineCursorRow--
 			if p.MultiLineCursorCol > len(p.MultiLineLines[p.MultiLineCursorRow]) {
@@ -327,6 +578,7 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 		return nil, p
 
 	case "down":
+		p.HasSelection = false
 		if p.MultiLineCursorRow < len(p.MultiLineLines)-1 {
 			p.MultiLineCursorRow++
 			if p.MultiLineCursorCol > len(p.MultiLineLines[p.MultiLineCursorRow]) {
@@ -339,6 +591,9 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 		if len(msg.Runes) == 1 {
 			r := msg.Runes[0]
 			if r >= 32 {
+				if p.HasSelection {
+					p.deleteSelection()
+				}
 				line := p.MultiLineLines[p.MultiLineCursorRow]
 				p.MultiLineLines[p.MultiLineCursorRow] = line[:p.MultiLineCursorCol] + string(r) + line[p.MultiLineCursorCol:]
 				p.MultiLineCursorCol++
@@ -414,6 +669,9 @@ func (p CommandPalette) viewMultiLine() string {
 	tokenWidth := xansi.StringWidth(token) + 1 + MenuSelectedStyle.GetHorizontalFrameSize()
 	indent := strings.Repeat(" ", tokenWidth)
 
+	sRow, sCol, eRow, eCol := p.normalizedSelection()
+	hasSel := sRow >= 0
+
 	for i, line := range p.MultiLineLines {
 		if i == 0 {
 			b.WriteString(tokenStyle.Render(token))
@@ -422,37 +680,108 @@ func (p CommandPalette) viewMultiLine() string {
 			b.WriteString(MetadataStyle.Render(indent))
 		}
 
-		cursorChar := " "
-		if i == p.MultiLineCursorRow && p.CursorVisible {
-			cursorChar = CursorStyle.Render("|")
+		selFrom, selTo := -1, -1
+		if hasSel {
+			if i > sRow && i < eRow {
+				selFrom, selTo = 0, len(line)
+			} else if i == sRow && i == eRow {
+				selFrom, selTo = sCol, eCol
+			} else if i == sRow {
+				selFrom, selTo = sCol, len(line)
+			} else if i == eRow {
+				selFrom, selTo = 0, eCol
+			}
 		}
 
-		if i == p.MultiLineCursorRow {
-			left := line[:p.MultiLineCursorCol]
-			right := line[p.MultiLineCursorCol:]
-			b.WriteString(ComposerBodyStyle.Render(left))
-			b.WriteString(cursorChar)
-			if right == "" {
-				right = " "
-			}
-			b.WriteString(ComposerBodyStyle.Render(right))
-		} else {
+		hasCursor := i == p.MultiLineCursorRow && p.CursorVisible
+		cursorCol := p.MultiLineCursorCol
+
+		if !hasCursor && selFrom < 0 {
 			display := line
 			if display == "" {
 				display = " "
 			}
 			b.WriteString(ComposerBodyStyle.Render(display))
+		} else if !hasCursor {
+			if len(line) == 0 && selFrom == 0 && selTo == 0 {
+				b.WriteString(ComposerSelectionStyle.Render(" "))
+			} else {
+				b.WriteString(ComposerBodyStyle.Render(line[:selFrom]))
+				b.WriteString(ComposerSelectionStyle.Render(line[selFrom:selTo]))
+				b.WriteString(ComposerBodyStyle.Render(line[selTo:]))
+			}
+		} else {
+			renderLineWithCursorAndSelection(&b, line, cursorCol, selFrom, selTo)
 		}
+
 		b.WriteByte('\n')
 	}
 
-	hintWidth := p.width - MenuBoxStyle.GetHorizontalFrameSize()
-	b.WriteString(HintStyle.Render(composerShortcutHint(hintWidth)))
+	b.WriteString(HintStyle.Render(composerShortcutHint(p.width - MenuBoxStyle.GetHorizontalFrameSize())))
 	return MenuBoxStyle.Render(b.String())
+}
+
+func renderLineWithCursorAndSelection(b *strings.Builder, line string, cursorCol int, selFrom, selTo int) {
+	points := []int{0}
+	if selFrom >= 0 && selFrom > 0 {
+		points = append(points, selFrom)
+	}
+	if selTo >= 0 && selTo < len(line) {
+		points = append(points, selTo)
+	}
+	if cursorCol > 0 && cursorCol < len(line) {
+		points = append(points, cursorCol)
+	}
+	points = append(points, len(line))
+	sort.Ints(points)
+
+	unique := points[:1]
+	for i := 1; i < len(points); i++ {
+		if points[i] != unique[len(unique)-1] {
+			unique = append(unique, points[i])
+		}
+	}
+
+	cursorPlaced := false
+	for j := 0; j < len(unique)-1; j++ {
+		from := unique[j]
+		to := unique[j+1]
+		if from > to {
+			break
+		}
+
+		baseStyle := ComposerBodyStyle
+		inSelection := false
+		if selFrom >= 0 && selTo >= 0 && from >= selFrom && from < selTo {
+			baseStyle = ComposerSelectionStyle
+			inSelection = true
+		}
+
+		if !cursorPlaced && cursorCol >= from && cursorCol < to {
+			pos := cursorCol
+			char := string(line[pos])
+			cursorCharStyle := CursorStyle
+			if inSelection {
+				cursorCharStyle = CursorSelectionStyle
+			}
+			b.WriteString(baseStyle.Render(line[from:pos]))
+			b.WriteString(cursorCharStyle.Render(char))
+			b.WriteString(baseStyle.Render(line[pos+1 : to]))
+			cursorPlaced = true
+		} else {
+			b.WriteString(baseStyle.Render(line[from:to]))
+		}
+	}
+
+	if !cursorPlaced {
+		b.WriteString(CursorStyle.Render(" "))
+	}
 }
 
 func composerShortcutHint(width int) string {
 	options := []string{
+		"Ctrl+C copy  ·  Ctrl+X cut  ·  Ctrl+V paste  ·  Alt+Enter new line  ·  Enter submit  ·  Esc cancel",
+		"Ctrl+C/X/V  ·  Alt+Enter new line  ·  Enter submit  ·  Esc cancel",
 		"Alt+Enter new line  ·  Enter submit  ·  Esc cancel",
 		"Alt+Enter line  ·  Enter submit  ·  Esc cancel",
 		"Alt+Enter line  ·  Enter submit  ·  Esc",
