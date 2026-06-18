@@ -57,3 +57,7 @@ type MultiLineNoteMsg struct {
 type pasteMsg struct {
 	text string
 }
+
+type ClipboardActionMsg struct {
+	Action string
+}

@@ -110,12 +110,11 @@ var ComposerSelectionStyle = lipgloss.NewStyle().
 	Reverse(true)
 
 var CursorStyle = lipgloss.NewStyle().
-	Background(lipgloss.Color("#FFFFFF")).
-	Foreground(lipgloss.Color("#000000"))
+	Reverse(true)
 
 var CursorSelectionStyle = lipgloss.NewStyle().
-	Background(lipgloss.Color("#FFFF00")).
-	Foreground(lipgloss.Color("#000000"))
+	Reverse(true).
+	Bold(true)
 
 var IDParenStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("#888888"))
