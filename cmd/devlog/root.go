@@ -44,6 +44,7 @@ stored as Markdown files under .devlog/sessions/.`,
 	cmd.AddCommand(newCloseCommand())
 	cmd.AddCommand(newListCommand())
 	cmd.AddCommand(newHandoffCommand())
+	cmd.AddCommand(newConfigCommand())
 
 	return cmd
 }
