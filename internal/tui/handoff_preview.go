@@ -45,12 +45,19 @@ func renderHandoffPreview(m Model) string {
 	if m.CollapsedDiffConfirmOpen {
 		prompt = renderCollapsedDiffPrompt(m, lineWidth)
 	}
+	searchPrompt := ""
+	if m.Search.Open {
+		searchPrompt = renderSearchPrompt(m)
+	}
 	messages := renderHandoffMessages(m, lineWidth)
 
 	height := previewViewportHeight(m.Height)
 	reservedLines := countLines(header) + countLines(footer)
 	if prompt != "" {
 		reservedLines += countLines(prompt)
+	}
+	if searchPrompt != "" {
+		reservedLines += countLines(searchPrompt)
 	}
 	reservedLines += len(messages)
 
@@ -87,6 +94,10 @@ func renderHandoffPreview(m Model) string {
 	if len(messages) > 0 {
 		b.WriteByte('\n')
 		b.WriteString(strings.Join(messages, "\n"))
+	}
+	if searchPrompt != "" {
+		b.WriteByte('\n')
+		b.WriteString(searchPrompt)
 	}
 	b.WriteByte('\n')
 	b.WriteString(footer)
@@ -594,6 +605,21 @@ func renderSavePrompt(m Model) string {
 	return style.Render(content)
 }
 
+func renderSearchPrompt(m Model) string {
+	lineWidth := previewLineWidth(m.Width)
+	cursorChar := " "
+	if m.Palette == nil || m.Palette.CursorVisible {
+		cursorChar = CursorStyle.Render("|")
+	}
+	contentWidth := lineWidth - SearchPromptStyle.GetHorizontalFrameSize()
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	style := SearchPromptStyle.Width(contentWidth)
+	content := renderBoundedInputContent(" Search: ", m.Search.Query, cursorChar, " ", contentWidth)
+	return style.Render(content)
+}
+
 func renderBoundedInputContent(prefix, input, cursor, suffix string, width int) string {
 	inputWidth := width - xansi.StringWidth(prefix) - xansi.StringWidth(cursor) - xansi.StringWidth(suffix)
 	input = renderInputTail(input, inputWidth)
@@ -774,9 +800,52 @@ func handleHandoffKey(m *Model, key string) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if m.Search.Open {
+		switch key {
+		case "esc":
+			m.Search.Open = false
+			m.Search.Query = ""
+			m.Search.CursorPos = 0
+			return *m, nil
+
+		case "backspace":
+			if len(m.Search.Query) > 0 {
+				m.Search.Query = m.Search.Query[:len(m.Search.Query)-1]
+				if m.Search.CursorPos > 0 {
+					m.Search.CursorPos--
+				}
+			}
+			return *m, nil
+
+		case "enter":
+			return *m, nil
+
+		default:
+			if len(key) == 1 {
+				m.Search.Query += key
+				m.Search.CursorPos++
+			}
+			return *m, nil
+		}
+	}
+
 	switch key {
 	case "?":
 		m.ShowHelp = true
+		return *m, nil
+
+	case "/":
+		if !m.CollapsedDiffConfirmOpen && !m.SavePromptOpen {
+			m.Search.Open = true
+			m.Search.Query = ""
+			m.Search.CursorPos = 0
+			if m.Palette != nil {
+				m.Palette.CursorVisible = true
+			}
+			return *m, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+				return CursorTickMsg{}
+			})
+		}
 		return *m, nil
 
 	case "y":
@@ -871,9 +940,19 @@ func handoffPreviewContentLines(m Model) int {
 	if m.SavePromptOpen {
 		prompt = renderSavePrompt(m)
 	}
+	if m.CollapsedDiffConfirmOpen {
+		prompt = renderCollapsedDiffPrompt(m, lineWidth)
+	}
+	searchPrompt := ""
+	if m.Search.Open {
+		searchPrompt = renderSearchPrompt(m)
+	}
 	reservedLines := countLines(header) + countLines(footer) + len(renderHandoffMessages(m, lineWidth))
 	if prompt != "" {
 		reservedLines += countLines(prompt)
+	}
+	if searchPrompt != "" {
+		reservedLines += countLines(searchPrompt)
 	}
 	contentLines := previewViewportHeight(m.Height) - reservedLines
 	if contentLines < 1 {
