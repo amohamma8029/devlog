@@ -64,9 +64,17 @@ type Model struct {
 }
 
 type SearchState struct {
-	Open      bool
-	Query     string
-	CursorPos int
+	Open       bool
+	Query      string
+	CursorPos  int
+	Matches    []SearchMatch
+	MatchIndex int
+}
+
+type SearchMatch struct {
+	Line     int
+	ColStart int
+	ColEnd   int
 }
 
 func NewModel(s *store.Store, root string) Model {

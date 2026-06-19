@@ -367,6 +367,7 @@ func TestSearchPromptBackspace(t *testing.T) {
 	m.HandoffContent = "test content"
 	m.Search.Open = true
 	m.Search.Query = "hello"
+	m.Search.CursorPos = len(m.Search.Query)
 
 	result, _ := handleHandoffKey(&m, "backspace")
 	updated, ok := result.(Model)
@@ -421,7 +422,7 @@ func TestRenderSearchPrompt(t *testing.T) {
 	m.Search.Open = true
 	m.Search.Query = "test"
 
-	rendered := renderSearchPrompt(m)
+	rendered := renderSearchPrompt(m, 0)
 	if !strings.Contains(rendered, "Search:") {
 		t.Errorf("expected 'Search:' in search prompt, got %q", rendered)
 	}
@@ -464,6 +465,169 @@ func TestHandoffPreviewContentLinesReservesSearchPrompt(t *testing.T) {
 
 	if withSearch >= withoutSearch {
 		t.Errorf("expected content lines to shrink when search prompt is open: without=%d, with=%d", withoutSearch, withSearch)
+	}
+}
+
+func TestBuildVisibleRuneMapPlainLine(t *testing.T) {
+	text, indices := buildVisibleRuneMap("hello world")
+	if text != "hello world" {
+		t.Errorf("plain text = %q, want %q", text, "hello world")
+	}
+	if len(indices) != 11 {
+		t.Errorf("got %d indices, want 11", len(indices))
+	}
+	for i, idx := range indices {
+		if idx != i {
+			t.Errorf("index[%d] = %d, want %d", i, idx, i)
+		}
+	}
+}
+
+func TestBuildVisibleRuneMapWithANSI(t *testing.T) {
+	text, indices := buildVisibleRuneMap("\x1b[34mhello\x1b[0m world")
+	if text != "hello world" {
+		t.Errorf("plain text = %q, want %q", text, "hello world")
+	}
+	if len(indices) != 11 {
+		t.Errorf("got %d indices, want 11", len(indices))
+	}
+}
+
+func TestFindSearchMatches(t *testing.T) {
+	bodyLines := []string{
+		"hello world",
+		"Hello there",
+		"no match here",
+		"world hello",
+	}
+
+	matches := findSearchMatches("hello", bodyLines)
+	if len(matches) != 3 {
+		t.Errorf("got %d matches, want 3", len(matches))
+	}
+
+	if matches[0].Line != 0 || matches[0].ColStart != 0 || matches[0].ColEnd != 5 {
+		t.Errorf("match[0]: line=%d, col=%d-%d; want line=0, col=0-5", matches[0].Line, matches[0].ColStart, matches[0].ColEnd)
+	}
+	if matches[1].Line != 1 || matches[1].ColStart != 0 || matches[1].ColEnd != 5 {
+		t.Errorf("match[1]: line=%d, col=%d-%d; want line=1, col=0-5", matches[1].Line, matches[1].ColStart, matches[1].ColEnd)
+	}
+	if matches[2].Line != 3 || matches[2].ColStart != 6 || matches[2].ColEnd != 11 {
+		t.Errorf("match[2]: line=%d, col=%d-%d; want line=3, col=6-11", matches[2].Line, matches[2].ColStart, matches[2].ColEnd)
+	}
+}
+
+func TestFindSearchMatchesWithANSI(t *testing.T) {
+	bodyLines := []string{
+		"\x1b[34mhello\x1b[0m world",
+		"prefix \x1b[1mhello\x1b[0m suffix",
+	}
+
+	matches := findSearchMatches("hello", bodyLines)
+	if len(matches) != 2 {
+		t.Fatalf("got %d matches, want 2", len(matches))
+	}
+
+	if matches[0].Line != 0 || matches[0].ColStart < 0 || matches[0].ColEnd < 0 {
+		t.Errorf("match[0] on ANSI line has invalid bounds: col=%d-%d", matches[0].ColStart, matches[0].ColEnd)
+	}
+	if matches[1].Line != 1 || matches[1].ColStart < 0 || matches[1].ColEnd < 0 {
+		t.Errorf("match[1] on ANSI line has invalid bounds: col=%d-%d", matches[1].ColStart, matches[1].ColEnd)
+	}
+}
+
+func TestFindSearchMatchesEmptyQuery(t *testing.T) {
+	matches := findSearchMatches("", []string{"hello", "world"})
+	if matches != nil {
+		t.Errorf("expected nil matches for empty query, got %d", len(matches))
+	}
+}
+
+func TestFindSearchMatchesNoMatches(t *testing.T) {
+	matches := findSearchMatches("xyz", []string{"hello", "world"})
+	if len(matches) != 0 {
+		t.Errorf("expected 0 matches, got %d", len(matches))
+	}
+}
+
+func TestHighlightLineWithMatches(t *testing.T) {
+	line := "hello world hello"
+	matches := []SearchMatch{
+		{0, 0, 5},
+		{0, 12, 17},
+	}
+
+	result := highlightLineWithMatches(line, matches)
+	if len(result) < len(line) {
+		t.Errorf("highlighted line should be at least as long as original: got len %d, want >= %d", len(result), len(line))
+	}
+	// The plain text content should still be findable
+	stripped := xansi.Strip(result)
+	if stripped != line {
+		t.Errorf("highlighted line content should match original: got %q, want %q", stripped, line)
+	}
+}
+
+func TestHighlightLineWithMatchesOverlapping(t *testing.T) {
+	line := "aaaaa"
+	matches := []SearchMatch{
+		{0, 0, 3},
+		{0, 1, 4},
+		{0, 2, 5},
+	}
+
+	result := highlightLineWithMatches(line, matches)
+	if len(result) < len(line) {
+		t.Errorf("highlighted line should be at least as long as original: got len %d, want >= %d", len(result), len(line))
+	}
+	stripped := xansi.Strip(result)
+	if stripped != line {
+		t.Errorf("highlighted line content should match original: got %q, want %q", stripped, line)
+	}
+}
+
+func TestHighlightLineNoMatches(t *testing.T) {
+	line := "hello world"
+	result := highlightLineWithMatches(line, nil)
+	if result != line {
+		t.Errorf("expected unmodified line, got %q", result)
+	}
+	result = highlightLineWithMatches(line, []SearchMatch{})
+	if result != line {
+		t.Errorf("expected unmodified line, got %q", result)
+	}
+}
+
+func TestRenderSearchPromptShowsMatchCount(t *testing.T) {
+	p := NewCommandPalette()
+	p.CursorVisible = true
+	m := NewModel(nil, "/tmp/root")
+	m.Palette = &p
+	m.Width = 80
+	m.Search.Open = true
+	m.Search.Query = "test"
+
+	result := renderSearchPrompt(m, 3)
+	if !strings.Contains(result, "3 matches") {
+		t.Errorf("expected '3 matches' in prompt, got %q", result)
+	}
+}
+
+func TestRenderSearchPromptSingleMatch(t *testing.T) {
+	p := NewCommandPalette()
+	p.CursorVisible = true
+	m := NewModel(nil, "/tmp/root")
+	m.Palette = &p
+	m.Width = 80
+	m.Search.Open = true
+	m.Search.Query = "test"
+
+	result := renderSearchPrompt(m, 1)
+	if !strings.Contains(result, "1 match") {
+		t.Errorf("expected '1 match' in prompt, got %q", result)
+	}
+	if strings.Contains(result, "1 matches") {
+		t.Errorf("expected singular 'match' not 'matches', got %q", result)
 	}
 }
 
