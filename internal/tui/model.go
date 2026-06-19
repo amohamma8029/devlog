@@ -49,6 +49,7 @@ type Model struct {
 	Title                      string
 	SavePromptOpen             bool
 	SaveInput                  string
+	Search                     SearchState
 	OpenPromptOpen             bool
 	OpenInput                  string
 	HandoffMsg                 string
@@ -63,6 +64,12 @@ type Model struct {
 	displayTime                internalconfig.DisplayTimeFormatter
 	activeSessionMetadata      store.SessionFileMetadata
 	activeSessionMetadataKnown bool
+}
+
+type SearchState struct {
+	Open      bool
+	Query     string
+	CursorPos int
 }
 
 func NewModel(s *store.Store, root string) Model {
@@ -270,6 +277,14 @@ func (m Model) handleCursorTick() (tea.Model, tea.Cmd) {
 		})
 	}
 	if m.CurrentView == HandoffPreview && m.SavePromptOpen {
+		if m.Palette != nil {
+			m.Palette.CursorVisible = !m.Palette.CursorVisible
+		}
+		return m, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+			return CursorTickMsg{}
+		})
+	}
+	if m.CurrentView == HandoffPreview && m.Search.Open {
 		if m.Palette != nil {
 			m.Palette.CursorVisible = !m.Palette.CursorVisible
 		}
@@ -498,6 +513,12 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.CurrentView == HandoffPreview && m.SavePromptOpen {
 			m.SavePromptOpen = false
 			m.SaveInput = ""
+			return m, nil
+		}
+		if m.CurrentView == HandoffPreview && m.Search.Open {
+			m.Search.Open = false
+			m.Search.Query = ""
+			m.Search.CursorPos = 0
 			return m, nil
 		}
 		if m.CurrentView == HandoffPreview {
@@ -861,6 +882,9 @@ func (m *Model) setView(view View) bool {
 		if view != HandoffPreview {
 			m.SavePromptOpen = false
 			m.SaveInput = ""
+			m.Search.Open = false
+			m.Search.Query = ""
+			m.Search.CursorPos = 0
 		}
 	}
 	m.CurrentView = view

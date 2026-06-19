@@ -301,6 +301,172 @@ func TestToggleAllHandoffDiffsCollapsesAndExpands(t *testing.T) {
 	}
 }
 
+func TestSearchPromptOpensWithSlash(t *testing.T) {
+	m := NewModel(nil, "/tmp/root")
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = "test content"
+	m.Width = 80
+	m.Height = 24
+
+	result, _ := handleHandoffKey(&m, "/")
+	updated, ok := result.(Model)
+	if !ok {
+		t.Fatal("expected Model from handleHandoffKey")
+	}
+	if !updated.Search.Open {
+		t.Error("expected Search.Open to be true after /")
+	}
+	if updated.Search.Query != "" {
+		t.Errorf("expected empty Search.Query, got %q", updated.Search.Query)
+	}
+}
+
+func TestSearchPromptClosesWithEsc(t *testing.T) {
+	m := NewModel(nil, "/tmp/root")
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = "test content"
+	m.Search.Open = true
+	m.Search.Query = "hello"
+
+	result, _ := handleHandoffKey(&m, "esc")
+	updated, ok := result.(Model)
+	if !ok {
+		t.Fatal("expected Model from handleHandoffKey")
+	}
+	if updated.Search.Open {
+		t.Error("expected Search.Open to be false after esc")
+	}
+	if updated.Search.Query != "" {
+		t.Errorf("expected Search.Query to be cleared, got %q", updated.Search.Query)
+	}
+}
+
+func TestSearchPromptTyping(t *testing.T) {
+	m := NewModel(nil, "/tmp/root")
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = "test content"
+	m.Search.Open = true
+
+	for _, ch := range []string{"h", "e", "l", "l", "o"} {
+		result, _ := handleHandoffKey(&m, ch)
+		updated, ok := result.(Model)
+		if !ok {
+			t.Fatal("expected Model from handleHandoffKey")
+		}
+		m = updated
+	}
+
+	if m.Search.Query != "hello" {
+		t.Errorf("expected Search.Query to be 'hello', got %q", m.Search.Query)
+	}
+}
+
+func TestSearchPromptBackspace(t *testing.T) {
+	m := NewModel(nil, "/tmp/root")
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = "test content"
+	m.Search.Open = true
+	m.Search.Query = "hello"
+
+	result, _ := handleHandoffKey(&m, "backspace")
+	updated, ok := result.(Model)
+	if !ok {
+		t.Fatal("expected Model from handleHandoffKey")
+	}
+
+	if updated.Search.Query != "hell" {
+		t.Errorf("expected Search.Query to be 'hell', got %q", updated.Search.Query)
+	}
+}
+
+func TestSearchPromptNotWhenSavePromptOpen(t *testing.T) {
+	m := NewModel(nil, "/tmp/root")
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = "test content"
+	m.SavePromptOpen = true
+	m.SaveInput = "test"
+
+	result, _ := handleHandoffKey(&m, "/")
+	updated, ok := result.(Model)
+	if !ok {
+		t.Fatal("expected Model from handleHandoffKey")
+	}
+	if updated.Search.Open {
+		t.Error("expected Search.Open to remain false when save prompt is open")
+	}
+}
+
+func TestSearchPromptNotWhenConfirmOpen(t *testing.T) {
+	m := NewModel(nil, "/tmp/root")
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = "test content"
+	m.CollapsedDiffConfirmOpen = true
+
+	result, _ := handleHandoffKey(&m, "/")
+	updated, ok := result.(Model)
+	if !ok {
+		t.Fatal("expected Model from handleHandoffKey")
+	}
+	if updated.Search.Open {
+		t.Error("expected Search.Open to remain false when confirm is open")
+	}
+}
+
+func TestRenderSearchPrompt(t *testing.T) {
+	p := NewCommandPalette()
+	p.CursorVisible = true
+	m := NewModel(nil, "/tmp/root")
+	m.Palette = &p
+	m.Width = 80
+	m.Search.Open = true
+	m.Search.Query = "test"
+
+	rendered := renderSearchPrompt(m)
+	if !strings.Contains(rendered, "Search:") {
+		t.Errorf("expected 'Search:' in search prompt, got %q", rendered)
+	}
+	if !strings.Contains(rendered, "test") {
+		t.Errorf("expected query 'test' in search prompt, got %q", rendered)
+	}
+}
+
+func TestHandoffPreviewSearchAbsorbsQAsInput(t *testing.T) {
+	m := NewModel(nil, "/tmp/root")
+	m.CurrentView = HandoffPreview
+	m.ActiveSession = nil
+	m.HandoffContent = "test content"
+	m.Search.Open = true
+
+	result, _ := handleHandoffKey(&m, "q")
+	updated, ok := result.(Model)
+	if !ok {
+		t.Fatal("expected Model from handleHandoffKey")
+	}
+	if updated.CurrentView != HandoffPreview {
+		t.Error("expected to stay in handoff preview; q should be search input, not exit")
+	}
+	if updated.Search.Query != "q" {
+		t.Errorf("expected Search.Query to be 'q', got %q", updated.Search.Query)
+	}
+}
+
+func TestHandoffPreviewContentLinesReservesSearchPrompt(t *testing.T) {
+	m := NewModel(nil, "/tmp/root")
+	m.HandoffContent = "## test\n\nsome content"
+	m.Width = 80
+	m.Height = 24
+
+	withoutSearch := handoffPreviewContentLines(m)
+
+	m.Search.Open = true
+	m.Search.Query = "test"
+	withSearch := handoffPreviewContentLines(m)
+
+	if withSearch >= withoutSearch {
+		t.Errorf("expected content lines to shrink when search prompt is open: without=%d, with=%d", withoutSearch, withSearch)
+	}
+}
+
 func stringsHasPrefix(s, prefix string) bool {
 	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
 }

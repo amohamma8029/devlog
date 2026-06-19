@@ -134,6 +134,10 @@ var SavePromptStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
 	BorderForeground(lipgloss.Color("#666666"))
 
+var SearchPromptStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(lipgloss.Color("#666666"))
+
 var WarningPromptStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
 	BorderForeground(lipgloss.Color("#FFAA00"))
