@@ -92,17 +92,18 @@ Never push directly to main. Feature branch merges to main only when end-to-end 
 - Adding any new third-party dependency
 - Changing the storage format (file layout, front-matter schema, Markdown structure)
 - Modifying the public API of internal/session/ or internal/store/
-- Introducing a config file or changing author identity resolution logic
+- Changing the global config file path/schema or changing author identity resolution logic
 
 # Never
 - Auto-commit, auto-stage, or run any git mutation (add, commit, push, etc.)
-- Read from or write to files outside the repo root
+- Read from or write to files outside the repo root, except `~/.config/devlog/config.yml` for global config
 - Hardcode author identity or paths
 - Modify generated binary artifacts by hand
 
 ## ENV / SECRETS
 No secrets needed for local dev.
 Optional env vars: DEVLOG_AUTHOR_NAME, DEVLOG_AUTHOR_EMAIL (fallback if git config unset).
+Global config path: ~/.config/devlog/config.yml.
 
 ## TROUBLESHOOTING
 "cannot find package" after adding import → run go mod tidy

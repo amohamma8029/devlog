@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	internalconfig "github.com/amo/devlog/internal/config"
 	internalgit "github.com/amo/devlog/internal/git"
 	"github.com/amo/devlog/internal/handoff"
 	"github.com/amo/devlog/internal/session"
@@ -33,6 +34,7 @@ type Model struct {
 	Events                     []store.SessionEvent
 	Palette                    *CommandPalette
 	Store                      *store.Store
+	Config                     internalconfig.Config
 	SessionList                SessionListModel
 	Root                       string
 	Width                      int
@@ -63,11 +65,16 @@ type Model struct {
 }
 
 func NewModel(s *store.Store, root string) Model {
+	return NewModelWithConfig(s, root, internalconfig.Default())
+}
+
+func NewModelWithConfig(s *store.Store, root string, cfg internalconfig.Config) Model {
 	p := NewCommandPalette()
 	return Model{
 		CurrentView: SessionList,
 		Palette:     &p,
 		Store:       s,
+		Config:      cfg,
 		SessionList: NewSessionListModel(s, root, 80, 24),
 		Root:        root,
 	}
