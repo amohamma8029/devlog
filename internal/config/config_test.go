@@ -256,6 +256,82 @@ func TestParseRejectsNegativeLimits(t *testing.T) {
 	}
 }
 
+func TestResolveAuthorIdentityUsesGitFallback(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+	}{
+		{name: "default config", cfg: Default()},
+		{name: "empty config", cfg: Config{}},
+		{name: "explicit git profile", cfg: Config{Author: AuthorConfig{DefaultProfile: BuiltInGitProfile}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			name, email, err := tt.cfg.ResolveAuthorIdentity(func() (string, string, error) {
+				called = true
+				return "Git Author", "git@example.com", nil
+			})
+			if err != nil {
+				t.Fatalf("ResolveAuthorIdentity failed: %v", err)
+			}
+			if !called {
+				t.Fatal("expected git fallback to be called")
+			}
+			if name != "Git Author" || email != "git@example.com" {
+				t.Fatalf("identity = %q <%s>, want Git Author <git@example.com>", name, email)
+			}
+		})
+	}
+}
+
+func TestResolveAuthorIdentityUsesCustomProfile(t *testing.T) {
+	tests := []struct {
+		name      string
+		profile   AuthorProfile
+		wantName  string
+		wantEmail string
+	}{
+		{name: "with email", profile: AuthorProfile{Display: "OpenCode", Email: "opencode@example.com"}, wantName: "OpenCode", wantEmail: "opencode@example.com"},
+		{name: "without email", profile: AuthorProfile{Display: "OpenCode"}, wantName: "OpenCode", wantEmail: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{
+				Author: AuthorConfig{
+					DefaultProfile: "opencode",
+					Profiles: map[string]AuthorProfile{
+						"opencode": tt.profile,
+					},
+				},
+			}
+
+			name, email, err := cfg.ResolveAuthorIdentity(func() (string, string, error) {
+				return "", "", nil
+			})
+			if err != nil {
+				t.Fatalf("ResolveAuthorIdentity failed: %v", err)
+			}
+			if name != tt.wantName || email != tt.wantEmail {
+				t.Fatalf("identity = %q <%s>, want %q <%s>", name, email, tt.wantName, tt.wantEmail)
+			}
+		})
+	}
+}
+
+func TestResolveAuthorIdentityRejectsInvalidConfig(t *testing.T) {
+	cfg := Config{Author: AuthorConfig{DefaultProfile: "missing"}}
+
+	_, _, err := cfg.ResolveAuthorIdentity(func() (string, string, error) {
+		return "Git Author", "git@example.com", nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "author.default_profile") {
+		t.Fatalf("expected author.default_profile error, got: %v", err)
+	}
+}
+
 func validConfigYAML() string {
 	return `author:
   default_profile: opencode
