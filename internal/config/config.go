@@ -219,6 +219,30 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// ResolveAuthorIdentity returns the author identity for new sessions.
+func (c Config) ResolveAuthorIdentity(gitProfile func() (string, string, error)) (string, string, error) {
+	if err := c.Validate(); err != nil {
+		return "", "", err
+	}
+
+	defaultProfile := strings.TrimSpace(c.Author.DefaultProfile)
+	if defaultProfile == "" {
+		defaultProfile = BuiltInGitProfile
+	}
+	if defaultProfile == BuiltInGitProfile {
+		if gitProfile == nil {
+			return "", "", fmt.Errorf("author.default_profile %q requires a git identity resolver", BuiltInGitProfile)
+		}
+		return gitProfile()
+	}
+
+	profile, ok := c.Author.Profiles[defaultProfile]
+	if !ok {
+		return "", "", fmt.Errorf("author.default_profile %q must be %q or a configured author profile", defaultProfile, BuiltInGitProfile)
+	}
+	return strings.TrimSpace(profile.Display), strings.TrimSpace(profile.Email), nil
+}
+
 func validateAuthor(author AuthorConfig) error {
 	defaultProfile := strings.TrimSpace(author.DefaultProfile)
 	if defaultProfile == "" {

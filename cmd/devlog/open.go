@@ -33,7 +33,12 @@ func newOpenCommand() *cobra.Command {
 				return err
 			}
 
-			name, email, err := internalgit.AuthorIdentity()
+			cfg, err := loadRuntimeConfig()
+			if err != nil {
+				return err
+			}
+
+			name, email, err := cfg.ResolveAuthorIdentity(internalgit.AuthorIdentity)
 			if err != nil {
 				return err
 			}

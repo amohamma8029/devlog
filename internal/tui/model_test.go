@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
 
+	internalconfig "github.com/amo/devlog/internal/config"
 	"github.com/amo/devlog/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -34,6 +36,34 @@ func TestModelInit(t *testing.T) {
 	cmd := m.Init()
 	if cmd == nil {
 		t.Error("Init() returned nil cmd; expected a command to load active session")
+	}
+}
+
+func newGitModelTestStore(t *testing.T) (*store.Store, string) {
+	t.Helper()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git binary not available: %v", err)
+	}
+	root := t.TempDir()
+	runModelTestGit(t, root, "init")
+	runModelTestGit(t, root, "checkout", "-b", "feat/test")
+
+	s, err := store.New(root)
+	if err != nil {
+		t.Fatalf("store.New failed: %v", err)
+	}
+	return s, root
+}
+
+func runModelTestGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
 	}
 }
 
@@ -203,10 +233,11 @@ func TestModelNoSessionOpenPromptEmptyMessageSetsError(t *testing.T) {
 }
 
 func TestModelNoSessionOpenPromptCreatesAndLoadsSession(t *testing.T) {
-	t.Setenv("DEVLOG_AUTHOR_NAME", "TUI Tester")
-	t.Setenv("DEVLOG_AUTHOR_EMAIL", "tui@example.com")
+	s, root := newGitModelTestStore(t)
+	runModelTestGit(t, root, "config", "user.name", "TUI Tester")
+	runModelTestGit(t, root, "config", "user.email", "tui@example.com")
+	t.Chdir(root)
 
-	s, root := newTestStore(t)
 	m := NewModel(s, root)
 	m.CurrentView = ActiveSession
 	m.OpenPromptOpen = true
@@ -235,6 +266,9 @@ func TestModelNoSessionOpenPromptCreatesAndLoadsSession(t *testing.T) {
 	if loaded.Session == nil {
 		t.Fatal("loaded session is nil")
 	}
+	if loaded.Session.Author != "TUI Tester" || loaded.Session.Email != "tui@example.com" {
+		t.Fatalf("session identity = %q <%s>, want TUI Tester <tui@example.com>", loaded.Session.Author, loaded.Session.Email)
+	}
 	if loaded.Title != "Start from the TUI" {
 		t.Fatalf("Title = %q, want start message", loaded.Title)
 	}
@@ -260,6 +294,70 @@ func TestModelNoSessionOpenPromptCreatesAndLoadsSession(t *testing.T) {
 	}
 	if len(records) != 1 {
 		t.Fatalf("session count = %d, want 1", len(records))
+	}
+}
+
+func TestModelNoSessionOpenPromptUsesConfiguredAuthorProfile(t *testing.T) {
+	s, root := newGitModelTestStore(t)
+	t.Chdir(root)
+	cfg := internalconfig.Default()
+	cfg.Author.DefaultProfile = "opencode"
+	cfg.Author.Profiles = map[string]internalconfig.AuthorProfile{
+		"opencode": {Display: "OpenCode", Email: "opencode@example.com"},
+	}
+	m := NewModelWithConfig(s, root, cfg)
+	m.CurrentView = ActiveSession
+	m.OpenPromptOpen = true
+	m.OpenInput = "Configured author"
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected command for non-empty open prompt")
+	}
+	msg := cmd()
+	if errMsg, ok := msg.(CommandErrorMsg); ok {
+		t.Fatalf("open prompt returned error: %v", errMsg.Error)
+	}
+	loaded, ok := msg.(ActiveSessionLoadedMsg)
+	if !ok {
+		t.Fatalf("open prompt returned %T, want ActiveSessionLoadedMsg", msg)
+	}
+	if loaded.Session == nil {
+		t.Fatal("loaded session is nil")
+	}
+	if loaded.Session.Author != "OpenCode" || loaded.Session.Email != "opencode@example.com" {
+		t.Fatalf("session identity = %q <%s>, want OpenCode <opencode@example.com>", loaded.Session.Author, loaded.Session.Email)
+	}
+}
+
+func TestModelNoSessionOpenPromptRejectsInvalidAuthorConfig(t *testing.T) {
+	s, root := newGitModelTestStore(t)
+	t.Chdir(root)
+	cfg := internalconfig.Default()
+	cfg.Author.DefaultProfile = "missing"
+	m := NewModelWithConfig(s, root, cfg)
+	m.CurrentView = ActiveSession
+	m.OpenPromptOpen = true
+	m.OpenInput = "Bad config"
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected command for non-empty open prompt")
+	}
+	msg := cmd()
+	errMsg, ok := msg.(CommandErrorMsg)
+	if !ok {
+		t.Fatalf("open prompt returned %T, want CommandErrorMsg", msg)
+	}
+	if !strings.Contains(errMsg.Error.Error(), "author.default_profile") {
+		t.Fatalf("error = %q, want author.default_profile", errMsg.Error.Error())
+	}
+	records, err := s.ListSessions()
+	if err != nil {
+		t.Fatalf("ListSessions failed: %v", err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("session count = %d, want 0", len(records))
 	}
 }
 

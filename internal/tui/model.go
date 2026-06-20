@@ -660,7 +660,7 @@ func (m Model) handleOpenSessionPrompt() (tea.Model, tea.Cmd) {
 			return CommandErrorMsg{Error: err}
 		}
 
-		name, email, err := internalgit.AuthorIdentity()
+		name, email, err := m.Config.ResolveAuthorIdentity(internalgit.AuthorIdentity)
 		if err != nil {
 			return CommandErrorMsg{Error: err}
 		}
