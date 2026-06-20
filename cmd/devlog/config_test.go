@@ -271,6 +271,48 @@ func TestConfigEditCommandWrapsEditorLaunchError(t *testing.T) {
 	}
 }
 
+func TestConfigEditCommandFallsBackToEnvEditorWhenConfiguredEditorFails(t *testing.T) {
+	_, configPath := setConfigTestHome(t)
+	t.Setenv("VISUAL", "")
+	t.Setenv("EDITOR", "env-editor")
+	writeConfigTestFile(t, configPath, `editor:
+  command: missing-editor
+  args: ["--wait"]
+`)
+
+	var calls []editorCall
+	withConfigEditor(t, func(cmd *cobra.Command, editor configEditor, path string) error {
+		calls = append(calls, editorCall{editor: editor, path: path})
+		if editor.Command == "missing-editor" {
+			return os.ErrPermission
+		}
+		return nil
+	})
+
+	out, err := executeRootCommand("config", "edit")
+	if err != nil {
+		t.Fatalf("config edit command failed: %v", err)
+	}
+
+	if len(calls) != 2 {
+		t.Fatalf("editor calls = %d, want 2 (configured + fallback)", len(calls))
+	}
+	if calls[0].editor.Command != "missing-editor" {
+		t.Fatalf("first editor = %q, want missing-editor", calls[0].editor.Command)
+	}
+	if calls[1].editor.Command != "env-editor" {
+		t.Fatalf("fallback editor = %q, want env-editor", calls[1].editor.Command)
+	}
+	assertContains(t, out, "Editor launch failed")
+	assertContains(t, out, "missing-editor")
+	assertContains(t, out, "Falling back to editor")
+	assertContains(t, out, "env-editor")
+	assertNotContains(t, out, "Config validated")
+	assertContains(t, out, "Warning")
+	assertContains(t, out, "missing-editor")
+	assertContains(t, out, "not found in PATH")
+}
+
 func TestRootCommandIncludesConfigEditCommand(t *testing.T) {
 	cmd, _, err := newRootCommand().Find([]string{"config", "edit"})
 	if err != nil {
@@ -337,6 +379,16 @@ func withConfigEditor(t *testing.T, run func(*cobra.Command, configEditor, strin
 	t.Cleanup(func() { runConfigEditor = original })
 }
 
+func withBodyEditor(t *testing.T, run func(configEditor, string) error) {
+	t.Helper()
+
+	original := runBodyEditor
+	runBodyEditor = func(cmd *cobra.Command, editor configEditor, path string) error {
+		return run(editor, path)
+	}
+	t.Cleanup(func() { runBodyEditor = original })
+}
+
 func executeRootCommand(args ...string) (string, error) {
 	cmd := newRootCommand()
 	var out, errOut bytes.Buffer
@@ -362,6 +414,23 @@ func assertEditorCall(t *testing.T, calls []editorCall, command string, args []s
 	}
 	if calls[0].path != path {
 		t.Fatalf("editor path = %q, want %q", calls[0].path, path)
+	}
+}
+
+func assertBodyEditorCall(t *testing.T, calls []editorCall, command string, args []string) {
+	t.Helper()
+
+	if len(calls) != 1 {
+		t.Fatalf("editor calls = %d, want 1", len(calls))
+	}
+	if calls[0].editor.Command != command {
+		t.Fatalf("editor command = %q, want %q", calls[0].editor.Command, command)
+	}
+	if strings.Join(calls[0].editor.Args, "\x00") != strings.Join(args, "\x00") {
+		t.Fatalf("editor args = %#v, want %#v", calls[0].editor.Args, args)
+	}
+	if filepath.Base(calls[0].path) != "NOTE.md" {
+		t.Fatalf("editor path = %q, want NOTE.md temp file", calls[0].path)
 	}
 }
 

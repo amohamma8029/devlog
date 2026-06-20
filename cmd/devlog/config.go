@@ -90,21 +90,8 @@ func newConfigEditCommand() *cobra.Command {
 				}
 			}
 
-			editor, err := configEditEditor(path)
-			if err != nil {
+			if err := runConfigEditEditor(cmd, path); err != nil {
 				return err
-			}
-			if _, err := fmt.Fprint(cmd.OutOrStdout(), renderCLIConfirmation("Opening editor", cliField{"editor", editor.String()}, cliField{"path", path})); err != nil {
-				return err
-			}
-
-			if err := runConfigEditor(cmd, editor, path); err != nil {
-				return &cliStructuredError{
-					title:  "Editor launch failed",
-					fields: []cliField{{"editor", editor.String()}, {"path", path}},
-					cause:  err.Error(),
-					hint:   "Set editor.command in the config or set VISUAL/EDITOR",
-				}
 			}
 
 			data, err := os.ReadFile(path)
@@ -115,12 +102,25 @@ func newConfigEditCommand() *cobra.Command {
 					cause:  fmt.Sprintf("read: %s", err),
 				}
 			}
-			if _, err := internalconfig.Parse(data); err != nil {
+			cfg, err := internalconfig.Parse(data)
+			if err != nil {
 				return &cliStructuredError{
 					title:  "Config validation failed",
 					fields: []cliField{{"path", path}},
 					cause:  err.Error(),
 					hint:   "Run `devlog config edit` again to fix the file",
+				}
+			}
+
+			if command := strings.TrimSpace(cfg.Editor.Command); command != "" {
+				if _, err := exec.LookPath(command); err != nil {
+					var warn strings.Builder
+					warn.WriteString(cliWarningStyle.Render("Warning"))
+					warn.WriteByte('\n')
+					writeCLIField(&warn, "editor", command)
+					writeCLIField(&warn, "message", fmt.Sprintf("editor command not found in PATH; verify editor.command or remove it to use $EDITOR"))
+					_, err := fmt.Fprint(cmd.OutOrStdout(), warn.String())
+					return err
 				}
 			}
 
@@ -181,6 +181,73 @@ func configEditEditorFromFile(path string) (configEditor, bool) {
 	return configEditor{Command: command, Args: append([]string(nil), cfg.Editor.Args...)}, true
 }
 
+func runConfigEditEditor(cmd *cobra.Command, path string) error {
+	editor, err := configEditEditor(path)
+	if err != nil {
+		return err
+	}
+
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), renderCLIConfirmation("Opening editor", cliField{"editor", editor.String()}, cliField{"path", path})); err != nil {
+		return err
+	}
+
+	if err := runConfigEditor(cmd, editor, path); err != nil {
+		return launchConfigEditorFallback(cmd, path, editor, err)
+	}
+
+	return nil
+}
+
+func launchConfigEditorFallback(cmd *cobra.Command, path string, failed configEditor, launchErr error) error {
+	if _, ok := configEditEditorFromFile(path); !ok {
+		return &cliStructuredError{
+			title:  "Editor launch failed",
+			fields: []cliField{{"editor", failed.String()}, {"path", path}},
+			cause:  launchErr.Error(),
+			hint:   "Set editor.command in the config or set VISUAL/EDITOR",
+		}
+	}
+
+	fallback, fbErr := configEditEditorFromEnv(path)
+	if fbErr != nil || fallback.String() == failed.String() {
+		return &cliStructuredError{
+			title:  "Editor launch failed",
+			fields: []cliField{{"editor", failed.String()}, {"path", path}},
+			cause:  launchErr.Error(),
+			hint:   "Set editor.command in the config or set VISUAL/EDITOR",
+		}
+	}
+
+	var warn strings.Builder
+	warn.WriteString(cliErrorStyle.Render("Editor launch failed"))
+	warn.WriteByte('\n')
+	writeCLIField(&warn, "editor", failed.String())
+	writeCLIField(&warn, "error", launchErr.Error())
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), warn.String()); err != nil {
+		return err
+	}
+
+	var notice strings.Builder
+	notice.WriteString(cliWarningStyle.Render("Falling back to editor"))
+	notice.WriteByte('\n')
+	writeCLIField(&notice, "editor", fallback.String())
+	writeCLIField(&notice, "path", path)
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), notice.String()); err != nil {
+		return err
+	}
+
+	if err := runConfigEditor(cmd, fallback, path); err != nil {
+		return &cliStructuredError{
+			title:  "Editor launch failed",
+			fields: []cliField{{"editor", fallback.String()}, {"path", path}},
+			cause:  err.Error(),
+			hint:   "Set editor.command in the config or set VISUAL/EDITOR",
+		}
+	}
+
+	return nil
+}
+
 func configEditEditorFromEnv(path string) (configEditor, error) {
 	if editor := strings.TrimSpace(os.Getenv("VISUAL")); editor != "" {
 		return parseConfigEditor(editor, "VISUAL")
@@ -213,15 +280,5 @@ func (e configEditor) String() string {
 }
 
 func runConfigEditorProcess(cmd *cobra.Command, editor configEditor, path string) error {
-	args := append(append([]string(nil), editor.Args...), path)
-	c := exec.Command(editor.Command, args...)
-	c.Stdin = os.Stdin
-	c.Stdout = cmd.OutOrStdout()
-	c.Stderr = cmd.ErrOrStderr()
-
-	if err := c.Run(); err != nil {
-		return fmt.Errorf("editor exited with error: %w", err)
-	}
-
-	return nil
+	return runEditorProcess(cmd, editor, path)
 }
