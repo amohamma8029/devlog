@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -47,6 +48,13 @@ var (
 
 	cliBlockerTextStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#FF3333"))
+
+	cliErrorStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#FF3333"))
+
+	cliErrorHintStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#888888"))
 )
 
 var rootHelpGroups = []struct {
@@ -89,6 +97,60 @@ func renderCLIConfirmationWithTitle(title string, fields ...cliField) string {
 	b.WriteByte('\n')
 	writeCLIFields(&b, fields...)
 	return b.String()
+}
+
+type cliStructuredError struct {
+	title  string
+	fields []cliField
+	cause  string
+	hint   string
+}
+
+func (e *cliStructuredError) Error() string {
+	var b strings.Builder
+	b.WriteString(e.title)
+	if e.cause != "" {
+		b.WriteString(": ")
+		b.WriteString(e.cause)
+	}
+	for _, f := range e.fields {
+		b.WriteString("; ")
+		b.WriteString(f.Label)
+		b.WriteString(": ")
+		b.WriteString(f.Value)
+	}
+	if e.hint != "" {
+		b.WriteString("; hint: ")
+		b.WriteString(e.hint)
+	}
+	return b.String()
+}
+
+func renderCLIError(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	var se *cliStructuredError
+	if errors.As(err, &se) {
+		var b strings.Builder
+		b.WriteString(cliErrorStyle.Render(se.title))
+		b.WriteByte('\n')
+		for _, f := range se.fields {
+			writeCLIField(&b, f.Label, f.Value)
+		}
+		if se.cause != "" {
+			writeCLIField(&b, "error", se.cause)
+		}
+		if se.hint != "" {
+			b.WriteString("  ")
+			b.WriteString(cliErrorHintStyle.Render(se.hint))
+			b.WriteByte('\n')
+		}
+		return b.String()
+	}
+
+	return cliErrorStyle.Render("Error") + "\n  " + cliValueStyle.Render(err.Error()) + "\n"
 }
 
 func writeCLIFields(b *strings.Builder, fields ...cliField) {
