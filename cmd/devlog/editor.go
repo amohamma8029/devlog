@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var runBodyEditor = runBodyEditorProcess
+
 func resolveBody(cmd *cobra.Command, flagMsg string, args []string, bodyLabel string) (string, error) {
 	if strings.TrimSpace(flagMsg) != "" {
 		return strings.TrimSpace(flagMsg), nil
@@ -20,15 +22,37 @@ func resolveBody(cmd *cobra.Command, flagMsg string, args []string, bodyLabel st
 		return positional, nil
 	}
 
-	editor := os.Getenv("EDITOR")
-	if strings.TrimSpace(editor) == "" {
-		return "", fmt.Errorf(`no message provided and $EDITOR is not set. Use -m <message> to provide text, or set $EDITOR to launch an editor.`)
+	editor, err := resolveBodyEditor()
+	if err != nil {
+		return "", err
 	}
 
-	return openEditor(cmd, strings.TrimSpace(editor), bodyLabel)
+	return openEditor(cmd, editor, bodyLabel)
 }
 
-func openEditor(cmd *cobra.Command, editor, bodyLabel string) (string, error) {
+func resolveBodyEditor() (configEditor, error) {
+	cfg, err := loadRuntimeConfig()
+	if err != nil {
+		return configEditor{}, err
+	}
+
+	if command := strings.TrimSpace(cfg.Editor.Command); command != "" {
+		return configEditor{Command: command, Args: append([]string(nil), cfg.Editor.Args...)}, nil
+	}
+
+	editor := strings.TrimSpace(os.Getenv("EDITOR"))
+	if editor == "" {
+		return configEditor{}, fmt.Errorf(`no message provided and no editor is configured. Use -m <message> to provide text, set editor.command in the config, or set $EDITOR to launch an editor.`)
+	}
+
+	parts := strings.Fields(editor)
+	if len(parts) == 0 {
+		return configEditor{}, fmt.Errorf("$EDITOR is empty")
+	}
+	return configEditor{Command: parts[0], Args: parts[1:]}, nil
+}
+
+func openEditor(cmd *cobra.Command, editor configEditor, bodyLabel string) (string, error) {
 	tmpDir, err := os.MkdirTemp("", "devlog-note-*")
 	if err != nil {
 		return "", fmt.Errorf("create temp directory: %w", err)
@@ -40,18 +64,8 @@ func openEditor(cmd *cobra.Command, editor, bodyLabel string) (string, error) {
 		return "", fmt.Errorf("create temp file: %w", err)
 	}
 
-	editorArgs := strings.Fields(editor)
-	if len(editorArgs) == 0 {
-		return "", fmt.Errorf("$EDITOR is empty")
-	}
-
-	c := exec.Command(editorArgs[0], append(editorArgs[1:], tmpPath)...)
-	c.Stdin = os.Stdin
-	c.Stdout = cmd.OutOrStdout()
-	c.Stderr = cmd.ErrOrStderr()
-
-	if err := c.Run(); err != nil {
-		return "", fmt.Errorf("editor exited with error: %w", err)
+	if err := runBodyEditor(cmd, editor, tmpPath); err != nil {
+		return "", err
 	}
 
 	data, err := os.ReadFile(tmpPath)
@@ -65,4 +79,22 @@ func openEditor(cmd *cobra.Command, editor, bodyLabel string) (string, error) {
 	}
 
 	return body, nil
+}
+
+func runBodyEditorProcess(cmd *cobra.Command, editor configEditor, path string) error {
+	return runEditorProcess(cmd, editor, path)
+}
+
+func runEditorProcess(cmd *cobra.Command, editor configEditor, path string) error {
+	args := append(append([]string(nil), editor.Args...), path)
+	c := exec.Command(editor.Command, args...)
+	c.Stdin = os.Stdin
+	c.Stdout = cmd.OutOrStdout()
+	c.Stderr = cmd.ErrOrStderr()
+
+	if err := c.Run(); err != nil {
+		return fmt.Errorf("editor exited with error: %w", err)
+	}
+
+	return nil
 }

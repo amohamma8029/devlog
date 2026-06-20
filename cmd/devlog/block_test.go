@@ -60,11 +60,61 @@ func TestBlockCommandAppendsBlockerWithPositionalMessage(t *testing.T) {
 	}
 }
 
+func TestMessageCommandsIgnoreInvalidConfigForDirectMessages(t *testing.T) {
+	requireCmdTestGit(t)
+	_, configPath := setConfigTestHome(t)
+	writeConfigTestFile(t, configPath, `display:
+  timezone: "New York"
+`)
+
+	root := initCmdTestRepo(t)
+	sess := writeCmdTestSession(t, root)
+	t.Chdir(root)
+
+	if _, err := executeNoteCommand("-m", "direct note"); err != nil {
+		t.Fatalf("note command with direct message failed: %v", err)
+	}
+	if _, err := executeBlockCommand("direct", "blocker"); err != nil {
+		t.Fatalf("block command with direct message failed: %v", err)
+	}
+
+	content := readCmdTestSessionFile(t, root, sess.ID)
+	assertContains(t, content, "direct note")
+	assertContains(t, content, "direct blocker")
+}
+
+func TestBlockCommandFallsBackToEnvEditor(t *testing.T) {
+	requireCmdTestGit(t)
+	setConfigTestHome(t)
+	t.Setenv("EDITOR", "env-editor --wait")
+
+	root := initCmdTestRepo(t)
+	sess := writeCmdTestSession(t, root)
+	t.Chdir(root)
+
+	var calls []editorCall
+	withBodyEditor(t, func(editor configEditor, path string) error {
+		calls = append(calls, editorCall{editor: editor, path: path})
+		return os.WriteFile(path, []byte("env blocker\n"), 0644)
+	})
+
+	out, err := executeBlockCommand()
+	if err != nil {
+		t.Fatalf("block command failed: %v", err)
+	}
+
+	assertBodyEditorCall(t, calls, "env-editor", []string{"--wait"})
+	content := readCmdTestSessionFile(t, root, sess.ID)
+	assertContains(t, content, "env blocker")
+	assertContains(t, out, "Logged blocker")
+}
+
 func TestBlockCommandFailsWithoutMessageOrEditor(t *testing.T) {
+	setConfigTestHome(t)
 	t.Setenv("EDITOR", "")
 
 	_, err := executeBlockCommand()
-	if err == nil || !strings.Contains(err.Error(), "no message provided and $EDITOR") {
+	if err == nil || !strings.Contains(err.Error(), "no message provided") || !strings.Contains(err.Error(), "editor.command") || !strings.Contains(err.Error(), "$EDITOR") {
 		t.Fatalf("expected missing message error, got: %v", err)
 	}
 }
