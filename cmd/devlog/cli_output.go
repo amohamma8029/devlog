@@ -55,6 +55,10 @@ var (
 
 	cliErrorHintStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#888888"))
+
+	cliWarningStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#FFFF00"))
 )
 
 var rootHelpGroups = []struct {
