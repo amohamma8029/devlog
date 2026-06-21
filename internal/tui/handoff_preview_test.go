@@ -73,8 +73,14 @@ func TestRenderSavePromptConstrainsBorderedWidth(t *testing.T) {
 	if !strings.Contains(content, inputOverflowMarker) {
 		t.Fatalf("overflowed prompt should show overflow marker, got %q", content)
 	}
-	if !strings.Contains(content, "tail|") {
-		t.Fatalf("overflowed prompt should keep input tail and cursor visible, got %q", content)
+	if !strings.Contains(content, "tail") {
+		t.Fatalf("overflowed prompt should keep input tail visible, got %q", content)
+	}
+	if !strings.Contains(prompt, CursorStyle.Render(" ")) {
+		t.Fatalf("overflowed prompt should keep block cursor visible, got %q", prompt)
+	}
+	if strings.Contains(prompt, CursorStyle.Render("|")) {
+		t.Fatalf("overflowed prompt should not render the old bar cursor, got %q", prompt)
 	}
 }
 
@@ -431,6 +437,25 @@ func TestRenderSearchPrompt(t *testing.T) {
 	}
 }
 
+func TestRenderSearchPromptUsesBlockCursorAtEnd(t *testing.T) {
+	p := NewCommandPalette()
+	p.CursorVisible = true
+	m := NewModel(nil, "/tmp/root")
+	m.Palette = &p
+	m.Width = 80
+	m.Search.Open = true
+	m.Search.Query = "test"
+	m.Search.CursorPos = len([]rune(m.Search.Query))
+
+	rendered := renderSearchPrompt(m, 1)
+	if !strings.Contains(rendered, CursorStyle.Render(" ")) {
+		t.Fatalf("search prompt should render the shared block cursor at end of input, got %q", rendered)
+	}
+	if strings.Contains(rendered, CursorStyle.Render("|")) {
+		t.Fatalf("search prompt should not render the old bar cursor, got %q", rendered)
+	}
+}
+
 func TestHandoffPreviewSearchAbsorbsQAsInput(t *testing.T) {
 	m := NewModel(nil, "/tmp/root")
 	m.CurrentView = HandoffPreview
@@ -465,6 +490,133 @@ func TestHandoffPreviewContentLinesReservesSearchPrompt(t *testing.T) {
 
 	if withSearch >= withoutSearch {
 		t.Errorf("expected content lines to shrink when search prompt is open: without=%d, with=%d", withoutSearch, withSearch)
+	}
+}
+
+func TestHandoffPreviewSearchEnterAdvancesMatches(t *testing.T) {
+	m := testHandoffSearchNavigationModel([]string{
+		"intro",
+		"first needle",
+		"filler",
+		"second needle",
+		"more filler",
+		"third needle",
+	})
+
+	result, _ := handleHandoffKey(&m, "enter")
+	updated, ok := result.(Model)
+	if !ok {
+		t.Fatal("expected Model from handleHandoffKey")
+	}
+	assertSearchMatchPosition(t, updated, 0, 1, "1/3 matches")
+
+	result, _ = handleHandoffKey(&updated, "enter")
+	updated = result.(Model)
+	assertSearchMatchPosition(t, updated, 1, 3, "2/3 matches")
+
+	result, _ = handleHandoffKey(&updated, "enter")
+	updated = result.(Model)
+	assertSearchMatchPosition(t, updated, 2, 5, "3/3 matches")
+
+	result, _ = handleHandoffKey(&updated, "enter")
+	updated = result.(Model)
+	assertSearchMatchPosition(t, updated, 0, 1, "1/3 matches")
+}
+
+func TestHandoffPreviewSearchEnterNoMatchesDoesNotJump(t *testing.T) {
+	m := testHandoffSearchNavigationModel([]string{"intro", "body", "tail"})
+	m.Search.Query = "missing"
+	m.Search.CursorPos = len([]rune(m.Search.Query))
+	m.ScrollOffset = 2
+
+	result, _ := handleHandoffKey(&m, "enter")
+	updated, ok := result.(Model)
+	if !ok {
+		t.Fatal("expected Model from handleHandoffKey")
+	}
+	if updated.ScrollOffset != 2 {
+		t.Fatalf("ScrollOffset = %d, want unchanged 2", updated.ScrollOffset)
+	}
+	if updated.Search.MatchIndex != -1 {
+		t.Fatalf("MatchIndex = %d, want -1", updated.Search.MatchIndex)
+	}
+	if len(updated.Search.Matches) != 0 {
+		t.Fatalf("Matches length = %d, want 0", len(updated.Search.Matches))
+	}
+	if prompt := renderSearchPrompt(updated, len(updated.Search.Matches)); !strings.Contains(prompt, "No matches") {
+		t.Fatalf("search prompt should show no matches, got %q", prompt)
+	}
+}
+
+func TestHandoffPreviewSearchEditResetsMatchSelection(t *testing.T) {
+	m := testHandoffSearchNavigationModel([]string{"needle", "needle"})
+	m.Search.Matches = findSearchMatches(m.Search.Query, handoffBodyLines(m))
+	m.Search.MatchIndex = 1
+
+	result, _ := handleHandoffKey(&m, "s")
+	updated, ok := result.(Model)
+	if !ok {
+		t.Fatal("expected Model from handleHandoffKey")
+	}
+	if updated.Search.Query != "needles" {
+		t.Fatalf("Search.Query = %q, want %q", updated.Search.Query, "needles")
+	}
+	if updated.Search.MatchIndex != -1 {
+		t.Fatalf("MatchIndex = %d, want -1", updated.Search.MatchIndex)
+	}
+	if updated.Search.Matches != nil {
+		t.Fatalf("Matches = %#v, want nil", updated.Search.Matches)
+	}
+}
+
+func TestRenderHandoffPreviewUsesActiveSearchMatchStyle(t *testing.T) {
+	m := testHandoffSearchNavigationModel([]string{"first needle", "second needle"})
+	m.Height = 10
+	m.Search.Matches = findSearchMatches(m.Search.Query, handoffBodyLines(m))
+	m.Search.MatchIndex = 1
+
+	rendered := renderHandoffPreview(m)
+	matchPrefix, _ := searchMatchStyleCodes()
+	activePrefix, _ := activeSearchMatchStyleCodes()
+	if !strings.Contains(rendered, matchPrefix) {
+		t.Fatalf("rendered preview should include regular match style, got %q", rendered)
+	}
+	if !strings.Contains(rendered, activePrefix) {
+		t.Fatalf("rendered preview should include active match style, got %q", rendered)
+	}
+	if stripped := xansi.Strip(rendered); !strings.Contains(stripped, "first needle") || !strings.Contains(stripped, "second needle") {
+		t.Fatalf("active styling should preserve preview text, got %q", stripped)
+	}
+}
+
+func testHandoffSearchNavigationModel(bodyLines []string) Model {
+	m := NewModel(nil, "/tmp/root")
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = "content"
+	m.Width = 80
+	m.Height = 6
+	m.Search.Open = true
+	m.Search.Query = "needle"
+	m.Search.CursorPos = len([]rune(m.Search.Query))
+	m.Search.MatchIndex = -1
+	m.handoffBodyLines = bodyLines
+	m.handoffBodyLineWidth = previewLineWidth(m.Width)
+	return m
+}
+
+func assertSearchMatchPosition(t *testing.T, m Model, wantIndex, wantScroll int, wantPrompt string) {
+	t.Helper()
+	if len(m.Search.Matches) != 3 {
+		t.Fatalf("Matches length = %d, want 3", len(m.Search.Matches))
+	}
+	if m.Search.MatchIndex != wantIndex {
+		t.Fatalf("MatchIndex = %d, want %d", m.Search.MatchIndex, wantIndex)
+	}
+	if m.ScrollOffset != wantScroll {
+		t.Fatalf("ScrollOffset = %d, want %d", m.ScrollOffset, wantScroll)
+	}
+	if prompt := renderSearchPrompt(m, len(m.Search.Matches)); !strings.Contains(prompt, wantPrompt) {
+		t.Fatalf("search prompt should show %q, got %q", wantPrompt, prompt)
 	}
 }
 
@@ -561,10 +713,36 @@ func TestHighlightLineWithMatches(t *testing.T) {
 	if len(result) < len(line) {
 		t.Errorf("highlighted line should be at least as long as original: got len %d, want >= %d", len(result), len(line))
 	}
+	stylePrefix, _ := searchMatchStyleCodes()
+	if stylePrefix == "" || !strings.Contains(result, stylePrefix) {
+		t.Errorf("highlighted line should include search match styling, got %q", result)
+	}
 	// The plain text content should still be findable
 	stripped := xansi.Strip(result)
 	if stripped != line {
 		t.Errorf("highlighted line content should match original: got %q, want %q", stripped, line)
+	}
+}
+
+func TestHighlightLineWithActiveMatch(t *testing.T) {
+	line := "hello world hello"
+	matches := []SearchMatch{
+		{0, 0, 5},
+		{0, 12, 17},
+	}
+	active := matches[1]
+
+	result := highlightLineWithActiveMatch(line, matches, &active)
+	matchPrefix, _ := searchMatchStyleCodes()
+	activePrefix, _ := activeSearchMatchStyleCodes()
+	if !strings.Contains(result, matchPrefix) {
+		t.Fatalf("highlighted line should include regular match styling, got %q", result)
+	}
+	if !strings.Contains(result, activePrefix) {
+		t.Fatalf("highlighted line should include active match styling, got %q", result)
+	}
+	if stripped := xansi.Strip(result); stripped != line {
+		t.Fatalf("highlighted line content should match original: got %q, want %q", stripped, line)
 	}
 }
 

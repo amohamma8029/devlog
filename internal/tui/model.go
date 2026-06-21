@@ -524,9 +524,7 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if m.CurrentView == HandoffPreview && m.Search.Open {
-			m.Search.Open = false
-			m.Search.Query = ""
-			m.Search.CursorPos = 0
+			clearSearchState(&m.Search)
 			return m, nil
 		}
 		if m.CurrentView == HandoffPreview {
@@ -890,9 +888,7 @@ func (m *Model) setView(view View) bool {
 		if view != HandoffPreview {
 			m.SavePromptOpen = false
 			m.SaveInput = ""
-			m.Search.Open = false
-			m.Search.Query = ""
-			m.Search.CursorPos = 0
+			clearSearchState(&m.Search)
 		}
 	}
 	m.CurrentView = view

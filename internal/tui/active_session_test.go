@@ -318,9 +318,36 @@ func TestRenderHelpOverlay(t *testing.T) {
 	if !strings.Contains(v, "/handoff") {
 		t.Error("renderHelpOverlay should show /handoff command")
 	}
+	if !strings.Contains(v, "Search preview") {
+		t.Error("renderHelpOverlay should show handoff preview search shortcut")
+	}
 	if !strings.Contains(v, "Session List") {
 		t.Error("renderHelpOverlay should show Session List section")
 	}
+}
+
+func TestHandoffPreviewHelpEntriesIncludeSearch(t *testing.T) {
+	if !keyEntriesContain(handoffPreviewEntries(), "/", "Search preview") {
+		t.Fatal("handoff preview help entries should include search shortcut")
+	}
+	if !keyEntriesContain(handoffPreviewEntries(), "Enter", "Next search match") {
+		t.Fatal("handoff preview help entries should include next match shortcut")
+	}
+	if !keyEntriesContain(compactHandoffPreviewEntries(), "/", "Search preview") {
+		t.Fatal("compact handoff preview help entries should include search shortcut")
+	}
+	if !keyEntriesContain(compactHandoffPreviewEntries(), "Enter", "Next match") {
+		t.Fatal("compact handoff preview help entries should include next match shortcut")
+	}
+}
+
+func keyEntriesContain(entries []keyEntry, key, desc string) bool {
+	for _, entry := range entries {
+		if entry.key == key && entry.desc == desc {
+			return true
+		}
+	}
+	return false
 }
 
 func TestRenderHandoffPreview(t *testing.T) {
@@ -805,7 +832,7 @@ func TestModelViewHelpOverlay(t *testing.T) {
 	m.Title = "Visible base title"
 	m.ShowHelp = true
 	m.Width = 80
-	m.Height = 24
+	m.Height = 40
 	v := m.View()
 	if !strings.Contains(v, "Press any key to dismiss") {
 		t.Error("Model.View() should show help when ShowHelp is true")

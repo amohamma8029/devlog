@@ -194,7 +194,7 @@ func renderOpenSessionPrompt(m Model) string {
 		cursorVisible = m.Palette.CursorVisible
 	}
 	if cursorVisible {
-		input += CursorStyle.Render("|")
+		input += CursorStyle.Render(" ")
 	}
 	return SavePromptStyle.Render(" Open session: " + input + " ")
 }
@@ -512,6 +512,8 @@ func handoffPreviewEntries() []keyEntry {
 	return []keyEntry{
 		{"y", "Copy to clipboard"},
 		{"s", "Save to file"},
+		{"/", "Search preview"},
+		{"Enter", "Next search match"},
 		{"↓", "Scroll down one line"},
 		{"↑", "Scroll up one line"},
 		{"pgdn", "Scroll down one page"},
@@ -528,6 +530,8 @@ func compactHandoffPreviewEntries() []keyEntry {
 	return []keyEntry{
 		{"y", "Copy handoff"},
 		{"s", "Save handoff"},
+		{"/", "Search preview"},
+		{"Enter", "Next match"},
 		{"d", "Toggle all diffs"},
 		{"q", "Go back"},
 	}
