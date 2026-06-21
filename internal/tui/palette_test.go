@@ -872,6 +872,101 @@ func testSetClipboard(t *testing.T, text string) {
 	}
 }
 
+func TestCtrlASelectsAllSingleLine(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.Input = "hello world"
+	p.InputCursorPos = 3
+
+	_, np := p.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	if !np.InputHasSelection {
+		t.Fatal("Ctrl+A should set InputHasSelection")
+	}
+	start, end := np.inputSelBounds()
+	if start != 0 || end != 11 {
+		t.Fatalf("selection bounds = (%d, %d), want (0, 11)", start, end)
+	}
+}
+
+func TestCtrlANoOpOnEmptySingleLine(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.Input = ""
+
+	_, np := p.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	if np.InputHasSelection {
+		t.Fatal("Ctrl+A on empty input should not select")
+	}
+}
+
+func TestCtrlASelectsAllMultiLine(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"hello", "world"}
+	p.MultiLineCursorRow = 1
+	p.MultiLineCursorCol = 2
+
+	_, np := p.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	if !np.HasSelection {
+		t.Fatal("Ctrl+A should set HasSelection")
+	}
+	if np.SelectionAnchorRow != 0 || np.SelectionAnchorCol != 0 {
+		t.Fatalf("anchor = (%d, %d), want (0, 0)", np.SelectionAnchorRow, np.SelectionAnchorCol)
+	}
+	if np.MultiLineCursorRow != 1 || np.MultiLineCursorCol != 5 {
+		t.Fatalf("cursor = (%d, %d), want (1, 5)", np.MultiLineCursorRow, np.MultiLineCursorCol)
+	}
+	sr, sc, er, ec := np.normalizedSelection()
+	if sr != 0 || sc != 0 || er != 1 || ec != 5 {
+		t.Fatalf("normalized selection = (%d, %d, %d, %d), want (0, 0, 1, 5)", sr, sc, er, ec)
+	}
+}
+
+func TestCtrlANoOpOnEmptyMultiLine(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+
+	_, np := p.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	if np.HasSelection {
+		t.Fatal("Ctrl+A on empty multi-line should not select")
+	}
+}
+
+func TestCtrlASelectsAllMultiLineThenCopy(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.EnterMultiLine(false)
+	p.MultiLineLines = []string{"hello", "world"}
+
+	_, np := p.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	if !np.HasSelection {
+		t.Fatal("Ctrl+A should set HasSelection")
+	}
+	if np.selectedText() != "hello\nworld" {
+		t.Fatalf("selected text = %q, want %q", np.selectedText(), "hello\nworld")
+	}
+}
+
+func TestCtrlASingleLineThenShiftHome(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.Input = "hello world"
+	p.InputCursorPos = 0
+
+	_, np := p.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
+	if !np.InputHasSelection {
+		t.Fatal("Ctrl+A should set InputHasSelection")
+	}
+
+	_, np = np.Update(tea.KeyMsg{Type: tea.KeyShiftHome})
+	start, end := np.inputSelBounds()
+	if start != 0 || end != 0 {
+		t.Fatalf("shift+home after Ctrl+A: bounds = (%d, %d), want (0, 0)", start, end)
+	}
+}
+
 func testCmdResult(cmd tea.Cmd) <-chan tea.Msg {
 	ch := make(chan tea.Msg, 1)
 	go func() {
