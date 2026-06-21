@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPathFromHome(t *testing.T) {
@@ -220,6 +221,51 @@ func TestParseRejectsInvalidDisplaySettings(t *testing.T) {
 				t.Fatalf("expected error containing %q, got: %v", tt.want, err)
 			}
 		})
+	}
+}
+
+func TestDisplayTimeFormatterPreservesDefaultUTCOutput(t *testing.T) {
+	formatter, err := NewDisplayTimeFormatter(Default().Display)
+	if err != nil {
+		t.Fatalf("NewDisplayTimeFormatter failed: %v", err)
+	}
+
+	at := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
+	if got := formatter.DateTime(at); got != "2026-01-15T14:30:22Z" {
+		t.Fatalf("DateTime = %q, want default UTC RFC3339", got)
+	}
+	if got := formatter.EventTime(at); got != "2026-01-15 14:30 UTC" {
+		t.Fatalf("EventTime = %q, want default UTC event time", got)
+	}
+}
+
+func TestDisplayTimeFormatterAppliesIANAZoneAnd12hClock(t *testing.T) {
+	formatter, err := NewDisplayTimeFormatter(DisplayConfig{Timezone: "America/New_York", ClockFormat: ClockFormat12h})
+	if err != nil {
+		t.Fatalf("NewDisplayTimeFormatter failed: %v", err)
+	}
+
+	at := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
+	if got := formatter.DateTime(at); got != "2026-01-15 9:30:22 AM EST" {
+		t.Fatalf("DateTime = %q, want converted 12h timestamp", got)
+	}
+	if got := formatter.EventTime(at); got != "2026-01-15 9:30 AM EST" {
+		t.Fatalf("EventTime = %q, want converted 12h event time", got)
+	}
+}
+
+func TestDisplayTimeFormatterAppliesIANAZoneAnd24hClock(t *testing.T) {
+	formatter, err := NewDisplayTimeFormatter(DisplayConfig{Timezone: "America/New_York", ClockFormat: ClockFormat24h})
+	if err != nil {
+		t.Fatalf("NewDisplayTimeFormatter failed: %v", err)
+	}
+
+	at := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
+	if got := formatter.DateTime(at); got != "2026-01-15T09:30:22-05:00" {
+		t.Fatalf("DateTime = %q, want converted 24h timestamp", got)
+	}
+	if got := formatter.EventTime(at); got != "2026-01-15 09:30 EST" {
+		t.Fatalf("EventTime = %q, want converted 24h event time", got)
 	}
 }
 
