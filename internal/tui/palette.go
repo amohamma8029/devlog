@@ -23,6 +23,8 @@ var PaletteCommands = []CommandEntry{
 	{Command: "/list", Description: "Go to session list", NoArg: true},
 }
 
+var readClipboard = clipboard.ReadAll
+
 type CommandPalette struct {
 	Open               bool
 	Input              string
@@ -44,6 +46,7 @@ type CommandPalette struct {
 	InputCursorPos     int
 	InputHasSelection  bool
 	InputSelAnchor     int
+	pendingPasteText   string
 }
 
 func NewCommandPalette() CommandPalette {
@@ -65,6 +68,7 @@ func (p *CommandPalette) OpenPalette() {
 	p.HasSelection = false
 	p.InputCursorPos = 0
 	p.InputHasSelection = false
+	p.pendingPasteText = ""
 }
 
 func (p *CommandPalette) EnterMultiLine(isBlocker bool) {
@@ -75,6 +79,7 @@ func (p *CommandPalette) EnterMultiLine(isBlocker bool) {
 	p.MultiLineIsBlocker = isBlocker
 	p.Input = ""
 	p.HasSelection = false
+	p.pendingPasteText = ""
 }
 
 func (p *CommandPalette) clearSelection() {
@@ -148,6 +153,71 @@ func (p *CommandPalette) deleteSelection() {
 	p.HasSelection = false
 }
 
+func normalizePastedText(text string) string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	return strings.ReplaceAll(text, "\r", "\n")
+}
+
+func (p *CommandPalette) rememberPendingPasteText(text string) {
+	text = normalizePastedText(text)
+	if strings.Contains(text, "\n") {
+		p.pendingPasteText = text
+	} else {
+		p.pendingPasteText = ""
+	}
+}
+
+func (p *CommandPalette) syncPendingPasteText() {
+	if p.pendingPasteText == "" || !p.MultiLine {
+		return
+	}
+	body := strings.Join(p.MultiLineLines, "\n")
+	if body == p.pendingPasteText || !strings.HasPrefix(p.pendingPasteText, body) {
+		p.pendingPasteText = ""
+	}
+}
+
+func (p *CommandPalette) pendingPasteNeedsNewline() bool {
+	if p.pendingPasteText == "" {
+		return false
+	}
+	body := strings.Join(p.MultiLineLines, "\n")
+	return len(body) < len(p.pendingPasteText) && strings.HasPrefix(p.pendingPasteText, body) && p.pendingPasteText[len(body)] == '\n'
+}
+
+func (p *CommandPalette) clipboardPasteNeedsNewline() bool {
+	body := strings.Join(p.MultiLineLines, "\n")
+	if body == "" {
+		return false
+	}
+	text, err := readClipboard()
+	if err != nil || text == "" {
+		return false
+	}
+	text = normalizePastedText(text)
+	if len(body) < len(text) && strings.HasPrefix(text, body) && text[len(body)] == '\n' {
+		p.pendingPasteText = text
+		return true
+	}
+	return false
+}
+
+func (p *CommandPalette) shouldTreatEnterAsPastedNewline() bool {
+	return p.pendingPasteNeedsNewline() || p.clipboardPasteNeedsNewline()
+}
+
+func (p *CommandPalette) insertMultiLineBreak() {
+	p.HasSelection = false
+	line := p.MultiLineLines[p.MultiLineCursorRow]
+	left := line[:p.MultiLineCursorCol]
+	right := line[p.MultiLineCursorCol:]
+	p.MultiLineLines[p.MultiLineCursorRow] = left
+	p.MultiLineLines = append(p.MultiLineLines[:p.MultiLineCursorRow+1],
+		append([]string{right}, p.MultiLineLines[p.MultiLineCursorRow+1:]...)...)
+	p.MultiLineCursorRow++
+	p.MultiLineCursorCol = 0
+}
+
 func visiblePaletteCommands(p CommandPalette) []CommandEntry {
 	var filtered []CommandEntry
 	for _, cmd := range PaletteCommands {
@@ -169,6 +239,7 @@ func (p *CommandPalette) ClosePalette() {
 	p.MultiLineLines = nil
 	p.HasSelection = false
 	p.InputHasSelection = false
+	p.pendingPasteText = ""
 }
 
 func (p *CommandPalette) Update(msg tea.Msg) (tea.Cmd, *CommandPalette) {
@@ -232,6 +303,10 @@ func (p *CommandPalette) handleMouse(msg tea.MouseMsg) (tea.Cmd, *CommandPalette
 }
 
 func (p *CommandPalette) handleKey(msg tea.KeyMsg) (tea.Cmd, *CommandPalette) {
+	if msg.Paste {
+		return p.handlePaste(pasteMsg{text: string(msg.Runes)})
+	}
+
 	if p.MultiLine {
 		return p.handleMultiLineKey(msg)
 	}
@@ -414,9 +489,8 @@ func (p *CommandPalette) handleKey(msg tea.KeyMsg) (tea.Cmd, *CommandPalette) {
 		return nil, p
 
 	case "ctrl+v":
-		p.InputHasSelection = false
 		return func() tea.Msg {
-			text, err := clipboard.ReadAll()
+			text, err := readClipboard()
 			if err != nil || text == "" {
 				return nil
 			}
@@ -457,12 +531,24 @@ func (p *CommandPalette) handlePaste(msg pasteMsg) (tea.Cmd, *CommandPalette) {
 	if text == "" {
 		return nil, p
 	}
+	text = normalizePastedText(text)
+	p.pendingPasteText = ""
 
 	if !p.MultiLine {
 		pasteLines := strings.Split(text, "\n")
+		if p.InputHasSelection {
+			start, end := p.inputSelBounds()
+			p.Input = p.Input[:start] + p.Input[end:]
+			p.InputCursorPos = start
+			p.InputHasSelection = false
+		}
 		p.Input = p.Input[:p.InputCursorPos] + pasteLines[0] + p.Input[p.InputCursorPos:]
 		p.InputCursorPos += len(pasteLines[0])
 		return nil, p
+	}
+
+	if p.HasSelection {
+		p.deleteSelection()
 	}
 
 	pasteLines := strings.Split(text, "\n")
@@ -507,20 +593,17 @@ func (p *CommandPalette) handlePaste(msg pasteMsg) (tea.Cmd, *CommandPalette) {
 
 func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPalette) {
 	if msg.Alt && msg.Type == tea.KeyEnter {
-		p.HasSelection = false
-		line := p.MultiLineLines[p.MultiLineCursorRow]
-		left := line[:p.MultiLineCursorCol]
-		right := line[p.MultiLineCursorCol:]
-		p.MultiLineLines[p.MultiLineCursorRow] = left
-		p.MultiLineLines = append(p.MultiLineLines[:p.MultiLineCursorRow+1],
-			append([]string{right}, p.MultiLineLines[p.MultiLineCursorRow+1:]...)...)
-		p.MultiLineCursorRow++
-		p.MultiLineCursorCol = 0
+		p.insertMultiLineBreak()
 		return nil, p
 	}
 
 	switch msg.String() {
 	case "enter":
+		if p.shouldTreatEnterAsPastedNewline() {
+			p.insertMultiLineBreak()
+			p.syncPendingPasteText()
+			return nil, p
+		}
 		body := strings.TrimSpace(strings.Join(p.MultiLineLines, "\n"))
 		isBlocker := p.MultiLineIsBlocker
 		p.ClosePalette()
@@ -539,6 +622,7 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 		if p.HasSelection {
 			text := p.selectedText()
 			if text != "" {
+				p.rememberPendingPasteText(text)
 				return func() tea.Msg {
 					clipboard.WriteAll(text)
 					return ClipboardActionMsg{Action: "copy"}
@@ -551,6 +635,7 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 		if p.HasSelection {
 			text := p.selectedText()
 			if text != "" {
+				p.rememberPendingPasteText(text)
 				p.deleteSelection()
 				return func() tea.Msg {
 					clipboard.WriteAll(text)
@@ -561,9 +646,8 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 		return nil, p
 
 	case "ctrl+v":
-		p.HasSelection = false
 		return func() tea.Msg {
-			text, err := clipboard.ReadAll()
+			text, err := readClipboard()
 			if err != nil || text == "" {
 				return nil
 			}
@@ -736,15 +820,19 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 		return nil, p
 
 	default:
-		if len(msg.Runes) == 1 {
-			r := msg.Runes[0]
-			if r >= 32 {
+		if len(msg.Runes) > 0 {
+			text := string(msg.Runes)
+			if strings.ContainsAny(text, "\r\n") {
+				return p.handlePaste(pasteMsg{text: text})
+			}
+			if strings.IndexFunc(text, func(r rune) bool { return r < 32 }) < 0 {
 				if p.HasSelection {
 					p.deleteSelection()
 				}
 				line := p.MultiLineLines[p.MultiLineCursorRow]
-				p.MultiLineLines[p.MultiLineCursorRow] = line[:p.MultiLineCursorCol] + string(r) + line[p.MultiLineCursorCol:]
-				p.MultiLineCursorCol++
+				p.MultiLineLines[p.MultiLineCursorRow] = line[:p.MultiLineCursorCol] + text + line[p.MultiLineCursorCol:]
+				p.MultiLineCursorCol += len(text)
+				p.syncPendingPasteText()
 			}
 		}
 		return nil, p
