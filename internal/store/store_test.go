@@ -747,6 +747,123 @@ func mustParseEventTime(t *testing.T, value string) time.Time {
 	return at
 }
 
+func TestParseSessionEventsCorrectionReplacesBody(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nOriginal note text\n\n## Correction - 2026-01-15 14:35 UTC\n\nNote 14:30\nCorrected note text\n"
+
+	events := ParseSessionEvents(body)
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events (Start + corrected Note), got %d", len(events))
+	}
+	if events[1].Type != "Note" {
+		t.Errorf("expected Note, got %s", events[1].Type)
+	}
+	if events[1].Body != "Corrected note text" {
+		t.Errorf("expected corrected body %q, got %q", "Corrected note text", events[1].Body)
+	}
+	if events[1].IsDeleted {
+		t.Error("IsDeleted should be false for corrected event")
+	}
+}
+
+func TestParseSessionEventsCorrectionDeletesEvent(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nOriginal note\n\n## Correction - 2026-01-15 14:35 UTC\n\nNote 14:30\n"
+
+	events := ParseSessionEvents(body)
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events (Start + deleted Note), got %d", len(events))
+	}
+	if events[1].Type != "Note" {
+		t.Errorf("expected Note, got %s", events[1].Type)
+	}
+	if !events[1].IsDeleted {
+		t.Error("IsDeleted should be true for deleted event")
+	}
+	if events[1].Body != "" {
+		t.Errorf("deleted event body should be empty, got %q", events[1].Body)
+	}
+}
+
+func TestParseSessionEventsCorrectionDoesNotMatchStart(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Correction - 2026-01-15 14:35 UTC\n\nStart \nNew start\n"
+
+	events := ParseSessionEvents(body)
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event (Start, Correction should not match), got %d", len(events))
+	}
+	if events[0].Type != "Start" {
+		t.Errorf("expected Start, got %s", events[0].Type)
+	}
+	if events[0].Body != "Started work." {
+		t.Errorf("Start body should be unchanged, got %q", events[0].Body)
+	}
+}
+
+func TestParseSessionEventsCorrectionMultipleEvents(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nFirst note\n\n## Note - 2026-01-15 14:35 UTC\n\nSecond note\n\n## Correction - 2026-01-15 14:40 UTC\n\nNote 14:30\nCorrected first note\n"
+
+	events := ParseSessionEvents(body)
+	if len(events) != 3 {
+		t.Fatalf("expected 3 events, got %d", len(events))
+	}
+	if events[1].Body != "Corrected first note" {
+		t.Errorf("first note should be corrected, got %q", events[1].Body)
+	}
+	if events[2].Body != "Second note" {
+		t.Errorf("second note should be unchanged, got %q", events[2].Body)
+	}
+}
+
+func TestParseSessionEventsCorrectionLastOneWins(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nOriginal\n\n## Correction - 2026-01-15 14:35 UTC\n\nNote 14:30\nFirst correction\n\n## Correction - 2026-01-15 14:40 UTC\n\nNote 14:30\nSecond correction\n"
+
+	events := ParseSessionEvents(body)
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+	if events[1].Body != "Second correction" {
+		t.Errorf("last correction should win, got %q", events[1].Body)
+	}
+}
+
+func TestParseSessionEventsCorrectionBlocker(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Blocker - 2026-01-15 14:30 UTC\n\nOriginal blocker\n\n## Correction - 2026-01-15 14:35 UTC\n\nBlocker 14:30\nUpdated blocker\n"
+
+	events := ParseSessionEvents(body)
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+	if events[1].Type != "Blocker" {
+		t.Errorf("expected Blocker, got %s", events[1].Type)
+	}
+	if events[1].Body != "Updated blocker" {
+		t.Errorf("expected corrected blocker body, got %q", events[1].Body)
+	}
+}
+
+func TestParseSessionEventsCorrectionNoMatch(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nOriginal note\n\n## Correction - 2026-01-15 14:35 UTC\n\nNote 99:99\nDoes not match\n"
+
+	events := ParseSessionEvents(body)
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events (bad correction ignored), got %d", len(events))
+	}
+	if events[1].Body != "Original note" {
+		t.Errorf("note body should be unchanged, got %q", events[1].Body)
+	}
+}
+
+func TestParseSessionEventsCorrectionEmptyBodyNoop(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nOriginal note\n\n## Correction - 2026-01-15 14:35 UTC\n"
+
+	events := ParseSessionEvents(body)
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(events))
+	}
+	if events[1].Body != "Original note" {
+		t.Errorf("note body should be unchanged when correction body is empty, got %q", events[1].Body)
+	}
+}
+
 func readSessionFile(t *testing.T, root, sessionID string) string {
 	t.Helper()
 
