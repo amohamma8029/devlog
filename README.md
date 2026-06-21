@@ -44,6 +44,10 @@ go build -o devlog.exe ./cmd/devlog
 
 Sessions live in `.devlog/sessions/<timestamp>.md` as Markdown files with a YAML front-matter block for structured metadata.
 
+## Configuration
+
+devlog reads an optional global config file at `~/.config/devlog/config.yml` for author identity, editor selection, display timezone and clock format, handoff diff context, and the TUI handoff preview line limit. See [docs/configuration.md](./docs/configuration.md) for the full schema, defaults, fallback precedence, and validation rules.
+
 ## Contributing
 
 See [AGENTS.md](./AGENTS.md) for the full project conventions, build commands, test instructions, and architecture boundaries.
