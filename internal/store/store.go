@@ -36,9 +36,10 @@ const eventTimeLayout = "2006-01-02 15:04"
 
 // SessionEvent represents a structured event parsed from a session Markdown body.
 type SessionEvent struct {
-	Type string // Start, Note, Blocker, Stop
-	Time time.Time
-	Body string
+	Type      string // Start, Note, Blocker, Stop
+	Time      time.Time
+	Body      string
+	IsDeleted bool
 }
 
 // SessionFileMetadata is the cheap-to-read state used to detect session file changes.
@@ -275,7 +276,7 @@ func parseSessionEvents(body string) ([]SessionEvent, bool) {
 	}
 
 	flush()
-	return events, hasStart
+	return applyCorrections(events), hasStart
 }
 
 func parseEventHeading(line string) (string, time.Time, bool) {
@@ -284,7 +285,7 @@ func parseEventHeading(line string) (string, time.Time, bool) {
 	}
 
 	heading := strings.TrimSpace(strings.TrimPrefix(line, "## "))
-	for _, eventType := range []string{"Start", "Note", "Blocker", "Stop"} {
+	for _, eventType := range []string{"Start", "Note", "Blocker", "Stop", "Correction"} {
 		if heading == eventType {
 			return eventType, time.Time{}, true
 		}
@@ -301,6 +302,61 @@ func parseEventHeading(line string) (string, time.Time, bool) {
 
 	return "", time.Time{}, false
 }
+
+func applyCorrections(events []SessionEvent) []SessionEvent {
+	byHeader := make(map[string]int) // "Note 14:30" → index of last matching event
+	for i := range events {
+		if events[i].Type == "Correction" {
+			continue
+		}
+		header := fmt.Sprintf("%s %02d:%02d", events[i].Type, events[i].Time.UTC().Hour(), events[i].Time.UTC().Minute())
+		byHeader[header] = i
+	}
+
+	for i := range events {
+		if events[i].Type != "Correction" {
+			continue
+		}
+
+		body := strings.TrimSpace(events[i].Body)
+		if body == "" {
+			continue
+		}
+
+		firstLineEnd := strings.Index(body, "\n")
+		var header, newBody string
+		if firstLineEnd >= 0 {
+			header = body[:firstLineEnd]
+			newBody = strings.TrimSpace(body[firstLineEnd+1:])
+		} else {
+			header = body
+			newBody = ""
+		}
+
+		idx, ok := byHeader[header]
+		if !ok {
+			continue
+		}
+
+		if newBody != "" {
+			events[idx].Body = newBody
+			events[idx].IsDeleted = false
+		} else {
+			events[idx].IsDeleted = true
+			events[idx].Body = ""
+		}
+	}
+
+	result := events[:0]
+	for i := range events {
+		if events[i].Type == "Correction" {
+			continue
+		}
+		result = append(result, events[i])
+	}
+	return result
+}
+
 
 // ExtractMarkdownBody returns everything after the YAML front-matter delimiters.
 func ExtractMarkdownBody(content string) (string, error) {
