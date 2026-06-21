@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	internalconfig "github.com/amo/devlog/internal/config"
 	internalgit "github.com/amo/devlog/internal/git"
 	"github.com/amo/devlog/internal/handoff"
 	"github.com/amo/devlog/internal/session"
@@ -42,6 +43,7 @@ type SessionListModel struct {
 	width         int
 	height        int
 	cw            columnWidths
+	displayTime   internalconfig.DisplayTimeFormatter
 }
 
 const (
@@ -122,16 +124,29 @@ func calcColumnWidths(termWidth int) columnWidths {
 }
 
 func NewSessionListModel(s *store.Store, root string, width, height int) SessionListModel {
+	return NewSessionListModelWithConfig(s, root, width, height, internalconfig.Default())
+}
+
+func NewSessionListModelWithConfig(s *store.Store, root string, width, height int, cfg internalconfig.Config) SessionListModel {
 	if width < 1 {
 		width = 80
 	}
-	return SessionListModel{
-		store:  s,
-		root:   root,
-		width:  width,
-		height: height,
-		cw:     calcColumnWidths(width),
+	formatter, err := internalconfig.NewDisplayTimeFormatter(cfg.Display)
+	if err != nil {
+		formatter = internalconfig.DefaultDisplayTimeFormatter()
 	}
+	m := SessionListModel{
+		store:       s,
+		root:        root,
+		width:       width,
+		height:      height,
+		cw:          calcColumnWidths(width),
+		displayTime: formatter,
+	}
+	if err != nil {
+		m.err = err
+	}
+	return m
 }
 
 func (m SessionListModel) Init() tea.Cmd {
@@ -418,7 +433,7 @@ func (m SessionListModel) renderRow(s store.SessionRecord) string {
 		cells = append(cells, padCell(truncateCell(s.Author, w.author), w.author))
 	}
 	cells = append(cells,
-		padCell(truncateCell(s.Started.Format("2006-01-02T15:04:05Z"), w.started), w.started),
+		padCell(truncateCell(m.displayTime.DateTime(s.Started), w.started), w.started),
 		padCell(style.Render(status), w.status),
 	)
 	return strings.Join(cells, colSep)
