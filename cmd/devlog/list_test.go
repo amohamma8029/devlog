@@ -14,6 +14,7 @@ import (
 
 func TestListCommandListsAllSessions(t *testing.T) {
 	requireCmdTestGit(t)
+	setConfigTestHome(t)
 
 	root := initCmdTestRepo(t)
 	_ = writeCmdTestSession(t, root)
@@ -133,6 +134,7 @@ func TestOldHHMMStopHeadingDoesNotMarkSessionClosed(t *testing.T) {
 
 func TestListCommandActiveFlag(t *testing.T) {
 	requireCmdTestGit(t)
+	setConfigTestHome(t)
 
 	root := initCmdTestRepo(t)
 	_ = writeCmdTestSession(t, root)
@@ -154,6 +156,7 @@ func TestListCommandActiveFlag(t *testing.T) {
 
 func TestListCommandBranchFlag(t *testing.T) {
 	requireCmdTestGit(t)
+	setConfigTestHome(t)
 
 	root := initCmdTestRepo(t)
 	writeCmdTestSession(t, root)
@@ -175,6 +178,7 @@ func TestListCommandBranchFlag(t *testing.T) {
 
 func TestListCommandBranchFlagNoMatch(t *testing.T) {
 	requireCmdTestGit(t)
+	setConfigTestHome(t)
 
 	root := initCmdTestRepo(t)
 	writeCmdTestSession(t, root)
@@ -192,6 +196,7 @@ func TestListCommandBranchFlagNoMatch(t *testing.T) {
 
 func TestListCommandEmptyRepo(t *testing.T) {
 	requireCmdTestGit(t)
+	setConfigTestHome(t)
 
 	root := initCmdTestRepo(t)
 	t.Chdir(root)
@@ -204,6 +209,26 @@ func TestListCommandEmptyRepo(t *testing.T) {
 	if !strings.Contains(out, "No sessions found.") {
 		t.Fatalf("expected no sessions message for empty repo, got: %s", out)
 	}
+}
+
+func TestListCommandUsesConfiguredDisplayTime(t *testing.T) {
+	requireCmdTestGit(t)
+	_, configPath := setConfigTestHome(t)
+	writeConfigTestFile(t, configPath, `display:
+  timezone: America/New_York
+  clock_format: 12h
+`)
+
+	root := initCmdTestRepo(t)
+	writeCmdTestSession(t, root)
+	t.Chdir(root)
+
+	out, err := executeListCommand()
+	if err != nil {
+		t.Fatalf("list command failed: %v", err)
+	}
+
+	assertContains(t, out, "started: 2026-01-15 9:00:00 AM EST")
 }
 
 func TestListCommandNoArgs(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	internalconfig "github.com/amo/devlog/internal/config"
 	internalgit "github.com/amo/devlog/internal/git"
 	"github.com/amo/devlog/internal/store"
 	"github.com/mattn/go-runewidth"
@@ -37,8 +38,16 @@ func newListCommand() *cobra.Command {
 			}
 
 			filtered := filterListSessions(records, activeOnly, branchFilter)
+			cfg, err := loadRuntimeConfig()
+			if err != nil {
+				return err
+			}
+			formatter, err := internalconfig.NewDisplayTimeFormatter(cfg.Display)
+			if err != nil {
+				return err
+			}
 
-			_, err = fmt.Fprint(cmd.OutOrStdout(), renderListTable(filtered, root, time.Now().UTC()))
+			_, err = fmt.Fprint(cmd.OutOrStdout(), renderListTable(filtered, root, time.Now().UTC(), formatter))
 			return err
 		},
 	}
@@ -63,7 +72,7 @@ func filterListSessions(records []store.SessionRecord, activeOnly bool, branch s
 	return filtered
 }
 
-func renderListTable(records []store.SessionRecord, root string, now time.Time) string {
+func renderListTable(records []store.SessionRecord, root string, now time.Time, formatter internalconfig.DisplayTimeFormatter) string {
 	if len(records) == 0 {
 		return cliTitleStyle.Render("Sessions") + "\n  No sessions found.\n"
 	}
@@ -84,7 +93,7 @@ func renderListTable(records []store.SessionRecord, root string, now time.Time) 
 		b.WriteString(cliSessionRef(title, r.ID))
 		b.WriteByte('\n')
 		writeCLIBranchField(&b, branch, r.Closed)
-		writeCLIField(&b, "started", r.Started.Format(time.RFC3339))
+		writeCLIField(&b, "started", formatter.DateTime(r.Started))
 		writeCLIField(&b, "duration", computeListDuration(r, root, now))
 		b.WriteByte('\n')
 	}
