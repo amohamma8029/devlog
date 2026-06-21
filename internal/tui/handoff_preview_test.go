@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	xansi "github.com/charmbracelet/x/ansi"
+
+	internalconfig "github.com/amo/devlog/internal/config"
 )
 
 func TestIsValidFilename(t *testing.T) {
@@ -213,7 +215,7 @@ func TestPrepareHandoffPreviewMarkdownTruncatesPerFile(t *testing.T) {
 	b.WriteString("## Changes\n\n")
 	b.WriteString("#### src/big.go\n\n")
 	b.WriteString("```diff\n")
-	for i := 0; i < handoffPreviewDiffLineLimit+2; i++ {
+	for i := 0; i < internalconfig.DefaultHandoffPreviewLineLimit+2; i++ {
 		b.WriteString("+line\n")
 	}
 	b.WriteString("```\n")
@@ -225,8 +227,107 @@ func TestPrepareHandoffPreviewMarkdownTruncatesPerFile(t *testing.T) {
 	if !strings.Contains(preview, "... (truncated, 2 more lines)") {
 		t.Fatalf("expected per-file truncation message, got:\n%s", preview)
 	}
-	if strings.Count(preview, "+line") != handoffPreviewDiffLineLimit {
-		t.Fatalf("preview should include exactly %d diff lines, got %d", handoffPreviewDiffLineLimit, strings.Count(preview, "+line"))
+	if strings.Count(preview, "+line") != internalconfig.DefaultHandoffPreviewLineLimit {
+		t.Fatalf("preview should include exactly %d diff lines, got %d", internalconfig.DefaultHandoffPreviewLineLimit, strings.Count(preview, "+line"))
+	}
+}
+
+func TestPrepareHandoffPreviewMarkdownForModelHonorsConfiguredLimit(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("## Changes\n\n")
+	b.WriteString("#### src/big.go\n\n")
+	b.WriteString("```diff\n")
+	for i := 0; i < 10; i++ {
+		b.WriteString("+line\n")
+	}
+	b.WriteString("```\n")
+
+	cfg := internalconfig.Default()
+	cfg.TUI.HandoffPreview.DiffLineLimit = 3
+	m := NewModelWithConfig(nil, "/tmp/root", cfg)
+	m.HandoffContent = b.String()
+
+	preview := prepareHandoffPreviewMarkdownForModel(m)
+	if strings.Count(preview, "+line") != 3 {
+		t.Fatalf("configured limit 3 should truncate to 3 diff lines, got %d", strings.Count(preview, "+line"))
+	}
+	if !strings.Contains(preview, "... (truncated, 7 more lines)") {
+		t.Fatalf("expected truncation marker for 7 remaining lines, got:\n%s", preview)
+	}
+}
+
+func TestPrepareHandoffPreviewMarkdownForModelUsesDefaultWhenAbsent(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("## Changes\n\n")
+	b.WriteString("#### src/big.go\n\n")
+	b.WriteString("```diff\n")
+	for i := 0; i < internalconfig.DefaultHandoffPreviewLineLimit+2; i++ {
+		b.WriteString("+line\n")
+	}
+	b.WriteString("```\n")
+
+	m := NewModel(nil, "/tmp/root")
+	m.HandoffContent = b.String()
+
+	preview := prepareHandoffPreviewMarkdownForModel(m)
+	if strings.Count(preview, "+line") != internalconfig.DefaultHandoffPreviewLineLimit {
+		t.Fatalf("default config should truncate to %d diff lines, got %d", internalconfig.DefaultHandoffPreviewLineLimit, strings.Count(preview, "+line"))
+	}
+	if !strings.Contains(preview, "... (truncated, 2 more lines)") {
+		t.Fatalf("expected per-file truncation message with default limit, got:\n%s", preview)
+	}
+}
+
+func TestPrepareHandoffPreviewMarkdownForModelZeroLimitDisablesTruncation(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("## Changes\n\n")
+	b.WriteString("#### src/big.go\n\n")
+	b.WriteString("```diff\n")
+	for i := 0; i < 10; i++ {
+		b.WriteString("+line\n")
+	}
+	b.WriteString("```\n")
+
+	cfg := internalconfig.Default()
+	cfg.TUI.HandoffPreview.DiffLineLimit = 0
+	m := NewModelWithConfig(nil, "/tmp/root", cfg)
+	m.HandoffContent = b.String()
+
+	preview := prepareHandoffPreviewMarkdownForModel(m)
+	if strings.Count(preview, "+line") != 10 {
+		t.Fatalf("zero limit should show all 10 diff lines, got %d", strings.Count(preview, "+line"))
+	}
+	if strings.Contains(preview, "truncated") {
+		t.Fatalf("zero limit should not produce truncation marker, got:\n%s", preview)
+	}
+}
+
+func TestHandoffMarkdownForSaveNotTruncatedByConfiguredPreviewLimit(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("## Changes\n\n")
+	b.WriteString("#### src/keep.go\n\n")
+	b.WriteString("```diff\n")
+	for i := 0; i < 10; i++ {
+		b.WriteString("+keep\n")
+	}
+	b.WriteString("```\n")
+
+	cfg := internalconfig.Default()
+	cfg.TUI.HandoffPreview.DiffLineLimit = 3
+	m := NewModelWithConfig(nil, "/tmp/root", cfg)
+	m.HandoffContent = b.String()
+
+	preview := prepareHandoffPreviewMarkdownForModel(m)
+	if strings.Count(preview, "+keep") != 3 {
+		t.Fatalf("preview should truncate to 3 lines with configured limit, got %d", strings.Count(preview, "+keep"))
+	}
+
+	saved := handoffMarkdownForSave(m)
+	if strings.Count(saved, "+keep") != 10 {
+		t.Fatalf("save output should not be truncated by preview limit, got %d lines", strings.Count(saved, "+keep"))
+	}
+	if strings.Contains(saved, "truncated") {
+		t.Fatalf("save output should not include truncation marker, got:\n%s", saved)
 	}
 }
 
@@ -250,7 +351,7 @@ func TestHandoffMarkdownForSaveOmitsCollapsedDiffsWithoutTruncatingExpanded(t *t
 	b.WriteString("## Changes\n\n")
 	b.WriteString("#### src/keep.go\n\n")
 	b.WriteString("```diff\n")
-	for i := 0; i < handoffPreviewDiffLineLimit+1; i++ {
+	for i := 0; i < internalconfig.DefaultHandoffPreviewLineLimit+1; i++ {
 		b.WriteString("+keep\n")
 	}
 	b.WriteString("```\n\n")
@@ -281,7 +382,7 @@ func TestHandoffMarkdownForSaveOmitsCollapsedDiffsWithoutTruncatingExpanded(t *t
 	if strings.Contains(saved, handoffDiffExpandedMarker) || strings.Contains(saved, handoffDiffCollapsedMarker) {
 		t.Fatalf("save output should not include preview disclosure markers, got:\n%s", saved)
 	}
-	if strings.Count(saved, "+keep") != handoffPreviewDiffLineLimit+1 {
+	if strings.Count(saved, "+keep") != internalconfig.DefaultHandoffPreviewLineLimit+1 {
 		t.Fatalf("save output should not truncate expanded diff, got %d lines", strings.Count(saved, "+keep"))
 	}
 	if strings.Contains(saved, "src/drop.go") || strings.Contains(saved, "+drop") {

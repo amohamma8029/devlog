@@ -15,6 +15,8 @@ import (
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 	xansi "github.com/charmbracelet/x/ansi"
+
+	internalconfig "github.com/amo/devlog/internal/config"
 )
 
 const (
@@ -24,7 +26,6 @@ const (
 	defaultHandoffPreviewRows   = 18
 	terminalSafetyCols          = 4
 	terminalSafetyRows          = 1
-	handoffPreviewDiffLineLimit = 100
 	handoffDiffExpandedMarker   = "▼"
 	handoffDiffCollapsedMarker  = "▶"
 	inputOverflowMarker         = "…"
@@ -295,7 +296,7 @@ func handoffBodyLines(m Model) []string {
 
 func prepareHandoffPreviewMarkdown(content string) string {
 	return formatHandoffMarkdown(content, nil, handoffMarkdownOptions{
-		DiffLineLimit:               handoffPreviewDiffLineLimit,
+		DiffLineLimit:               internalconfig.DefaultHandoffPreviewLineLimit,
 		IncludeCollapsedPlaceholder: true,
 		ShowDisclosureArrows:        true,
 	})
@@ -303,7 +304,7 @@ func prepareHandoffPreviewMarkdown(content string) string {
 
 func prepareHandoffPreviewMarkdownForModel(m Model) string {
 	return formatHandoffMarkdown(m.HandoffContent, m.HandoffCollapsedDiffs, handoffMarkdownOptions{
-		DiffLineLimit:               handoffPreviewDiffLineLimit,
+		DiffLineLimit:               m.Config.TUI.HandoffPreview.DiffLineLimit,
 		IncludeCollapsedPlaceholder: true,
 		ShowDisclosureArrows:        true,
 	})
