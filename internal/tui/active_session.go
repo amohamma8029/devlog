@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	internalconfig "github.com/amo/devlog/internal/config"
 	"github.com/amo/devlog/internal/store"
 	"github.com/charmbracelet/lipgloss"
 	xansi "github.com/charmbracelet/x/ansi"
@@ -103,18 +104,19 @@ func renderHeader(m Model) string {
 	now := time.Now().UTC()
 	dur := formatDuration(now.Sub(sess.Started.UTC()))
 	author := formatAuthor(sess.Author, sess.Email)
+	formatter := modelDisplayTimeFormatter(m)
 
 	if m.Width >= 80 {
 		b.WriteString(MetadataStyle.Render(
 			fmt.Sprintf("Author: %s  ·  Branch: %s  ·  Started: %s  ·  Duration: %s",
-				author, sess.Branch, sess.Started.UTC().Format(time.RFC3339), dur),
+				author, sess.Branch, formatter.DateTime(sess.Started), dur),
 		))
 	} else {
 		b.WriteString(MetadataStyle.Render("Author: " + author))
 		b.WriteByte('\n')
 		b.WriteString(MetadataStyle.Render("Branch: " + sess.Branch))
 		b.WriteByte('\n')
-		b.WriteString(MetadataStyle.Render("Started: " + sess.Started.UTC().Format(time.RFC3339)))
+		b.WriteString(MetadataStyle.Render("Started: " + formatter.DateTime(sess.Started)))
 		b.WriteByte('\n')
 		b.WriteString(MetadataStyle.Render("Duration: " + dur))
 	}
@@ -590,6 +592,10 @@ func formatAuthor(author, email string) string {
 	return fmt.Sprintf("%s <%s>", author, email)
 }
 
+func modelDisplayTimeFormatter(m Model) internalconfig.DisplayTimeFormatter {
+	return m.displayTime
+}
+
 func renderTimeline(m Model, maxLines int) string {
 	var b strings.Builder
 
@@ -684,7 +690,7 @@ func buildActiveSessionTimelineLines(m Model) []string {
 	if len(nonStartEvents) == 0 {
 		return nil
 	}
-	return renderEventLines(nonStartEvents, contentWidth)
+	return renderEventLines(nonStartEvents, contentWidth, modelDisplayTimeFormatter(m))
 }
 
 func filterNonStartEvents(events []store.SessionEvent) []store.SessionEvent {
@@ -697,7 +703,7 @@ func filterNonStartEvents(events []store.SessionEvent) []store.SessionEvent {
 	return result
 }
 
-func renderEventLines(events []store.SessionEvent, maxWidth int) []string {
+func renderEventLines(events []store.SessionEvent, maxWidth int, formatter internalconfig.DisplayTimeFormatter) []string {
 	var lines []string
 	if len(events) == 0 {
 		return lines
@@ -721,7 +727,7 @@ func renderEventLines(events []store.SessionEvent, maxWidth int) []string {
 			connectorStyle = ConnectorStyle.Foreground(lipgloss.Color("#FF6600"))
 		}
 
-		timeStr := event.Time.UTC().Format("2006-01-02 15:04 UTC")
+		timeStr := formatter.EventTime(event.Time)
 		if event.Time.IsZero() {
 			timeStr = "     "
 		}

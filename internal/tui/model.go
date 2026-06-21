@@ -60,6 +60,7 @@ type Model struct {
 	activeTimelineWidth        int
 	handoffBodyLines           []string
 	handoffBodyLineWidth       int
+	displayTime                internalconfig.DisplayTimeFormatter
 	activeSessionMetadata      store.SessionFileMetadata
 	activeSessionMetadataKnown bool
 }
@@ -70,14 +71,23 @@ func NewModel(s *store.Store, root string) Model {
 
 func NewModelWithConfig(s *store.Store, root string, cfg internalconfig.Config) Model {
 	p := NewCommandPalette()
-	return Model{
+	formatter, err := internalconfig.NewDisplayTimeFormatter(cfg.Display)
+	if err != nil {
+		formatter = internalconfig.DefaultDisplayTimeFormatter()
+	}
+	m := Model{
 		CurrentView: SessionList,
 		Palette:     &p,
 		Store:       s,
 		Config:      cfg,
-		SessionList: NewSessionListModel(s, root, 80, 24),
+		SessionList: NewSessionListModelWithConfig(s, root, 80, 24, cfg),
 		Root:        root,
+		displayTime: formatter,
 	}
+	if err != nil {
+		m.ErrorMessage = err.Error()
+	}
+	return m
 }
 
 func (m Model) Init() tea.Cmd {

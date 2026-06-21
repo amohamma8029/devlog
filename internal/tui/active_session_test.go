@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	internalconfig "github.com/amo/devlog/internal/config"
 	"github.com/amo/devlog/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
@@ -199,6 +200,35 @@ func TestRenderActiveSessionShowsMetadata(t *testing.T) {
 	}
 	if !strings.Contains(v, "Duration") {
 		t.Error("renderActiveSession should show duration")
+	}
+}
+
+func TestRenderActiveSessionUsesConfiguredDisplayTime(t *testing.T) {
+	m := testModel()
+	m.CurrentView = ActiveSession
+	m.ActiveSession = testActiveSession()
+	m.Events = []store.SessionEvent{
+		{Type: "Start", Body: "Test title"},
+		{Type: "Note", Time: time.Date(2026, 1, 15, 15, 30, 0, 0, time.UTC), Body: "finished parser"},
+	}
+	m.Config = internalconfig.Default()
+	m.Config.Display.Timezone = "America/New_York"
+	m.Config.Display.ClockFormat = internalconfig.ClockFormat12h
+	formatter, err := internalconfig.NewDisplayTimeFormatter(m.Config.Display)
+	if err != nil {
+		t.Fatalf("NewDisplayTimeFormatter failed: %v", err)
+	}
+	m.displayTime = formatter
+	m.Title = "Test title"
+	m.Width = 80
+	m.Height = 24
+
+	v := renderActiveSession(m)
+	if !strings.Contains(v, "Started: 2026-01-15 9:30:22 AM EST") {
+		t.Fatalf("active session header should use configured display time, got:\n%s", v)
+	}
+	if !strings.Contains(v, "Note · 2026-01-15 10:30 AM EST") {
+		t.Fatalf("active session timeline should use configured display time, got:\n%s", v)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	internalconfig "github.com/amo/devlog/internal/config"
 	"github.com/amo/devlog/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
@@ -306,6 +307,23 @@ func TestSessionListViewContainsColumns(t *testing.T) {
 	}
 	if !strings.Contains(v, "active") {
 		t.Fatalf("expected status in view: %s", v)
+	}
+}
+
+func TestSessionListUsesConfiguredDisplayTime(t *testing.T) {
+	s, root := newTestStore(t)
+	writeTestSession(t, s, "2026-01-15T140000Z", "feat/a", "Alice", "auth", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+	cfg := internalconfig.Default()
+	cfg.Display.Timezone = "America/New_York"
+	cfg.Display.ClockFormat = internalconfig.ClockFormat12h
+
+	m := NewSessionListModelWithConfig(s, root, 140, 24, cfg)
+	updated, _ := m.Update(m.Init()())
+	m = updated.(SessionListModel)
+
+	v := m.View()
+	if !strings.Contains(v, "2026-01-15 9:00:00 AM EST") {
+		t.Fatalf("session list should use configured display time, got:\n%s", v)
 	}
 }
 
