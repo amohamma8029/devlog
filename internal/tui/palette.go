@@ -376,6 +376,14 @@ func (p *CommandPalette) handleKey(msg tea.KeyMsg) (tea.Cmd, *CommandPalette) {
 		}
 		p.InputCursorPos = len(p.Input)
 
+	case "ctrl+a":
+		if p.Input != "" {
+			p.InputSelAnchor = 0
+			p.InputCursorPos = len(p.Input)
+			p.InputHasSelection = true
+		}
+		return nil, p
+
 	case "ctrl+c":
 		if p.InputHasSelection {
 			start, end := p.inputSelBounds()
@@ -677,6 +685,16 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 		p.MultiLineCursorCol = len(p.MultiLineLines[p.MultiLineCursorRow])
 		return nil, p
 
+	case "ctrl+a":
+		if len(p.MultiLineLines) > 0 && (len(p.MultiLineLines) > 1 || p.MultiLineLines[0] != "") {
+			p.SelectionAnchorRow = 0
+			p.SelectionAnchorCol = 0
+			p.MultiLineCursorRow = len(p.MultiLineLines) - 1
+			p.MultiLineCursorCol = len(p.MultiLineLines[p.MultiLineCursorRow])
+			p.HasSelection = true
+		}
+		return nil, p
+
 	case "left":
 		p.HasSelection = false
 		if p.MultiLineCursorCol > 0 {
@@ -918,8 +936,8 @@ func renderLineWithCursorAndSelection(b *strings.Builder, line string, cursorCol
 
 func composerShortcutHint(width int) string {
 	options := []string{
-		"Ctrl+C copy  ·  Ctrl+X cut  ·  Ctrl+V paste  ·  Alt+Enter new line  ·  Enter submit  ·  Esc cancel",
-		"Ctrl+C/X/V  ·  Alt+Enter new line  ·  Enter submit  ·  Esc cancel",
+		"Ctrl+A select all  ·  Ctrl+C copy  ·  Ctrl+X cut  ·  Ctrl+V paste  ·  Alt+Enter new line  ·  Enter submit  ·  Esc cancel",
+		"Ctrl+A all  ·  Ctrl+C/X/V  ·  Alt+Enter new line  ·  Enter submit  ·  Esc cancel",
 		"Alt+Enter new line  ·  Enter submit  ·  Esc cancel",
 		"Alt+Enter line  ·  Enter submit  ·  Esc cancel",
 		"Alt+Enter line  ·  Enter submit  ·  Esc",
