@@ -19,6 +19,7 @@ func newRootCommand() *cobra.Command {
 		Use:               "devlog",
 		Short:             "Record structured coding session journals inside git repos.",
 		SilenceErrors:     true,
+		SilenceUsage:      true,
 		CompletionOptions: cobra.CompletionOptions{HiddenDefaultCmd: true},
 		Long: `devlog records structured coding session journals inside a git repository.
 
