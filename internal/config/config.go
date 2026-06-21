@@ -63,6 +63,12 @@ type DisplayConfig struct {
 	ClockFormat string `yaml:"clock_format,omitempty"`
 }
 
+// DisplayTimeFormatter formats timestamps according to display config.
+type DisplayTimeFormatter struct {
+	location    *time.Location
+	clockFormat string
+}
+
 // HandoffConfig controls handoff generation options.
 type HandoffConfig struct {
 	DiffContextLines int `yaml:"diff_context_lines,omitempty"`
@@ -241,6 +247,70 @@ func (c Config) ResolveAuthorIdentity(gitProfile func() (string, string, error))
 		return "", "", fmt.Errorf("author.default_profile %q must be %q or a configured author profile", defaultProfile, BuiltInGitProfile)
 	}
 	return strings.TrimSpace(profile.Display), strings.TrimSpace(profile.Email), nil
+}
+
+// NewDisplayTimeFormatter resolves display settings into a reusable timestamp formatter.
+func NewDisplayTimeFormatter(display DisplayConfig) (DisplayTimeFormatter, error) {
+	timezone := strings.TrimSpace(display.Timezone)
+	if timezone == "" {
+		timezone = TimezoneUTC
+	}
+	clockFormat := strings.TrimSpace(display.ClockFormat)
+	if clockFormat == "" {
+		clockFormat = ClockFormat24h
+	}
+
+	var location *time.Location
+	switch timezone {
+	case TimezoneUTC:
+		location = time.UTC
+	case TimezoneLocal:
+		location = time.Local
+	default:
+		loaded, err := time.LoadLocation(timezone)
+		if err != nil {
+			return DisplayTimeFormatter{}, fmt.Errorf("display.timezone %q must be %q, %q, or a valid IANA timezone", timezone, TimezoneUTC, TimezoneLocal)
+		}
+		location = loaded
+	}
+
+	switch clockFormat {
+	case ClockFormat12h, ClockFormat24h:
+		return DisplayTimeFormatter{location: location, clockFormat: clockFormat}, nil
+	default:
+		return DisplayTimeFormatter{}, fmt.Errorf("display.clock_format %q must be %q or %q", display.ClockFormat, ClockFormat12h, ClockFormat24h)
+	}
+}
+
+// DefaultDisplayTimeFormatter returns the formatter for the default display settings.
+func DefaultDisplayTimeFormatter() DisplayTimeFormatter {
+	formatter, err := NewDisplayTimeFormatter(Default().Display)
+	if err != nil {
+		panic(err)
+	}
+	return formatter
+}
+
+// DateTime formats full timestamp fields, preserving RFC3339 for default UTC 24h output.
+func (f DisplayTimeFormatter) DateTime(t time.Time) string {
+	return f.format(t, time.RFC3339, "2006-01-02 3:04:05 PM MST")
+}
+
+// EventTime formats event timestamps with minute precision.
+func (f DisplayTimeFormatter) EventTime(t time.Time) string {
+	return f.format(t, "2006-01-02 15:04 MST", "2006-01-02 3:04 PM MST")
+}
+
+func (f DisplayTimeFormatter) format(t time.Time, layout24h, layout12h string) string {
+	location := f.location
+	if location == nil {
+		location = time.UTC
+	}
+	layout := layout24h
+	if f.clockFormat == ClockFormat12h {
+		layout = layout12h
+	}
+	return t.In(location).Format(layout)
 }
 
 func validateAuthor(author AuthorConfig) error {
