@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 )
 
@@ -52,6 +53,29 @@ func TestRootCommandShowsVersionWhenFlagSet(t *testing.T) {
 	}
 	assertContains(t, out.String(), "devlog")
 	assertContains(t, out.String(), "version: "+version)
+}
+
+func TestRootCommandRuntimeErrorDoesNotPrintUsage(t *testing.T) {
+	original := launchTUI
+	defer func() { launchTUI = original }()
+
+	launchTUI = func() error {
+		return fmt.Errorf("display.timezone %q must be %q, %q, or a valid IANA timezone", "New York", "UTC", "local")
+	}
+
+	cmd := newRootCommand()
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs(nil)
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected runtime error, got nil")
+	}
+	assertContains(t, err.Error(), "display.timezone")
+	assertNotContains(t, errOut.String(), "Usage:")
+	assertNotContains(t, errOut.String(), "Flags:")
 }
 
 func TestRootHelpUsesStaticStyleAndHidesCompletion(t *testing.T) {
