@@ -10,6 +10,7 @@ import (
 
 func TestStatusCommandShowsActiveSessionEventsAndBlockers(t *testing.T) {
 	requireCmdTestGit(t)
+	setConfigTestHome(t)
 
 	root := initCmdTestRepo(t)
 	sess := writeCmdTestSession(t, root)
@@ -57,6 +58,7 @@ func TestStatusCommandFailsWithoutActiveSession(t *testing.T) {
 
 func TestStatusCommandLimitsRecentEvents(t *testing.T) {
 	requireCmdTestGit(t)
+	setConfigTestHome(t)
 
 	root := initCmdTestRepo(t)
 	sess := writeCmdTestSession(t, root)
@@ -81,6 +83,7 @@ func TestStatusCommandLimitsRecentEvents(t *testing.T) {
 
 func TestStatusCommandShowsAllRecentEventsWhenNumberIsZero(t *testing.T) {
 	requireCmdTestGit(t)
+	setConfigTestHome(t)
 
 	root := initCmdTestRepo(t)
 	sess := writeCmdTestSession(t, root)
@@ -98,6 +101,47 @@ func TestStatusCommandShowsAllRecentEventsWhenNumberIsZero(t *testing.T) {
 	assertContains(t, out, "second note")
 	assertContains(t, out, "start message")
 	assertNotContains(t, out, "Start: start message")
+}
+
+func TestStatusCommandUsesConfiguredDisplayTime(t *testing.T) {
+	requireCmdTestGit(t)
+	_, configPath := setConfigTestHome(t)
+	writeConfigTestFile(t, configPath, `display:
+  timezone: America/New_York
+  clock_format: 12h
+`)
+
+	root := initCmdTestRepo(t)
+	sess := writeCmdTestSession(t, root)
+	appendCmdTestSessionBody(t, root, sess.ID, "\n## Note - 2026-01-15 15:30 UTC\n\nfinished parser\n")
+	appendCmdTestSessionBody(t, root, sess.ID, "\n## Blocker - 2026-01-15 16:45 UTC\n\nwaiting for review\n")
+	t.Chdir(root)
+
+	out, err := executeStatusCommand()
+	if err != nil {
+		t.Fatalf("status command failed: %v", err)
+	}
+
+	assertContains(t, out, "started: 2026-01-15 9:00:00 AM EST")
+	assertContains(t, out, "2026-01-15 10:30 AM EST Note: finished parser")
+	assertContains(t, out, "2026-01-15 11:45 AM EST: waiting for review")
+}
+
+func TestStatusCommandRejectsInvalidDisplayConfig(t *testing.T) {
+	requireCmdTestGit(t)
+	_, configPath := setConfigTestHome(t)
+	writeConfigTestFile(t, configPath, `display:
+  timezone: "New York"
+`)
+
+	root := initCmdTestRepo(t)
+	writeCmdTestSession(t, root)
+	t.Chdir(root)
+
+	_, err := executeStatusCommand()
+	if err == nil || !strings.Contains(err.Error(), "display.timezone") {
+		t.Fatalf("expected display timezone error, got: %v", err)
+	}
 }
 
 func TestRootCommandIncludesStatusCommand(t *testing.T) {

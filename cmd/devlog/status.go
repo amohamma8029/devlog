@@ -5,13 +5,12 @@ import (
 	"strings"
 	"time"
 
+	internalconfig "github.com/amo/devlog/internal/config"
 	internalgit "github.com/amo/devlog/internal/git"
 	"github.com/amo/devlog/internal/session"
 	"github.com/amo/devlog/internal/store"
 	"github.com/spf13/cobra"
 )
-
-const statusEventTimeLayout = "2006-01-02 15:04 UTC"
 
 func newStatusCommand() *cobra.Command {
 	var number int
@@ -47,7 +46,16 @@ func newStatusCommand() *cobra.Command {
 			}
 
 			events := store.ParseSessionEvents(body)
-			_, err = fmt.Fprint(cmd.OutOrStdout(), renderStatus(active, events, number, time.Now().UTC()))
+			cfg, err := loadRuntimeConfig()
+			if err != nil {
+				return err
+			}
+			formatter, err := internalconfig.NewDisplayTimeFormatter(cfg.Display)
+			if err != nil {
+				return err
+			}
+
+			_, err = fmt.Fprint(cmd.OutOrStdout(), renderStatus(active, events, number, time.Now().UTC(), formatter))
 			return err
 		},
 	}
@@ -57,14 +65,14 @@ func newStatusCommand() *cobra.Command {
 	return cmd
 }
 
-func renderStatus(active *store.SessionRecord, events []store.SessionEvent, number int, now time.Time) string {
+func renderStatus(active *store.SessionRecord, events []store.SessionEvent, number int, now time.Time, formatter internalconfig.DisplayTimeFormatter) string {
 	var b strings.Builder
 
 	b.WriteString(cliSessionTitleWithID(statusSessionTitle(events, active.ID), active.ID))
 	b.WriteByte('\n')
 	writeCLIBranchField(&b, active.Branch, false)
 	writeCLIField(&b, "author", formatStatusAuthor(active.Author, active.Email))
-	writeCLIField(&b, "started", active.Started.UTC().Format(time.RFC3339))
+	writeCLIField(&b, "started", formatter.DateTime(active.Started))
 	writeCLIField(&b, "duration", formatStatusDuration(now.Sub(active.Started.UTC())))
 
 	b.WriteString("\n")
@@ -75,12 +83,12 @@ func renderStatus(active *store.SessionRecord, events []store.SessionEvent, numb
 		b.WriteString(cliTitleStyle.Render(fmt.Sprintf("Recent events (last %d)", number)))
 		b.WriteByte('\n')
 	}
-	writeRecentStatusEvents(&b, recentStatusEvents(events, number))
+	writeRecentStatusEvents(&b, recentStatusEvents(events, number), formatter)
 
 	b.WriteString("\n")
 	b.WriteString(cliBlockerTitle("Blockers"))
 	b.WriteByte('\n')
-	writeStatusBlockers(&b, events)
+	writeStatusBlockers(&b, events, formatter)
 
 	return b.String()
 }
@@ -150,18 +158,18 @@ func recentStatusEvents(events []store.SessionEvent, number int) []store.Session
 	return visible[len(visible)-number:]
 }
 
-func writeRecentStatusEvents(b *strings.Builder, events []store.SessionEvent) {
+func writeRecentStatusEvents(b *strings.Builder, events []store.SessionEvent, formatter internalconfig.DisplayTimeFormatter) {
 	if len(events) == 0 {
 		b.WriteString("  None\n")
 		return
 	}
 
 	for i := len(events) - 1; i >= 0; i-- {
-		writeStatusEvent(b, events[i])
+		writeStatusEvent(b, events[i], formatter)
 	}
 }
 
-func writeStatusEvent(b *strings.Builder, event store.SessionEvent) {
+func writeStatusEvent(b *strings.Builder, event store.SessionEvent, formatter internalconfig.DisplayTimeFormatter) {
 	var line string
 	if event.Time.IsZero() {
 		line = cliBulletLine(fmt.Sprintf("%s: %s", event.Type, oneLineStatusBody(event.Body)))
@@ -170,12 +178,12 @@ func writeStatusEvent(b *strings.Builder, event store.SessionEvent) {
 		return
 	}
 
-	line = cliBulletLine(fmt.Sprintf("%s %s: %s", formatStatusEventTime(event.Time), event.Type, oneLineStatusBody(event.Body)))
+	line = cliBulletLine(fmt.Sprintf("%s %s: %s", formatStatusEventTime(event.Time, formatter), event.Type, oneLineStatusBody(event.Body)))
 	b.WriteString(cliEventText(event.Type, line))
 	b.WriteByte('\n')
 }
 
-func writeStatusBlockers(b *strings.Builder, events []store.SessionEvent) {
+func writeStatusBlockers(b *strings.Builder, events []store.SessionEvent, formatter internalconfig.DisplayTimeFormatter) {
 	found := false
 	for _, event := range events {
 		if event.Type != "Blocker" {
@@ -190,7 +198,7 @@ func writeStatusBlockers(b *strings.Builder, events []store.SessionEvent) {
 			b.WriteByte('\n')
 			continue
 		}
-		line = cliBulletLine(fmt.Sprintf("%s: %s", formatStatusEventTime(event.Time), oneLineStatusBody(event.Body)))
+		line = cliBulletLine(fmt.Sprintf("%s: %s", formatStatusEventTime(event.Time, formatter), oneLineStatusBody(event.Body)))
 		b.WriteString(cliBlockerStyle.Render(line))
 		b.WriteByte('\n')
 	}
@@ -200,8 +208,8 @@ func writeStatusBlockers(b *strings.Builder, events []store.SessionEvent) {
 	}
 }
 
-func formatStatusEventTime(t time.Time) string {
-	return t.UTC().Format(statusEventTimeLayout)
+func formatStatusEventTime(t time.Time, formatter internalconfig.DisplayTimeFormatter) string {
+	return formatter.EventTime(t)
 }
 
 func statusSessionTitle(events []store.SessionEvent, fallback string) string {
