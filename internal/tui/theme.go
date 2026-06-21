@@ -151,3 +151,8 @@ var ActiveSearchMatchStyle = lipgloss.NewStyle().
 var WarningPromptStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
 	BorderForeground(lipgloss.Color("#FFAA00"))
+
+var SelectedEventStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(lipgloss.Color("#7DD3FC")).
+	Padding(0, 1)

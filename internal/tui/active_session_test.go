@@ -761,13 +761,37 @@ func TestFilterNonStartEvents(t *testing.T) {
 		{Type: "Blocker", Time: testEventTime(15, 0), Body: "blocked"},
 		{Type: "Stop", Time: testEventTime(16, 0), Body: "done"},
 	}
-	filtered := filterNonStartEvents(events)
+	filtered := filterVisibleEvents(events)
 	if len(filtered) != 3 {
 		t.Fatalf("expected 3 non-Start events, got %d", len(filtered))
 	}
 	for _, e := range filtered {
 		if e.Type == "Start" {
-			t.Errorf("filterNonStartEvents should not include Start events, got: %v", e)
+			t.Errorf("filterVisibleEvents should not include Start events, got: %v", e)
+		}
+		if e.IsDeleted {
+			t.Errorf("filterVisibleEvents should not include deleted events, got: %v", e)
+		}
+	}
+}
+
+func TestFilterVisibleEventsExcludesDeleted(t *testing.T) {
+	events := []store.SessionEvent{
+		{Type: "Start", Body: "title"},
+		{Type: "Note", Time: testEventTime(14, 30), Body: "note 1"},
+		{Type: "Note", Time: testEventTime(14, 35), Body: "deleted", IsDeleted: true},
+		{Type: "Blocker", Time: testEventTime(15, 0), Body: "blocked"},
+	}
+	filtered := filterVisibleEvents(events)
+	if len(filtered) != 2 {
+		t.Fatalf("expected 2 visible events, got %d", len(filtered))
+	}
+	for _, e := range filtered {
+		if e.IsDeleted {
+			t.Errorf("filterVisibleEvents should exclude deleted events, got: %v", e)
+		}
+		if e.Type == "Start" {
+			t.Errorf("filterVisibleEvents should exclude Start events, got: %v", e)
 		}
 	}
 }
