@@ -99,7 +99,7 @@ func TestRunWizardAllValues(t *testing.T) {
 	o := &onboarder{configPath: configPath, gitProfile: noGitProfile}
 
 	var buf bytes.Buffer
-	input := "Alice\nalice@example.com\ncode\nAmerica/New_York\n"
+	input := "Alice\nalice@example.com\ncode\nAmerica/New_York\n12h\n"
 
 	if err := o.runWizard(&buf, bufio.NewReader(strings.NewReader(input))); err != nil {
 		t.Fatalf("runWizard: %v", err)
@@ -130,6 +130,9 @@ func TestRunWizardAllValues(t *testing.T) {
 	if cfg.Display.Timezone != "America/New_York" {
 		t.Errorf("timezone = %q, want %q", cfg.Display.Timezone, "America/New_York")
 	}
+	if cfg.Display.ClockFormat != "12h" {
+		t.Errorf("clock_format = %q, want %q", cfg.Display.ClockFormat, "12h")
+	}
 }
 
 func TestRunWizardAcceptsDefaults(t *testing.T) {
@@ -140,7 +143,7 @@ func TestRunWizardAcceptsDefaults(t *testing.T) {
 	var buf bytes.Buffer
 	// Name: enter "Bob", Email: enter (accept default), Editor: enter (accept default... wait, editor has no default, so empty rejected)
 	// Let me provide explicit values for all required fields
-	input := "Bob\nbob@test.com\nvim\n\n" // timezone: enter accepts UTC
+	input := "Bob\nbob@test.com\nvim\n\n\n"
 
 	if err := o.runWizard(&buf, bufio.NewReader(strings.NewReader(input))); err != nil {
 		t.Fatalf("runWizard: %v", err)
@@ -157,6 +160,9 @@ func TestRunWizardAcceptsDefaults(t *testing.T) {
 	if cfg.Editor.Command != "vim" {
 		t.Errorf("editor = %q, want vim", cfg.Editor.Command)
 	}
+	if cfg.Display.ClockFormat != "24h" {
+		t.Errorf("clock_format default = %q, want 24h", cfg.Display.ClockFormat)
+	}
 }
 
 func TestRunWizardRejectsEmptyName(t *testing.T) {
@@ -165,7 +171,7 @@ func TestRunWizardRejectsEmptyName(t *testing.T) {
 	o := &onboarder{configPath: configPath, gitProfile: noGitProfile}
 
 	var buf bytes.Buffer
-	input := "\nAlice\nalice@example.com\nnano\nUTC\n"
+	input := "\nAlice\nalice@example.com\nnano\nUTC\n24h\n"
 
 	if err := o.runWizard(&buf, bufio.NewReader(strings.NewReader(input))); err != nil {
 		t.Fatalf("runWizard: %v", err)
@@ -191,7 +197,7 @@ func TestRunWizardRejectsInvalidEmail(t *testing.T) {
 	o := &onboarder{configPath: configPath, gitProfile: noGitProfile}
 
 	var buf bytes.Buffer
-	input := "Alice\nbad\nbob@test.com\nnano\nUTC\n"
+	input := "Alice\nbad\nbob@test.com\nnano\nUTC\n24h\n"
 
 	if err := o.runWizard(&buf, bufio.NewReader(strings.NewReader(input))); err != nil {
 		t.Fatalf("runWizard: %v", err)
@@ -217,7 +223,7 @@ func TestRunWizardRejectsEmptyEditor(t *testing.T) {
 	o := &onboarder{configPath: configPath, gitProfile: noGitProfile}
 
 	var buf bytes.Buffer
-	input := "Alice\nalice@example.com\n\nnano\nUTC\n"
+	input := "Alice\nalice@example.com\n\nnano\nUTC\n24h\n"
 
 	if err := o.runWizard(&buf, bufio.NewReader(strings.NewReader(input))); err != nil {
 		t.Fatalf("runWizard: %v", err)
@@ -243,7 +249,7 @@ func TestRunWizardRejectsInvalidTimezone(t *testing.T) {
 	o := &onboarder{configPath: configPath, gitProfile: noGitProfile}
 
 	var buf bytes.Buffer
-	input := "Alice\nalice@example.com\nnano\nMars\nUTC\n"
+	input := "Alice\nalice@example.com\nnano\nMars\nUTC\n24h\n"
 
 	if err := o.runWizard(&buf, bufio.NewReader(strings.NewReader(input))); err != nil {
 		t.Fatalf("runWizard: %v", err)
@@ -269,7 +275,7 @@ func TestRunWizardAcceptsLocalTimezone(t *testing.T) {
 	o := &onboarder{configPath: configPath, gitProfile: noGitProfile}
 
 	var buf bytes.Buffer
-	input := "Alice\nalice@example.com\nnano\nlocal\n"
+	input := "Alice\nalice@example.com\nnano\nlocal\n12h\n"
 
 	if err := o.runWizard(&buf, bufio.NewReader(strings.NewReader(input))); err != nil {
 		t.Fatalf("runWizard: %v", err)
@@ -326,7 +332,7 @@ func TestRunWizardAcceptsEmptyEmail(t *testing.T) {
 	o := &onboarder{configPath: configPath, gitProfile: noGitProfile}
 
 	var buf bytes.Buffer
-	input := "Alice\n\nnano\nUTC\n"
+	input := "Alice\n\nnano\nUTC\n24h\n"
 
 	if err := o.runWizard(&buf, bufio.NewReader(strings.NewReader(input))); err != nil {
 		t.Fatalf("runWizard: %v", err)
