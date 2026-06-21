@@ -55,7 +55,12 @@ func newHandoffCommand() *cobra.Command {
 				return err
 			}
 
-			diff, err := internalgit.DiffSince(rec.Started.UTC())
+			cfg, err := loadRuntimeConfig()
+			if err != nil {
+				return err
+			}
+
+			diff, err := internalgit.DiffSinceWithContext(rec.Started.UTC(), cfg.Handoff.DiffContextLines)
 			if err != nil {
 				return err
 			}

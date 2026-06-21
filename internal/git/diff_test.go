@@ -66,6 +66,80 @@ func TestDiffSinceUncommittedChanges(t *testing.T) {
 	}
 }
 
+func TestDiffSinceWithContextUsesConfiguredContextLines(t *testing.T) {
+	requireGit(t)
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	runGitIn(t, dir, "init")
+	runGitIn(t, dir, "checkout", "-b", "feat/test")
+	writeTestFile(t, dir, "README.md", strings.Join([]string{
+		"line one",
+		"context before",
+		"old target",
+		"context after",
+		"line five",
+	}, "\n")+"\n")
+	commitWithDate(t, dir, "2000-01-01T00:00:00Z", "initial")
+
+	sessionStart := time.Now().UTC()
+	writeTestFile(t, dir, "README.md", strings.Join([]string{
+		"line one",
+		"context before",
+		"new target",
+		"context after",
+		"line five",
+	}, "\n")+"\n")
+
+	diff, err := DiffSinceWithContext(sessionStart, 0)
+	if err != nil {
+		t.Fatalf("DiffSinceWithContext failed: %v", err)
+	}
+
+	if !strings.Contains(diff, "-old target") || !strings.Contains(diff, "+new target") {
+		t.Fatalf("expected changed lines in zero-context diff, got:\n%s", diff)
+	}
+	if strings.Contains(diff, "\n context before") || strings.Contains(diff, "\n context after") {
+		t.Fatalf("zero-context diff should omit surrounding context, got:\n%s", diff)
+	}
+
+	defaultDiff, err := DiffSince(sessionStart)
+	if err != nil {
+		t.Fatalf("DiffSince failed: %v", err)
+	}
+	if !strings.Contains(defaultDiff, "\n context before") || !strings.Contains(defaultDiff, "\n context after") {
+		t.Fatalf("default diff should keep surrounding context, got:\n%s", defaultDiff)
+	}
+}
+
+func TestDiffSinceWithContextPreservesSecretFiltering(t *testing.T) {
+	requireGit(t)
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	runGitIn(t, dir, "init")
+	runGitIn(t, dir, "checkout", "-b", "feat/test")
+	writeTestFile(t, dir, ".env", "SECRET_KEY=old-value\n")
+	writeTestFile(t, dir, "src/main.go", "package main\n")
+	commitWithDate(t, dir, "2000-01-01T00:00:00Z", "initial")
+
+	sessionStart := time.Now().UTC()
+	writeTestFile(t, dir, ".env", "SECRET_KEY=new-leaked-value\n")
+	writeTestFile(t, dir, "src/main.go", "package main\nfunc main() {}\n")
+
+	diff, err := DiffSinceWithContext(sessionStart, 0)
+	if err != nil {
+		t.Fatalf("DiffSinceWithContext failed: %v", err)
+	}
+
+	if !strings.Contains(diff, "src/main.go") {
+		t.Errorf("expected diff to contain src/main.go, got:\n%s", diff)
+	}
+	if strings.Contains(diff, ".env") || strings.Contains(diff, "SECRET_KEY") || strings.Contains(diff, "new-leaked-value") {
+		t.Errorf("configured context should preserve secret filtering, got:\n%s", diff)
+	}
+}
+
 func TestDiffSinceUntrackedFile(t *testing.T) {
 	requireGit(t)
 

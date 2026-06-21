@@ -353,6 +353,9 @@ func TestGenerateWithDiff(t *testing.T) {
 	if strings.Contains(out, "index ") {
 		t.Error("index lines should be stripped from raw diff")
 	}
+	if !strings.Contains(out, "\n unchanged context\n") {
+		t.Errorf("expected unchanged context line in raw diff, got:\n%s", out)
+	}
 }
 
 func TestGenerateNewFile(t *testing.T) {

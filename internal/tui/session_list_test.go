@@ -327,6 +327,18 @@ func TestSessionListUsesConfiguredDisplayTime(t *testing.T) {
 	}
 }
 
+func TestSessionListRetainsHandoffDiffContextConfig(t *testing.T) {
+	s, root := newTestStore(t)
+	cfg := internalconfig.Default()
+	cfg.Handoff.DiffContextLines = 0
+
+	m := NewSessionListModelWithConfig(s, root, 140, 24, cfg)
+
+	if m.config.Handoff.DiffContextLines != 0 {
+		t.Fatalf("handoff diff context = %d, want 0", m.config.Handoff.DiffContextLines)
+	}
+}
+
 func TestSessionListViewContainsClosedStatus(t *testing.T) {
 	s, root := newTestStore(t)
 	writeTestSession(t, s, "2026-02-20T090000Z", "feat/b", "Bob", "tests", time.Date(2026, 2, 20, 9, 0, 0, 0, time.UTC))

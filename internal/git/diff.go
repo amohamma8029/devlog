@@ -10,7 +10,10 @@ import (
 	"time"
 )
 
-const emptyTreeHash = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+const (
+	emptyTreeHash           = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+	defaultDiffContextLines = 3
+)
 
 // DiffSince returns a combined git diff string showing all changes from the
 // most recent commit at or before started to the current working tree.
@@ -18,6 +21,15 @@ const emptyTreeHash = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 // and untracked text files. A warning line is prepended if the working tree
 // has merge conflicts. Entries under .devlog/ are stripped from the result.
 func DiffSince(started time.Time) (string, error) {
+	return DiffSinceWithContext(started, defaultDiffContextLines)
+}
+
+// DiffSinceWithContext returns the same combined diff as DiffSince with caller-controlled context lines.
+func DiffSinceWithContext(started time.Time, contextLines int) (string, error) {
+	if contextLines < 0 {
+		return "", fmt.Errorf("DiffSinceWithContext: context lines must be 0 or greater")
+	}
+
 	commit, err := findCommitBefore(started)
 	if err != nil {
 		return "", err
@@ -26,7 +38,7 @@ func DiffSince(started time.Time) (string, error) {
 	var parts []string
 
 	if commit != "" {
-		diff, stderr, err := runGit("diff", commit)
+		diff, stderr, err := runGit("diff", fmt.Sprintf("--unified=%d", contextLines), commit)
 		if diff != "" {
 			parts = append(parts, diff)
 		} else if err != nil && !isDiffExitCode(stderr, err) {
@@ -36,7 +48,7 @@ func DiffSince(started time.Time) (string, error) {
 		// No commits before session start — diff against the empty tree
 		// to capture both committed and uncommitted changes. git diff HEAD
 		// would miss commits that happened after session start.
-		diff, stderr, err := runGit("diff", emptyTreeHash)
+		diff, stderr, err := runGit("diff", fmt.Sprintf("--unified=%d", contextLines), emptyTreeHash)
 		if diff != "" {
 			parts = append(parts, diff)
 		} else if err != nil && !isDiffExitCode(stderr, err) {
@@ -44,7 +56,7 @@ func DiffSince(started time.Time) (string, error) {
 		}
 	}
 
-	untrackedDiff, err := diffUntrackedFiles()
+	untrackedDiff, err := diffUntrackedFiles(contextLines)
 	if err != nil {
 		return "", err
 	}
@@ -91,7 +103,7 @@ func isDiffExitCode(stderr string, err error) bool {
 	return false
 }
 
-func diffUntrackedFiles() (string, error) {
+func diffUntrackedFiles(contextLines int) (string, error) {
 	untracked, stderr, err := runGit("ls-files", "--others", "--exclude-standard")
 	if err != nil {
 		return "", fmt.Errorf("DiffSince: list untracked files: %s", commandFailure(stderr, err))
@@ -139,7 +151,7 @@ func diffUntrackedFiles() (string, error) {
 	var diffOut bytes.Buffer
 	var diffErr bytes.Buffer
 	// If HEAD doesn't exist, we diff against the empty tree.
-	diffCmd := exec.Command("git", "diff", "--cached")
+	diffCmd := exec.Command("git", "diff", "--cached", fmt.Sprintf("--unified=%d", contextLines))
 	diffCmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+indexFile)
 	diffCmd.Stdout = &diffOut
 	diffCmd.Stderr = &diffErr
