@@ -818,7 +818,7 @@ func (m Model) handleCommand(msg CommandExecutedMsg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return CommandErrorMsg{Error: err}
 			}
-			diff, err := internalgit.DiffSince(started)
+			diff, err := internalgit.DiffSinceWithContext(started, m.Config.Handoff.DiffContextLines)
 			if err != nil {
 				return CommandErrorMsg{Error: err}
 			}

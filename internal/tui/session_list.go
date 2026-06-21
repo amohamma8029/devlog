@@ -39,6 +39,7 @@ type SessionListModel struct {
 	loaded        bool
 	err           error
 	store         *store.Store
+	config        internalconfig.Config
 	root          string
 	width         int
 	height        int
@@ -137,6 +138,7 @@ func NewSessionListModelWithConfig(s *store.Store, root string, width, height in
 	}
 	m := SessionListModel{
 		store:       s,
+		config:      cfg,
 		root:        root,
 		width:       width,
 		height:      height,
@@ -554,7 +556,7 @@ func (m SessionListModel) generateHandoff() (tea.Model, tea.Cmd) {
 		if err != nil {
 			return HandoffGeneratedMsg{Error: err}
 		}
-		diff, err := internalgit.DiffSince(started)
+		diff, err := internalgit.DiffSinceWithContext(started, m.config.Handoff.DiffContextLines)
 		if err != nil {
 			return HandoffGeneratedMsg{Error: err}
 		}

@@ -304,6 +304,7 @@ func parseDiffSection(section string) diffFile {
 	var oldPath, newPath string
 	totalWsChanges := 0
 	totalChanges := 0
+	inHunk := false
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -361,6 +362,7 @@ func parseDiffSection(section string) diffFile {
 		// Hunk header — count but strip from raw output.
 		if strings.HasPrefix(trimmed, "@@") {
 			f.hunkCount++
+			inHunk = true
 			continue
 		}
 
@@ -382,6 +384,10 @@ func parseDiffSection(section string) diffFile {
 			if strings.TrimSpace(content) == "" {
 				totalWsChanges++
 			}
+			f.rawLines = append(f.rawLines, line)
+			continue
+		}
+		if inHunk && strings.HasPrefix(line, " ") {
 			f.rawLines = append(f.rawLines, line)
 			continue
 		}

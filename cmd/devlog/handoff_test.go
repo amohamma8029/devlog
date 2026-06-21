@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/amo/devlog/internal/store"
 )
 
 func TestHandoffCommandWritesToDefaultPath(t *testing.T) {
@@ -156,6 +159,68 @@ func TestHandoffCommandWithCodeChanges(t *testing.T) {
 	content := string(data)
 	assertContains(t, content, "#### feature.go")
 	assertContains(t, content, "```diff")
+}
+
+func TestHandoffCommandUsesConfiguredDiffContext(t *testing.T) {
+	requireCmdTestGit(t)
+
+	_, configPath := setConfigTestHome(t)
+	writeConfigTestFile(t, configPath, `handoff:
+  diff_context_lines: 0
+`)
+	root := initCmdTestRepo(t)
+	if err := os.WriteFile(filepath.Join(root, "feature.go"), []byte(strings.Join([]string{
+		"line one",
+		"context before",
+		"old target",
+		"context after",
+		"line five",
+	}, "\n")+"\n"), 0644); err != nil {
+		t.Fatalf("write feature.go failed: %v", err)
+	}
+	runCmdTestGit(t, root, "add", "feature.go")
+	runCmdTestGit(t, root, "-c", "user.name=Test User", "-c", "user.email=test@example.com", "commit", "-m", "initial")
+	s, err := store.New(root)
+	if err != nil {
+		t.Fatalf("store.New failed: %v", err)
+	}
+	sess := store.Session{
+		ID:      "2026-01-15T140001Z",
+		Author:  "Test Author",
+		Started: time.Now().UTC().Add(time.Hour),
+		Branch:  "feat/test",
+		Status:  "active",
+	}
+	if err := s.WriteSession(sess, "start message"); err != nil {
+		t.Fatalf("WriteSession failed: %v", err)
+	}
+	appendCmdTestEvent(t, root, sess.ID, "Note", "changed feature")
+	t.Chdir(root)
+
+	if err := os.WriteFile(filepath.Join(root, "feature.go"), []byte(strings.Join([]string{
+		"line one",
+		"context before",
+		"new target",
+		"context after",
+		"line five",
+	}, "\n")+"\n"), 0644); err != nil {
+		t.Fatalf("write modified feature.go failed: %v", err)
+	}
+
+	_, err = executeHandoffCommand()
+	if err != nil {
+		t.Fatalf("handoff command failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, ".devlog", "handoffs", sess.ID+".md"))
+	if err != nil {
+		t.Fatalf("read output file failed: %v", err)
+	}
+	content := string(data)
+	assertContains(t, content, "-old target")
+	assertContains(t, content, "+new target")
+	assertNotContains(t, content, "\n context before")
+	assertNotContains(t, content, "\n context after")
 }
 
 func TestHandoffCommandNoDiffFlagExcludesRawDiff(t *testing.T) {
