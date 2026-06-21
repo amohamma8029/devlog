@@ -25,7 +25,7 @@ func TestShouldRunFalseWhenConfigExists(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 
-	o := &onboarder{configPath: configPath}
+	o := &onboarder{configPath: configPath, gitProfile: noGitProfile}
 	if o.shouldRun() {
 		t.Error("shouldRun: expected false when config file exists, got true")
 	}
@@ -35,14 +35,14 @@ func TestShouldRunTrueWhenConfigMissing(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.yml")
 
-	o := &onboarder{configPath: configPath}
+	o := &onboarder{configPath: configPath, gitProfile: noGitProfile}
 	if !o.shouldRun() {
 		t.Error("shouldRun: expected true when config file is missing, got false")
 	}
 }
 
 func TestShouldRunFalseWhenConfigPathEmpty(t *testing.T) {
-	o := &onboarder{configPath: ""}
+	o := &onboarder{configPath: "", gitProfile: noGitProfile}
 	if o.shouldRun() {
 		t.Error("shouldRun: expected false when configPath is empty, got true")
 	}
@@ -88,7 +88,7 @@ func TestShouldRunTrueWhenNoRepoRootAndNoConfig(t *testing.T) {
 }
 
 func TestWelcomeMessageContainsExpectedContent(t *testing.T) {
-	o := &onboarder{configPath: "/tmp/config.yml"}
+	o := &onboarder{configPath: "/tmp/config.yml", gitProfile: noGitProfile}
 	msg := o.welcomeMessage()
 
 	mustContain(t, msg, "Welcome to devlog")
@@ -100,20 +100,47 @@ func TestWelcomeMessageContainsExpectedContent(t *testing.T) {
 	mustContain(t, msg, "devlog config edit")
 }
 
-func TestRunWritesToWriter(t *testing.T) {
-	o := &onboarder{configPath: "/tmp/config.yml"}
+func TestRunDeclineWizardWritesDefaultConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yml")
+	o := &onboarder{configPath: configPath, gitProfile: noGitProfile}
 	var buf bytes.Buffer
 
-	if err := o.run(&buf, strings.NewReader("\n")); err != nil {
+	if err := o.run(&buf, strings.NewReader("n\n\n")); err != nil {
 		t.Fatalf("run: unexpected error: %v", err)
 	}
 
 	output := buf.String()
-	if output == "" {
-		t.Error("run: expected non-empty output")
-	}
 	mustContain(t, output, "Welcome to devlog")
+	mustContain(t, output, "Would you like to configure your preferences?")
+	mustContain(t, output, "No problem! A default config has been created")
 	mustContain(t, output, "Press Enter to continue")
+
+	if _, err := os.Stat(configPath); err != nil {
+		t.Errorf("default config not written at %s: %v", configPath, err)
+	}
+}
+
+func TestRunEnterDefaultsToYes(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yml")
+	o := &onboarder{configPath: configPath, gitProfile: noGitProfile}
+	var buf bytes.Buffer
+
+	input := "yes\nAlice\nalice@example.com\nnano\n\n\n"
+	if err := o.run(&buf, strings.NewReader(input)); err != nil {
+		t.Fatalf("run: unexpected error: %v", err)
+	}
+
+	output := buf.String()
+	mustContain(t, output, "Welcome to devlog")
+	mustContain(t, output, "Would you like to configure your preferences?")
+	mustContain(t, output, "Configuration saved")
+	mustContain(t, output, "Press Enter to continue")
+
+	if _, err := os.Stat(configPath); err != nil {
+		t.Errorf("config not written at %s: %v", configPath, err)
+	}
 }
 
 func mustContain(t *testing.T, s, substr string) {
@@ -121,4 +148,8 @@ func mustContain(t *testing.T, s, substr string) {
 	if !strings.Contains(s, substr) {
 		t.Errorf("expected output to contain %q", substr)
 	}
+}
+
+var noGitProfile = func() (string, string, error) {
+	return "", "", nil
 }
