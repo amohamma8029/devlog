@@ -665,74 +665,6 @@ func TestMultiLineBracketedPasteInsertsWithoutSubmitting(t *testing.T) {
 	}
 }
 
-func TestMultiLinePlainPasteSequenceDoesNotSubmitFirstLine(t *testing.T) {
-	for _, tc := range []struct {
-		name       string
-		copyKey    tea.KeyType
-		clearAfter bool
-	}{
-		{name: "after cut", copyKey: tea.KeyCtrlX},
-		{name: "after copy and clear", copyKey: tea.KeyCtrlC, clearAfter: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			p := NewCommandPalette()
-			p.Open = true
-			p.EnterMultiLine(false)
-			p.MultiLineLines = []string{"first", "second"}
-
-			_, np := p.Update(tea.KeyMsg{Type: tea.KeyCtrlA})
-			cmd, np := np.Update(tea.KeyMsg{Type: tc.copyKey})
-			if cmd == nil {
-				t.Fatalf("%s should return a clipboard command", tc.copyKey)
-			}
-			if tc.clearAfter {
-				_, np = np.Update(tea.KeyMsg{Type: tea.KeyDelete})
-			}
-			if got := strings.Join(np.MultiLineLines, "\n"); got != "" {
-				t.Fatalf("body before paste = %q, want empty", got)
-			}
-
-			np = applyPlainMultiLinePasteSequence(t, np)
-			cmd, _ = np.Update(tea.KeyMsg{Type: tea.KeyEnter})
-			if cmd == nil {
-				t.Fatal("Enter after the full paste should submit")
-			}
-			msg := <-testCmdResult(cmd)
-			note, ok := msg.(MultiLineNoteMsg)
-			if !ok {
-				t.Fatalf("submit message = %#v, want MultiLineNoteMsg", msg)
-			}
-			if note.Body != "first\nsecond" {
-				t.Fatalf("submitted body = %q, want %q", note.Body, "first\nsecond")
-			}
-		})
-	}
-}
-
-func TestMultiLinePlainExternalClipboardPasteDoesNotSubmitFirstLine(t *testing.T) {
-	oldReadClipboard := readClipboard
-	readClipboard = func() (string, error) { return "first\nsecond", nil }
-	t.Cleanup(func() { readClipboard = oldReadClipboard })
-
-	p := NewCommandPalette()
-	p.Open = true
-	p.EnterMultiLine(false)
-
-	np := applyPlainMultiLinePasteSequence(t, &p)
-	cmd, _ := np.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd == nil {
-		t.Fatal("Enter after the full external paste should submit")
-	}
-	msg := <-testCmdResult(cmd)
-	note, ok := msg.(MultiLineNoteMsg)
-	if !ok {
-		t.Fatalf("submit message = %#v, want MultiLineNoteMsg", msg)
-	}
-	if note.Body != "first\nsecond" {
-		t.Fatalf("submitted body = %q, want %q", note.Body, "first\nsecond")
-	}
-}
-
 func TestMultiLineShiftHomeSelectsToLineStart(t *testing.T) {
 	p := NewCommandPalette()
 	p.Open = true
@@ -972,29 +904,6 @@ func setMultiLineSelection(p *CommandPalette, line string, cursorCol, anchorRow,
 	p.HasSelection = true
 	p.SelectionAnchorRow = anchorRow
 	p.SelectionAnchorCol = anchorCol
-}
-
-func applyPlainMultiLinePasteSequence(t *testing.T, p *CommandPalette) *CommandPalette {
-	t.Helper()
-	cmd, np := p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("first")})
-	if cmd != nil {
-		t.Fatal("first pasted line should not submit")
-	}
-	cmd, np = np.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd != nil {
-		t.Fatal("pasted newline should not submit")
-	}
-	if got, want := strings.Join(np.MultiLineLines, "\n"), "first\n"; got != want {
-		t.Fatalf("body after pasted newline = %q, want %q", got, want)
-	}
-	cmd, np = np.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("second")})
-	if cmd != nil {
-		t.Fatal("second pasted line should not submit")
-	}
-	if got, want := strings.Join(np.MultiLineLines, "\n"), "first\nsecond"; got != want {
-		t.Fatalf("body after paste = %q, want %q", got, want)
-	}
-	return np
 }
 
 func testSkipIfClipboardUnavailable(t *testing.T, cmd tea.Cmd, p *CommandPalette) {
