@@ -132,7 +132,7 @@ func renderFooter(m Model) string {
 			if m.Width < 80 {
 				text = "? help  ·  ↑/↓ scroll  ·  q quit"
 			} else {
-				text = "? help  ·  ↑/↓ line  ·  pgup/pgdn page  ·  home/end jump  ·  q quit"
+				text = "? help  ·  ↑/↓ line  ·  pgup/pgdn page  ·  home/end jump  ·  tab/s-tab event  ·  e edit  ·  q quit"
 			}
 		} else {
 			text = "l: session list  ·  o: open new session  ·  q quit"
@@ -475,6 +475,9 @@ func generalEntries() []keyEntry {
 		{"pgup", "Scroll up one page"},
 		{"home", "Jump to top"},
 		{"end", "Jump to bottom"},
+		{"tab", "Select next event"},
+		{"shift+tab", "Select previous event"},
+		{"e", "Edit selected event"},
 		{"q", "Quit"},
 	}
 }
@@ -680,37 +683,41 @@ func activeSessionTimelineLines(m Model) []string {
 	if m.activeTimelineLines != nil && m.activeTimelineWidth == m.Width {
 		return m.activeTimelineLines
 	}
-	return buildActiveSessionTimelineLines(m)
+	lines, _ := buildActiveSessionTimelineLines(m)
+	return lines
 }
 
-func buildActiveSessionTimelineLines(m Model) []string {
+func buildActiveSessionTimelineLines(m Model) ([]string, []int) {
 	width := m.Width
 	if width < 40 {
 		width = 40
 	}
 	contentWidth := width - 2
 
-	nonStartEvents := filterNonStartEvents(m.Events)
+	nonStartEvents := filterVisibleEvents(m.Events)
 	if len(nonStartEvents) == 0 {
-		return nil
+		return nil, nil
 	}
-	return renderEventLines(nonStartEvents, contentWidth, modelDisplayTimeFormatter(m))
+	lines, starts := renderEventLines(nonStartEvents, contentWidth, modelDisplayTimeFormatter(m), m.SelectedEvent)
+	return lines, starts
 }
 
-func filterNonStartEvents(events []store.SessionEvent) []store.SessionEvent {
+func filterVisibleEvents(events []store.SessionEvent) []store.SessionEvent {
 	var result []store.SessionEvent
 	for _, e := range events {
-		if e.Type != "Start" {
-			result = append(result, e)
+		if e.Type == "Start" || e.IsDeleted {
+			continue
 		}
+		result = append(result, e)
 	}
 	return result
 }
 
-func renderEventLines(events []store.SessionEvent, maxWidth int, formatter internalconfig.DisplayTimeFormatter) []string {
+func renderEventLines(events []store.SessionEvent, maxWidth int, formatter internalconfig.DisplayTimeFormatter, selectedIdx int) ([]string, []int) {
 	var lines []string
+	var starts []int
 	if len(events) == 0 {
-		return lines
+		return lines, starts
 	}
 
 	eventWidth := maxWidth - 4
@@ -720,15 +727,27 @@ func renderEventLines(events []store.SessionEvent, maxWidth int, formatter inter
 
 	timelineChar := "│"
 
-	for _, event := range events {
+	for idx, event := range events {
+		starts = append(starts, len(lines))
 		eventStyle := PanelStyle
 		labelStyle := EventStyle
 		connectorStyle := ConnectorStyle.Foreground(lipgloss.Color("#555555"))
 
+		if idx == selectedIdx {
+			eventStyle = SelectedEventStyle
+			connectorStyle = ConnectorStyle.Foreground(lipgloss.Color("#7DD3FC"))
+		}
+
 		if event.Type == "Blocker" {
-			eventStyle = BlockerStyle.Foreground(lipgloss.Color("#FF6600"))
-			labelStyle = BlockerLabelStyle
-			connectorStyle = ConnectorStyle.Foreground(lipgloss.Color("#FF6600"))
+			if idx == selectedIdx {
+				eventStyle = SelectedEventStyle
+				labelStyle = BlockerLabelStyle
+				connectorStyle = ConnectorStyle.Foreground(lipgloss.Color("#7DD3FC"))
+			} else {
+				eventStyle = BlockerStyle.Foreground(lipgloss.Color("#FF6600"))
+				labelStyle = BlockerLabelStyle
+				connectorStyle = ConnectorStyle.Foreground(lipgloss.Color("#FF6600"))
+			}
 		}
 
 		timeStr := formatter.EventTime(event.Time)
@@ -742,6 +761,11 @@ func renderEventLines(events []store.SessionEvent, maxWidth int, formatter inter
 		bodyLines := splitLines(event.Body, eventWidth-4)
 		var paneLines []string
 		paneLines = append(paneLines, header)
+
+		if !event.CorrectedAt.IsZero() {
+			modifiedStr := formatter.EventTime(event.CorrectedAt)
+			paneLines = append(paneLines, MetadataStyle.Render("modified "+modifiedStr))
+		}
 
 		if len(bodyLines) == 1 && bodyLines[0] == "" {
 		} else {
@@ -772,7 +796,7 @@ func renderEventLines(events []store.SessionEvent, maxWidth int, formatter inter
 		lines = append(lines, bottomBar)
 	}
 
-	return lines
+	return lines, starts
 }
 
 func splitLines(text string, maxWidth int) []string {

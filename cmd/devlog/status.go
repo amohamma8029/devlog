@@ -177,6 +177,9 @@ func writeStatusEvent(b *strings.Builder, event store.SessionEvent, formatter in
 	} else {
 		line = cliBulletLine(fmt.Sprintf("[%d] %s %s: %s", index, formatStatusEventTime(event.Time, formatter), event.Type, oneLineStatusBody(event.Body)))
 	}
+	if !event.CorrectedAt.IsZero() {
+		line += " " + cliMutedStyle.Render(fmt.Sprintf("(modified %s)", formatStatusEventTime(event.CorrectedAt, formatter)))
+	}
 	b.WriteString(cliEventText(event.Type, line))
 	b.WriteByte('\n')
 }

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -59,6 +60,9 @@ type Model struct {
 	lastLineScroll             time.Time
 	activeTimelineLines        []string
 	activeTimelineWidth        int
+	activeEventLineStarts      []int
+	SelectedEvent              int
+	EditingEvent               int
 	handoffBodyLines           []string
 	handoffBodyLineWidth       int
 	displayTime                internalconfig.DisplayTimeFormatter
@@ -91,13 +95,15 @@ func NewModelWithConfig(s *store.Store, root string, cfg internalconfig.Config) 
 		formatter = internalconfig.DefaultDisplayTimeFormatter()
 	}
 	m := Model{
-		CurrentView: SessionList,
-		Palette:     &p,
-		Store:       s,
-		Config:      cfg,
-		SessionList: NewSessionListModelWithConfig(s, root, 80, 24, cfg),
-		Root:        root,
-		displayTime: formatter,
+		CurrentView:  SessionList,
+		Palette:      &p,
+		Store:        s,
+		Config:       cfg,
+		SessionList:  NewSessionListModelWithConfig(s, root, 80, 24, cfg),
+		Root:         root,
+		displayTime:  formatter,
+		SelectedEvent: -1,
+		EditingEvent:  -1,
 	}
 	if err != nil {
 		m.ErrorMessage = err.Error()
@@ -146,6 +152,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.OpenPromptOpen = false
 		m.OpenInput = ""
 		m.activeSessionMetadataKnown = false
+		m.SelectedEvent = -1
 		m.refreshActiveTimelineCache()
 		changed := m.setView(ActiveSession)
 		return m, clearScreenIfChanged(changed)
@@ -360,7 +367,7 @@ func (m *Model) refreshScrollBodyCaches() {
 }
 
 func (m *Model) refreshActiveTimelineCache() {
-	m.activeTimelineLines = buildActiveSessionTimelineLines(*m)
+	m.activeTimelineLines, m.activeEventLineStarts = buildActiveSessionTimelineLines(*m)
 	m.activeTimelineWidth = m.Width
 }
 
@@ -451,8 +458,12 @@ func sessionEventsClosed(events []store.SessionEvent) bool {
 }
 
 func (m Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	cmd, _ := m.Palette.Update(msg)
+	wasOpen := m.Palette.Open
+	cmd, p := m.Palette.Update(msg)
 	m.HandoffMsg = ""
+	if wasOpen && !p.Open && cmd == nil {
+		m.EditingEvent = -1
+	}
 	if cmd != nil {
 		return m, cmd
 	}
@@ -513,6 +524,10 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if key == "esc" {
+		if m.CurrentView == ActiveSession && m.SelectedEvent >= 0 {
+			m.SelectedEvent = -1
+			return m, nil
+		}
 		if m.CurrentView == HandoffPreview && m.CollapsedDiffConfirmOpen {
 			m.CollapsedDiffConfirmOpen = false
 			m.CollapsedDiffConfirmAction = ""
@@ -605,31 +620,130 @@ func (m Model) activeSessionKeyHandler(key string) (tea.Model, tea.Cmd) {
 		m.ShowHelp = true
 		return m, nil
 
+	case "tab":
+		return m.handleEventNavigation(1)
+
+	case "shift+tab":
+		return m.handleEventNavigation(-1)
+
+	case "e", "enter":
+		if m.SelectedEvent >= 0 {
+			return m.handleEditEvent()
+		}
+		return m, nil
+
 	case "down":
+		m.SelectedEvent = -1
 		return m.handleLineScrollKey(scrollDirectionDown, time.Now())
 
 	case "up":
+		m.SelectedEvent = -1
 		return m.handleLineScrollKey(scrollDirectionUp, time.Now())
 
 	case "pgdown":
+		m.SelectedEvent = -1
 		m.ScrollOffset += activeSessionPageSize(m)
 		clampActiveSessionModelScroll(&m)
 		return m, nil
 
 	case "pgup":
+		m.SelectedEvent = -1
 		m.ScrollOffset -= activeSessionPageSize(m)
 		clampActiveSessionModelScroll(&m)
 		return m, nil
 
 	case "home":
+		m.SelectedEvent = -1
 		m.ScrollOffset = 0
 		return m, nil
 
 	case "end":
+		m.SelectedEvent = -1
 		m.ScrollOffset = activeSessionMaxScrollOffset(m)
 		return m, nil
 	}
 
+	return m, nil
+}
+
+func (m Model) handleEventNavigation(delta int) (tea.Model, tea.Cmd) {
+	events := m.Events
+	count := 0
+	for _, e := range events {
+		if e.Type == "Start" || e.IsDeleted {
+			continue
+		}
+		count++
+	}
+	if count == 0 {
+		return m, nil
+	}
+
+	newIdx := m.SelectedEvent + delta
+	if newIdx < 0 {
+		newIdx = count - 1
+	}
+	if newIdx >= count {
+		newIdx = 0
+	}
+	m.SelectedEvent = newIdx
+	m.activeTimelineWidth = -1 // invalidate cache so highlight renders
+
+	if len(m.activeEventLineStarts) > newIdx {
+		targetLine := m.activeEventLineStarts[newIdx]
+		pageSize := activeSessionPageSize(m)
+		maxOffset := activeSessionMaxScrollOffset(m)
+		if targetLine < m.ScrollOffset {
+			m.ScrollOffset = targetLine
+		} else if targetLine >= m.ScrollOffset+pageSize {
+			m.ScrollOffset = targetLine - pageSize + 1
+		}
+		clampActiveSessionModelScroll(&m)
+		_ = maxOffset
+	}
+
+	return m, nil
+}
+
+func (m Model) handleEditEvent() (tea.Model, tea.Cmd) {
+	if m.SelectedEvent < 0 || m.Palette == nil {
+		return m, nil
+	}
+
+	events := m.Events
+	visibleIdx := 0
+	fullIdx := -1
+	for i, e := range events {
+		if e.Type == "Start" || e.IsDeleted {
+			continue
+		}
+		if visibleIdx == m.SelectedEvent {
+			fullIdx = i
+			break
+		}
+		visibleIdx++
+	}
+	if fullIdx < 0 || fullIdx >= len(events) {
+		return m, nil
+	}
+
+	event := events[fullIdx]
+	if event.Type == "Start" || event.Type == "Stop" {
+		return m, nil
+	}
+
+	m.EditingEvent = fullIdx
+	m.Palette.OpenPalette()
+	lines := strings.Split(event.Body, "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		lines = []string{""}
+	}
+	m.Palette.MultiLine = true
+	m.Palette.MultiLineLines = lines
+	m.Palette.MultiLineCursorRow = len(lines) - 1
+	m.Palette.MultiLineCursorCol = len(lines[len(lines)-1])
+	m.Palette.MultiLineIsBlocker = event.Type == "Blocker"
+	m.Palette.Input = ""
 	return m, nil
 }
 
@@ -1023,6 +1137,11 @@ func (m Model) handleMultiLineSubmit(msg MultiLineNoteMsg) (tea.Model, tea.Cmd) 
 		m.ErrorMessage = "Cannot add " + eventLabel + " to a closed session"
 		return m, nil
 	}
+
+	if m.EditingEvent >= 0 {
+		return m.handleCorrectionSubmit(body)
+	}
+
 	eventType := "Note"
 	if msg.IsBlocker {
 		eventType = "Blocker"
@@ -1030,6 +1149,26 @@ func (m Model) handleMultiLineSubmit(msg MultiLineNoteMsg) (tea.Model, tea.Cmd) 
 	sessionID := m.ActiveSession.ID
 	return m, func() tea.Msg {
 		err := m.Store.AppendEvent(sessionID, eventType, body)
+		if err != nil {
+			return CommandErrorMsg{Error: err}
+		}
+		return m.reloadEvents()
+	}
+}
+
+func (m Model) handleCorrectionSubmit(body string) (tea.Model, tea.Cmd) {
+	if m.EditingEvent < 0 || m.EditingEvent >= len(m.Events) {
+		m.EditingEvent = -1
+		return m, nil
+	}
+
+	event := m.Events[m.EditingEvent]
+	correctionBody := fmt.Sprintf("%s %02d:%02d\n%s\n%s", event.Type, event.Time.UTC().Hour(), event.Time.UTC().Minute(), event.Body, body)
+	sessionID := m.ActiveSession.ID
+	m.SelectedEvent = -1
+	m.EditingEvent = -1
+	return m, func() tea.Msg {
+		err := m.Store.AppendEvent(sessionID, "Correction", correctionBody)
 		if err != nil {
 			return CommandErrorMsg{Error: err}
 		}
