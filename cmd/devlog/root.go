@@ -31,6 +31,13 @@ stored as Markdown files under .devlog/sessions/.`,
 				return err
 			}
 
+			onboarder := newOnboarder()
+			if onboarder.shouldRun() {
+				if err := onboarder.run(cmd.OutOrStdout(), cmd.InOrStdin()); err != nil {
+					return err
+				}
+			}
+
 			return launchTUI()
 		},
 	}
