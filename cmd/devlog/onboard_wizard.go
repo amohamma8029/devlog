@@ -78,6 +78,19 @@ func (o *onboarder) runWizard(out io.Writer, reader *bufio.Reader) error {
 		fmt.Fprintf(out, "  %s\n", cliMutedStyle.Render(fmt.Sprintf("Using %s", tz)))
 	}
 
+	clockFormat, err := promptString(out, reader, "Clock format (12h or 24h)", "24h", func(s string) error {
+		s = strings.TrimSpace(s)
+		if s != "12h" && s != "24h" {
+			return fmt.Errorf("clock format must be 12h or 24h")
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(out, "  %s\n", cliMutedStyle.Render(fmt.Sprintf("Using %s", clockFormat)))
+
 	cfg := config.Default()
 
 	if displayName != "" || email != "" {
@@ -93,6 +106,10 @@ func (o *onboarder) runWizard(out io.Writer, reader *bufio.Reader) error {
 
 	if tz != "" {
 		cfg.Display.Timezone = tz
+	}
+
+	if clockFormat != "" {
+		cfg.Display.ClockFormat = clockFormat
 	}
 
 	return o.writeConfig(cfg)

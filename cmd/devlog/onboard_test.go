@@ -127,7 +127,7 @@ func TestRunEnterDefaultsToYes(t *testing.T) {
 	o := &onboarder{configPath: configPath, gitProfile: noGitProfile}
 	var buf bytes.Buffer
 
-	input := "yes\nAlice\nalice@example.com\nnano\n\n\n"
+	input := "yes\nAlice\nalice@example.com\nnano\n\n\n\n"
 	if err := o.run(&buf, strings.NewReader(input)); err != nil {
 		t.Fatalf("run: unexpected error: %v", err)
 	}
