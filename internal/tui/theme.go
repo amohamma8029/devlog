@@ -139,7 +139,14 @@ var SearchPromptStyle = lipgloss.NewStyle().
 	BorderForeground(lipgloss.Color("#666666"))
 
 var SearchMatchStyle = lipgloss.NewStyle().
-	Background(lipgloss.Color("#3A3A3A"))
+	Bold(true).
+	Background(lipgloss.Color("#FFD166")).
+	Foreground(lipgloss.Color("#111111"))
+
+var ActiveSearchMatchStyle = lipgloss.NewStyle().
+	Bold(true).
+	Background(lipgloss.Color("#7DD3FC")).
+	Foreground(lipgloss.Color("#0B1020"))
 
 var WarningPromptStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).

@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/glamour"
 	glamouransi "github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/glamour/styles"
+	"github.com/charmbracelet/lipgloss"
 	xansi "github.com/charmbracelet/x/ansi"
 )
 
@@ -83,16 +84,22 @@ func renderHandoffPreview(m Model) string {
 	if len(searchMatches) > 0 && m.Search.Open {
 		highlighted := make([]string, len(visible))
 		copy(highlighted, visible)
+		activeMatchIndex, hasActiveMatch := selectedSearchMatchIndex(m.Search, matchCount)
 		for i, line := range highlighted {
 			lineIdx := scrollOffset + i
 			var lineMatches []SearchMatch
-			for _, m := range searchMatches {
-				if m.Line == lineIdx {
-					lineMatches = append(lineMatches, m)
+			var activeMatch *SearchMatch
+			for matchIdx, match := range searchMatches {
+				if match.Line == lineIdx {
+					lineMatches = append(lineMatches, match)
+					if hasActiveMatch && matchIdx == activeMatchIndex {
+						active := match
+						activeMatch = &active
+					}
 				}
 			}
 			if len(lineMatches) > 0 {
-				highlighted[i] = highlightLineWithMatches(line, lineMatches)
+				highlighted[i] = highlightLineWithActiveMatch(line, lineMatches, activeMatch)
 			}
 		}
 		visible = highlighted
@@ -619,7 +626,7 @@ func renderSavePrompt(m Model) string {
 	lineWidth := previewLineWidth(m.Width)
 	cursorChar := " "
 	if m.Palette == nil || m.Palette.CursorVisible {
-		cursorChar = CursorStyle.Render("|")
+		cursorChar = CursorStyle.Render(" ")
 	}
 
 	contentWidth := lineWidth - SavePromptStyle.GetHorizontalFrameSize()
@@ -648,7 +655,11 @@ func renderSearchPrompt(m Model, matchCount int) string {
 			if matchCount != 1 {
 				label = "matches"
 			}
-			matchText = " " + formatInt(int64(matchCount)) + " " + label
+			if idx, ok := selectedSearchMatchIndex(m.Search, matchCount); ok {
+				matchText = " " + formatInt(int64(idx+1)) + "/" + formatInt(int64(matchCount)) + " " + label
+			} else {
+				matchText = " " + formatInt(int64(matchCount)) + " " + label
+			}
 		} else {
 			matchText = " No matches"
 		}
@@ -670,7 +681,7 @@ func renderSearchPrompt(m Model, matchCount int) string {
 	} else {
 		display = prefix + query
 		if cursorVisible {
-			display += CursorStyle.Render("|")
+			display += CursorStyle.Render(" ")
 		} else {
 			display += " "
 		}
@@ -678,6 +689,46 @@ func renderSearchPrompt(m Model, matchCount int) string {
 
 	content := truncateInputToWidth(display+matchText, contentWidth)
 	return style.Render(content)
+}
+
+func selectedSearchMatchIndex(search SearchState, matchCount int) (int, bool) {
+	if matchCount <= 0 || search.MatchIndex < 0 || search.MatchIndex >= matchCount {
+		return 0, false
+	}
+	if len(search.Matches) != matchCount {
+		return 0, false
+	}
+	return search.MatchIndex, true
+}
+
+func resetSearchSelection(search *SearchState) {
+	search.Matches = nil
+	search.MatchIndex = -1
+}
+
+func clearSearchState(search *SearchState) {
+	search.Open = false
+	search.Query = ""
+	search.CursorPos = 0
+	resetSearchSelection(search)
+}
+
+func advanceHandoffSearchMatch(m *Model) {
+	bodyLines := handoffBodyLines(*m)
+	matches := findSearchMatches(m.Search.Query, bodyLines)
+	m.Search.Matches = matches
+	if len(matches) == 0 {
+		m.Search.MatchIndex = -1
+		return
+	}
+	if m.Search.MatchIndex < 0 || m.Search.MatchIndex >= len(matches) {
+		m.Search.MatchIndex = 0
+	} else {
+		m.Search.MatchIndex = (m.Search.MatchIndex + 1) % len(matches)
+	}
+
+	match := matches[m.Search.MatchIndex]
+	m.ScrollOffset = clampHandoffScrollOffset(match.Line, len(bodyLines), handoffPreviewContentLines(*m))
 }
 
 func buildVisibleRuneMap(line string) (plainText string, runeIndices []int) {
@@ -738,6 +789,10 @@ func findSearchMatches(query string, bodyLines []string) []SearchMatch {
 }
 
 func highlightLineWithMatches(line string, matches []SearchMatch) string {
+	return highlightLineWithActiveMatch(line, matches, nil)
+}
+
+func highlightLineWithActiveMatch(line string, matches []SearchMatch, activeMatch *SearchMatch) string {
 	if len(matches) == 0 {
 		return line
 	}
@@ -748,20 +803,25 @@ func highlightLineWithMatches(line string, matches []SearchMatch) string {
 
 	plainText, _ := buildVisibleRuneMap(line)
 	matched := make([]bool, len([]rune(plainText)))
+	activeMatched := make([]bool, len(matched))
 	for _, m := range matches {
 		for v := m.ColStart; v < m.ColEnd && v < len(matched); v++ {
 			matched[v] = true
 		}
 	}
+	if activeMatch != nil {
+		for v := activeMatch.ColStart; v < activeMatch.ColEnd && v < len(activeMatched); v++ {
+			activeMatched[v] = true
+		}
+	}
 
-	openClose := SearchMatchStyle.Render("")
-	openCode := strings.TrimSuffix(openClose, "\x1b[0m")
-	closeCode := "\x1b[0m"
+	matchOpenCode, matchCloseCode := searchMatchStyleCodes()
+	activeOpenCode, activeCloseCode := activeSearchMatchStyleCodes()
 
 	runes := []rune(line)
 	var result strings.Builder
 	visIdx := 0
-	inHighlight := false
+	activeStyle := 0
 
 	for i := 0; i < len(runes); i++ {
 		if runes[i] == '\x1b' && i+1 < len(runes) && runes[i+1] == '[' {
@@ -779,24 +839,56 @@ func highlightLineWithMatches(line string, matches []SearchMatch) string {
 			continue
 		}
 
-		shouldHighlight := visIdx < len(matched) && matched[visIdx]
-		if shouldHighlight && !inHighlight {
-			result.WriteString(openCode)
-			inHighlight = true
-		} else if !shouldHighlight && inHighlight {
-			result.WriteString(closeCode)
-			inHighlight = false
+		style := 0
+		if visIdx < len(activeMatched) && activeMatched[visIdx] {
+			style = 2
+		} else if visIdx < len(matched) && matched[visIdx] {
+			style = 1
+		}
+		if style != activeStyle {
+			if activeStyle == 1 {
+				result.WriteString(matchCloseCode)
+			} else if activeStyle == 2 {
+				result.WriteString(activeCloseCode)
+			}
+			if style == 1 {
+				result.WriteString(matchOpenCode)
+			} else if style == 2 {
+				result.WriteString(activeOpenCode)
+			}
+			activeStyle = style
 		}
 
 		result.WriteRune(runes[i])
 		visIdx++
 	}
 
-	if inHighlight {
-		result.WriteString(closeCode)
+	if activeStyle == 1 {
+		result.WriteString(matchCloseCode)
+	} else if activeStyle == 2 {
+		result.WriteString(activeCloseCode)
 	}
 
 	return result.String()
+}
+
+func searchMatchStyleCodes() (string, string) {
+	return styleCodes(SearchMatchStyle, "\x1b[1;30;43m")
+}
+
+func activeSearchMatchStyleCodes() (string, string) {
+	return styleCodes(ActiveSearchMatchStyle, "\x1b[1;30;46m")
+}
+
+func styleCodes(style lipgloss.Style, fallbackOpen string) (string, string) {
+	const marker = "x"
+	rendered := style.Render(marker)
+	idx := strings.Index(rendered, marker)
+	if idx < 0 || rendered == marker {
+		// Lipgloss can no-op colors under non-TTY renderers; keep search matches visible.
+		return fallbackOpen, "\x1b[0m"
+	}
+	return rendered[:idx], rendered[idx+len(marker):]
 }
 
 func renderBoundedInputContent(prefix, input, cursor, suffix string, width int) string {
@@ -982,9 +1074,7 @@ func handleHandoffKey(m *Model, key string) (tea.Model, tea.Cmd) {
 	if m.Search.Open {
 		switch key {
 		case "esc":
-			m.Search.Open = false
-			m.Search.Query = ""
-			m.Search.CursorPos = 0
+			clearSearchState(&m.Search)
 			return *m, nil
 
 		case "left":
@@ -1013,10 +1103,12 @@ func handleHandoffKey(m *Model, key string) (tea.Model, tea.Cmd) {
 			if len(runes) > 0 && m.Search.CursorPos > 0 {
 				m.Search.Query = string(runes[:m.Search.CursorPos-1]) + string(runes[m.Search.CursorPos:])
 				m.Search.CursorPos--
+				resetSearchSelection(&m.Search)
 			}
 			return *m, nil
 
 		case "enter":
+			advanceHandoffSearchMatch(m)
 			return *m, nil
 
 		default:
@@ -1028,6 +1120,7 @@ func handleHandoffKey(m *Model, key string) (tea.Model, tea.Cmd) {
 				}
 				m.Search.Query = string(runes[:pos]) + key + string(runes[pos:])
 				m.Search.CursorPos = pos + 1
+				resetSearchSelection(&m.Search)
 				return *m, nil
 			}
 		}
@@ -1043,6 +1136,7 @@ func handleHandoffKey(m *Model, key string) (tea.Model, tea.Cmd) {
 			m.Search.Open = true
 			m.Search.Query = ""
 			m.Search.CursorPos = 0
+			resetSearchSelection(&m.Search)
 			if m.Palette != nil {
 				m.Palette.CursorVisible = true
 			}
