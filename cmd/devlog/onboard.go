@@ -10,17 +10,19 @@ import (
 
 	"github.com/amo/devlog/internal/config"
 	internalgit "github.com/amo/devlog/internal/git"
+	"gopkg.in/yaml.v3"
 )
 
 type onboarder struct {
 	configPath string
 	repoRoot   string
+	gitProfile func() (string, string, error)
 }
 
 func newOnboarder() *onboarder {
 	path, err := config.Path()
 	if err != nil {
-		return &onboarder{configPath: ""}
+		return &onboarder{configPath: "", gitProfile: internalgit.AuthorIdentity}
 	}
 
 	root, err := internalgit.RepoRoot()
@@ -28,7 +30,7 @@ func newOnboarder() *onboarder {
 		root = ""
 	}
 
-	return &onboarder{configPath: path, repoRoot: root}
+	return &onboarder{configPath: path, repoRoot: root, gitProfile: internalgit.AuthorIdentity}
 }
 
 func (o *onboarder) shouldRun() bool {
@@ -60,10 +62,34 @@ func (o *onboarder) run(out io.Writer, in io.Reader) error {
 	if _, err := fmt.Fprint(out, o.welcomeMessage()); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprint(out, "\n  "+cliMutedStyle.Render("Press Enter to continue...")+"\n"); err != nil {
+
+	reader := bufio.NewReader(in)
+
+	fmt.Fprintf(out, "\n  %s %s", cliLabelStyle.Render("Would you like to configure your preferences?"), cliMutedStyle.Render("[Y/n]: "))
+	yn, err := reader.ReadString('\n')
+	if err != nil && err != io.EOF {
 		return err
 	}
-	_, err := bufio.NewReader(in).ReadString('\n')
+
+	if parseYesNoDefault(strings.TrimSpace(yn)) {
+		if err := o.runWizard(out, reader); err != nil {
+			if err == errWizardAborted {
+				fmt.Fprintf(out, "\n  %s\n", cliValueStyle.Render("Setup cancelled. Nothing was saved. Run 'devlog config edit' to configure later."))
+			} else {
+				return err
+			}
+		} else {
+			fmt.Fprintf(out, "\n  %s\n  %s\n", cliTitleStyle.Render("Configuration saved"), cliValueStyle.Render(o.configPath))
+		}
+	} else {
+		if err := o.writeDefaultConfig(); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "\n  %s\n", cliValueStyle.Render("No problem! A default config has been created. Run 'devlog config edit' to customize later."))
+	}
+
+	fmt.Fprintf(out, "\n  %s\n", cliMutedStyle.Render("Press Enter to continue..."))
+	_, err = reader.ReadString('\n')
 	if err != nil && err != io.EOF {
 		return err
 	}
@@ -104,4 +130,31 @@ func (o *onboarder) welcomeMessage() string {
 	b.WriteByte('\n')
 
 	return b.String()
+}
+
+func (o *onboarder) writeConfig(cfg config.Config) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("encode config: %w", err)
+	}
+	dir := filepath.Dir(o.configPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	if err := os.WriteFile(o.configPath, data, 0644); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	return nil
+}
+
+func (o *onboarder) writeDefaultConfig() error {
+	return o.writeConfig(config.Default())
+}
+
+func parseYesNoDefault(s string) bool {
+	switch strings.ToLower(s) {
+	case "", "y", "yes":
+		return true
+	}
+	return false
 }
