@@ -6,32 +6,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
+	"strconv"
 	"strings"
 
 	internalconfig "github.com/amo/devlog/internal/config"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
-
-const starterConfigYAML = `author:
-  default_profile: git
-  profiles: {}
-
-editor:
-  command: ""
-  args: []
-
-display:
-  timezone: UTC
-  clock_format: 24h
-
-handoff:
-  diff_context_lines: 3
-
-tui:
-  handoff_preview:
-    diff_line_limit: 100
-`
 
 var runConfigEditor = runConfigEditorProcess
 
@@ -145,11 +127,84 @@ func ensureConfigFile(path string) (bool, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return false, fmt.Errorf("config edit: create config directory: %w", err)
 	}
-	if err := os.WriteFile(path, []byte(starterConfigYAML), 0600); err != nil {
+	body, err := renderConfigYAML(internalconfig.Default())
+	if err != nil {
+		return false, fmt.Errorf("config edit: render starter config: %w", err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 		return false, fmt.Errorf("config edit: create %s: %w", path, err)
 	}
 
 	return true, nil
+}
+
+func renderConfigYAML(cfg internalconfig.Config) (string, error) {
+	var b strings.Builder
+
+	b.WriteString("# devlog global config. Run `devlog config edit` to reopen this file.\n")
+	b.WriteString("# Lines beginning with # are comments and can be left in place.\n\n")
+
+	b.WriteString("author:\n")
+	b.WriteString("  # Use \"git\" to read user.name/user.email from git config, or use a profile ID below.\n")
+	fmt.Fprintf(&b, "  default_profile: %s\n", quoteYAMLString(cfg.Author.DefaultProfile))
+	b.WriteString("  # Add profiles by ID. Each profile supports display and optional email; \"git\" is reserved.\n")
+	if len(cfg.Author.Profiles) == 0 {
+		b.WriteString("  profiles:\n")
+		b.WriteString("    # work:\n")
+		b.WriteString("    #   display: \"Your Name\"\n")
+		b.WriteString("    #   email: \"you@example.com\"\n")
+	} else {
+		b.WriteString("  profiles:\n")
+		profileIDs := make([]string, 0, len(cfg.Author.Profiles))
+		for id := range cfg.Author.Profiles {
+			profileIDs = append(profileIDs, id)
+		}
+		sort.Strings(profileIDs)
+		for _, id := range profileIDs {
+			profile := cfg.Author.Profiles[id]
+			fmt.Fprintf(&b, "    %s:\n", id)
+			fmt.Fprintf(&b, "      display: %s\n", quoteYAMLString(profile.Display))
+			fmt.Fprintf(&b, "      email: %s\n", quoteYAMLString(profile.Email))
+		}
+	}
+
+	b.WriteString("\neditor:\n")
+	b.WriteString("  # Leave command empty to use $VISUAL, $EDITOR, then the platform default editor.\n")
+	fmt.Fprintf(&b, "  command: %s\n", quoteYAMLString(cfg.Editor.Command))
+	b.WriteString("  # Extra arguments passed before the file path, for example [\"--wait\"].\n")
+	if len(cfg.Editor.Args) == 0 {
+		b.WriteString("  args: []\n")
+	} else {
+		b.WriteString("  args:\n")
+		for _, arg := range cfg.Editor.Args {
+			fmt.Fprintf(&b, "    - %s\n", quoteYAMLString(arg))
+		}
+	}
+
+	b.WriteString("\ndisplay:\n")
+	b.WriteString("  # Use \"UTC\", \"local\", or an IANA timezone such as \"America/New_York\".\n")
+	fmt.Fprintf(&b, "  timezone: %s\n", quoteYAMLString(cfg.Display.Timezone))
+	b.WriteString("  # Use \"24h\" for ISO-like times or \"12h\" for AM/PM times.\n")
+	fmt.Fprintf(&b, "  clock_format: %s\n", quoteYAMLString(cfg.Display.ClockFormat))
+
+	b.WriteString("\nhandoff:\n")
+	b.WriteString("  # Number of unchanged context lines included around handoff diffs.\n")
+	fmt.Fprintf(&b, "  diff_context_lines: %d\n", cfg.Handoff.DiffContextLines)
+
+	b.WriteString("\ntui:\n")
+	b.WriteString("  handoff_preview:\n")
+	b.WriteString("    # Maximum raw diff lines shown in the TUI handoff preview; 0 disables truncation.\n")
+	fmt.Fprintf(&b, "    diff_line_limit: %d\n", cfg.TUI.HandoffPreview.DiffLineLimit)
+
+	if _, err := internalconfig.Parse([]byte(b.String())); err != nil {
+		return "", fmt.Errorf("generated config did not validate: %w", err)
+	}
+
+	return b.String(), nil
+}
+
+func quoteYAMLString(value string) string {
+	return strconv.Quote(value)
 }
 
 func configEditEditor(path string) (configEditor, error) {
