@@ -2,10 +2,8 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/amo/devlog/internal/store"
 	"github.com/spf13/cobra"
@@ -53,14 +51,13 @@ func TestEditCommandAppendsCorrection(t *testing.T) {
 
 	content := readCmdTestSessionFile(t, root, sess.ID)
 	if !strings.Contains(content, "## Edit - ") {
-		t.Fatal("expected session file to contain Correction event")
+		t.Fatal("expected session file to contain Edit event")
 	}
-	expectedHeader := fmt.Sprintf("Note %02d:%02d", time.Now().UTC().Hour(), time.Now().UTC().Minute())
-	if !strings.Contains(content, expectedHeader) {
-		t.Fatalf("expected correction to reference %q, got content:\n%s", expectedHeader, content)
+	if !strings.Contains(content, "Target: Note ") || !strings.Contains(content, "Action: update") {
+		t.Fatalf("expected edit to include target and update action, got content:\n%s", content)
 	}
-	if !strings.Contains(content, "Corrected note text") {
-		t.Fatal("expected correction body containing 'Corrected note text'")
+	if !strings.Contains(content, "Original:\nOriginal note text") || !strings.Contains(content, "New:\nCorrected note text") {
+		t.Fatalf("expected edit to include original and new body, got content:\n%s", content)
 	}
 
 	// Verify the parser applies the correction
@@ -100,11 +97,13 @@ func TestEditCommandDeleteFlag(t *testing.T) {
 
 	content := readCmdTestSessionFile(t, root, sess.ID)
 	if !strings.Contains(content, "## Edit - ") {
-		t.Fatal("expected session file to contain Correction event")
+		t.Fatal("expected session file to contain Edit event")
 	}
-	expectedHeader := fmt.Sprintf("Note %02d:%02d", time.Now().UTC().Hour(), time.Now().UTC().Minute())
-	if !strings.Contains(content, expectedHeader) {
-		t.Fatalf("expected correction to reference %q, got content:\n%s", expectedHeader, content)
+	if !strings.Contains(content, "Target: Note ") || !strings.Contains(content, "Action: delete") {
+		t.Fatalf("expected edit to include target and delete action, got content:\n%s", content)
+	}
+	if !strings.Contains(content, "Original:\nNote to delete") {
+		t.Fatalf("expected delete edit to include original body, got content:\n%s", content)
 	}
 
 	body, err := s.ReadSessionBody(sess.ID)

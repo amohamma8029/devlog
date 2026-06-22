@@ -69,7 +69,7 @@ func newEditCommand() *cobra.Command {
 			}
 
 			if deleteFlag {
-				editBody := fmt.Sprintf("%s %02d:%02d", target.Type, target.Time.UTC().Hour(), target.Time.UTC().Minute())
+				editBody := store.FormatEditBody(target, "delete", "")
 				if err := session.AppendEventToActiveSession(s, "Edit", editBody); err != nil {
 					return err
 				}
@@ -84,7 +84,7 @@ func newEditCommand() *cobra.Command {
 				return err
 			}
 
-			editBody := fmt.Sprintf("%s %02d:%02d\n%s", target.Type, target.Time.UTC().Hour(), target.Time.UTC().Minute(), newBody)
+			editBody := store.FormatEditBody(target, "update", newBody)
 			if err := session.AppendEventToActiveSession(s, "Edit", editBody); err != nil {
 				return err
 			}

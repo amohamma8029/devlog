@@ -243,6 +243,22 @@ func ParseSessionEvents(body string) []SessionEvent {
 	return events
 }
 
+// FormatEditBody returns the append-only body used to update or delete a target event.
+func FormatEditBody(target SessionEvent, action, newBody string) string {
+	var body strings.Builder
+	fmt.Fprintf(&body, "Target: %s\n", editTargetHeader(target))
+	fmt.Fprintf(&body, "Action: %s\n\n", strings.TrimSpace(action))
+	body.WriteString("Original:\n")
+	body.WriteString(strings.TrimRight(target.Body, "\n"))
+
+	newBody = strings.TrimRight(newBody, "\n")
+	if newBody != "" {
+		body.WriteString("\n\nNew:\n")
+		body.WriteString(newBody)
+	}
+	return body.String()
+}
+
 // parseSessionEvents parses events and returns them along with whether a Start event was found.
 func parseSessionEvents(body string) ([]SessionEvent, bool) {
 	lines := strings.Split(body, "\n")
@@ -305,15 +321,6 @@ func parseEventHeading(line string) (string, time.Time, bool) {
 }
 
 func applyEdits(events []SessionEvent) []SessionEvent {
-	byHeader := make(map[string]int)
-	for i := range events {
-		if events[i].Type == "Edit" {
-			continue
-		}
-		header := fmt.Sprintf("%s %02d:%02d", events[i].Type, events[i].Time.UTC().Hour(), events[i].Time.UTC().Minute())
-		byHeader[header] = i
-	}
-
 	for i := range events {
 		if events[i].Type != "Edit" {
 			continue
@@ -324,18 +331,52 @@ func applyEdits(events []SessionEvent) []SessionEvent {
 			continue
 		}
 
+		if edit, ok := parseStructuredEditBody(body); ok {
+			idx, ok := findEditTarget(events, i, edit.target, edit.original)
+			if !ok {
+				continue
+			}
+
+			switch edit.action {
+			case "update":
+				if edit.newBody == "" {
+					continue
+				}
+				events[idx].Body = edit.newBody
+				events[idx].IsDeleted = false
+				events[idx].CorrectedAt = events[i].Time
+			case "delete":
+				events[idx].IsDeleted = true
+				events[idx].Body = ""
+				events[idx].CorrectedAt = events[i].Time
+			}
+			continue
+		}
+
 		firstLineEnd := strings.Index(body, "\n")
-		var header, newBody string
+		var header, newBody, targetBody string
+		hasTarget := false
 		if firstLineEnd >= 0 {
 			header = body[:firstLineEnd]
-			newBody = strings.TrimSpace(body[firstLineEnd+1:])
+			rest := body[firstLineEnd+1:]
+			secondLineEnd := strings.Index(rest, "\n")
+			if secondLineEnd >= 0 {
+				targetBody = strings.TrimSpace(rest[:secondLineEnd])
+				newBody = strings.TrimSpace(rest[secondLineEnd+1:])
+				hasTarget = true
+			} else {
+				newBody = strings.TrimSpace(rest)
+			}
 		} else {
 			header = body
 			newBody = ""
 		}
 
-		idx, ok := byHeader[header]
+		idx, ok := findEditTarget(events, i, header, targetBody)
 		if !ok {
+			continue
+		}
+		if hasTarget && targetBody == "" {
 			continue
 		}
 
@@ -360,6 +401,70 @@ func applyEdits(events []SessionEvent) []SessionEvent {
 	return result
 }
 
+type structuredEdit struct {
+	target   string
+	action   string
+	original string
+	newBody  string
+}
+
+func parseStructuredEditBody(body string) (structuredEdit, bool) {
+	lines := strings.Split(strings.ReplaceAll(body, "\r\n", "\n"), "\n")
+	edit := structuredEdit{}
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		switch {
+		case strings.HasPrefix(line, "Target: "):
+			edit.target = strings.TrimSpace(strings.TrimPrefix(line, "Target: "))
+		case strings.HasPrefix(line, "Action: "):
+			edit.action = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(line, "Action: ")))
+		case line == "Original:":
+			end := nextEditSection(lines, i+1)
+			edit.original = strings.TrimSpace(strings.Join(lines[i+1:end], "\n"))
+			i = end - 1
+		case line == "New:":
+			edit.newBody = strings.TrimSpace(strings.Join(lines[i+1:], "\n"))
+			i = len(lines)
+		}
+	}
+
+	if edit.target == "" || (edit.action != "update" && edit.action != "delete") || edit.original == "" {
+		return structuredEdit{}, false
+	}
+	if edit.action == "update" && edit.newBody == "" {
+		return structuredEdit{}, false
+	}
+	return edit, true
+}
+
+func nextEditSection(lines []string, start int) int {
+	for i := start; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) == "New:" {
+			return i
+		}
+	}
+	return len(lines)
+}
+
+func findEditTarget(events []SessionEvent, before int, header, body string) (int, bool) {
+	for i := before - 1; i >= 0; i-- {
+		if events[i].Type == "Start" || events[i].Type == "Stop" || events[i].Type == "Edit" {
+			continue
+		}
+		if editTargetHeader(events[i]) != header {
+			continue
+		}
+		if body != "" && events[i].Body != body {
+			continue
+		}
+		return i, true
+	}
+	return 0, false
+}
+
+func editTargetHeader(event SessionEvent) string {
+	return fmt.Sprintf("%s %02d:%02d", event.Type, event.Time.UTC().Hour(), event.Time.UTC().Minute())
+}
 
 // ExtractMarkdownBody returns everything after the YAML front-matter delimiters.
 func ExtractMarkdownBody(content string) (string, error) {
