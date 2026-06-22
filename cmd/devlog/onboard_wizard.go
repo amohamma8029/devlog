@@ -42,10 +42,7 @@ func (o *onboarder) runWizard(out io.Writer, reader *bufio.Reader) error {
 		return err
 	}
 
-	editorCmd, err := promptString(out, reader, "Editor command (e.g., code, vim, nano)", "", func(s string) error {
-		if strings.TrimSpace(s) == "" {
-			return fmt.Errorf("editor command is required")
-		}
+	editorCmd, err := promptString(out, reader, "Editor command (e.g., code, vim, nano — Enter to skip)", "", func(s string) error {
 		return nil
 	})
 	if err != nil {
@@ -53,7 +50,13 @@ func (o *onboarder) runWizard(out io.Writer, reader *bufio.Reader) error {
 	}
 
 	if _, err := exec.LookPath(editorCmd); err != nil {
-		fmt.Fprintf(out, "  %s %s\n", cliWarningStyle.Render("Warning:"), cliMutedStyle.Render(fmt.Sprintf("%q was not found on your PATH", editorCmd)))
+		if editorCmd != "" {
+			fmt.Fprintf(out, "  %s %s\n", cliWarningStyle.Render("Warning:"), cliMutedStyle.Render(fmt.Sprintf("%q was not found on your PATH", editorCmd)))
+		}
+	}
+
+	if editorCmd == "" {
+		fmt.Fprintf(out, "  %s\n", cliTitleStyle.Render("Using $EDITOR (not configured)"))
 	}
 
 	tz, err := promptString(out, reader, "Timezone", "UTC", func(s string) error {
@@ -71,11 +74,11 @@ func (o *onboarder) runWizard(out io.Writer, reader *bufio.Reader) error {
 	}
 
 	if tz == "UTC" {
-		fmt.Fprintf(out, "  %s\n", cliMutedStyle.Render("Using UTC (default)"))
+		fmt.Fprintf(out, "  %s\n", cliTitleStyle.Render("Using UTC (default)"))
 	} else if tz == "local" {
-		fmt.Fprintf(out, "  %s\n", cliMutedStyle.Render("Using local timezone"))
+		fmt.Fprintf(out, "  %s\n", cliTitleStyle.Render("Using local timezone"))
 	} else {
-		fmt.Fprintf(out, "  %s\n", cliMutedStyle.Render(fmt.Sprintf("Using %s", tz)))
+		fmt.Fprintf(out, "  %s\n", cliTitleStyle.Render(fmt.Sprintf("Using %s", tz)))
 	}
 
 	clockFormat, err := promptString(out, reader, "Clock format (12h or 24h)", "24h", func(s string) error {
@@ -89,14 +92,18 @@ func (o *onboarder) runWizard(out io.Writer, reader *bufio.Reader) error {
 		return err
 	}
 
-	fmt.Fprintf(out, "  %s\n", cliMutedStyle.Render(fmt.Sprintf("Using %s", clockFormat)))
+	fmt.Fprintf(out, "  %s\n", cliTitleStyle.Render(fmt.Sprintf("Using %s", clockFormat)))
 
 	cfg := config.Default()
 
 	if displayName != "" || email != "" {
-		cfg.Author.DefaultProfile = "default"
-		cfg.Author.Profiles = map[string]config.AuthorProfile{
-			"default": {Display: displayName, Email: email},
+		if displayName == gitName && email == gitEmail {
+			cfg.Author.DefaultProfile = config.BuiltInGitProfile
+		} else {
+			cfg.Author.DefaultProfile = "default"
+			cfg.Author.Profiles = map[string]config.AuthorProfile{
+				"default": {Display: displayName, Email: email},
+			}
 		}
 	}
 

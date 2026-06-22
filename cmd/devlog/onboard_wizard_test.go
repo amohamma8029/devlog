@@ -217,29 +217,24 @@ func TestRunWizardRejectsInvalidEmail(t *testing.T) {
 	}
 }
 
-func TestRunWizardRejectsEmptyEditor(t *testing.T) {
+func TestRunWizardAcceptsEmptyEditor(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.yml")
 	o := &onboarder{configPath: configPath, gitProfile: noGitProfile}
 
 	var buf bytes.Buffer
-	input := "Alice\nalice@example.com\n\nnano\nUTC\n24h\n"
+	input := "Alice\nalice@example.com\n\nUTC\n24h\n"
 
 	if err := o.runWizard(&buf, bufio.NewReader(strings.NewReader(input))); err != nil {
 		t.Fatalf("runWizard: %v", err)
-	}
-
-	output := buf.String()
-	if !strings.Contains(output, "editor command is required") {
-		t.Error("expected validation error for empty editor")
 	}
 
 	cfg, err := config.LoadFile(configPath)
 	if err != nil {
 		t.Fatalf("load config: %v", err)
 	}
-	if cfg.Editor.Command != "nano" {
-		t.Errorf("editor = %q, want nano (retried)", cfg.Editor.Command)
+	if cfg.Editor.Command != "" {
+		t.Errorf("editor = %q, want empty (skipped)", cfg.Editor.Command)
 	}
 }
 
@@ -344,5 +339,59 @@ func TestRunWizardAcceptsEmptyEmail(t *testing.T) {
 	}
 	if cfg.Author.Profiles["default"].Email != "" {
 		t.Errorf("email = %q, want empty", cfg.Author.Profiles["default"].Email)
+	}
+}
+
+func TestRunWizardKeepsGitProfileWhenDefaultsMatch(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yml")
+	o := &onboarder{configPath: configPath, gitProfile: func() (string, string, error) {
+		return "Alice", "alice@example.com", nil
+	}}
+
+	var buf bytes.Buffer
+	// Accept all git defaults: Enter for name, Enter for email, Enter for editor, Enter for timezone, Enter for clock
+	input := "\n\n\n\n\n"
+
+	if err := o.runWizard(&buf, bufio.NewReader(strings.NewReader(input))); err != nil {
+		t.Fatalf("runWizard: %v", err)
+	}
+
+	cfg, err := config.LoadFile(configPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.Author.DefaultProfile != "git" {
+		t.Errorf("default_profile = %q, want git (matched git defaults)", cfg.Author.DefaultProfile)
+	}
+	if len(cfg.Author.Profiles) != 0 {
+		t.Errorf("profiles should be empty when accepting git defaults, got %v", cfg.Author.Profiles)
+	}
+}
+
+func TestRunWizardCreatesProfileWhenValuesDiffer(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yml")
+	o := &onboarder{configPath: configPath, gitProfile: func() (string, string, error) {
+		return "Alice", "alice@example.com", nil
+	}}
+
+	var buf bytes.Buffer
+	// Override name with custom value, accept git email, skip editor, default timezone, default clock
+	input := "Bob\n\n\n\n\n"
+
+	if err := o.runWizard(&buf, bufio.NewReader(strings.NewReader(input))); err != nil {
+		t.Fatalf("runWizard: %v", err)
+	}
+
+	cfg, err := config.LoadFile(configPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.Author.DefaultProfile != "default" {
+		t.Errorf("default_profile = %q, want default (custom value differs)", cfg.Author.DefaultProfile)
+	}
+	if cfg.Author.Profiles["default"].Display != "Bob" {
+		t.Errorf("display = %q, want Bob", cfg.Author.Profiles["default"].Display)
 	}
 }
