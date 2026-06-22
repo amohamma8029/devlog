@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
@@ -63,6 +62,7 @@ type Model struct {
 	activeEventLineStarts      []int
 	SelectedEvent              int
 	EditingEvent               int
+	DeleteConfirmEvent         int
 	handoffBodyLines           []string
 	handoffBodyLineWidth       int
 	displayTime                internalconfig.DisplayTimeFormatter
@@ -95,13 +95,13 @@ func NewModelWithConfig(s *store.Store, root string, cfg internalconfig.Config) 
 		formatter = internalconfig.DefaultDisplayTimeFormatter()
 	}
 	m := Model{
-		CurrentView:  SessionList,
-		Palette:      &p,
-		Store:        s,
-		Config:       cfg,
-		SessionList:  NewSessionListModelWithConfig(s, root, 80, 24, cfg),
-		Root:         root,
-		displayTime:  formatter,
+		CurrentView:   SessionList,
+		Palette:       &p,
+		Store:         s,
+		Config:        cfg,
+		SessionList:   NewSessionListModelWithConfig(s, root, 80, 24, cfg),
+		Root:          root,
+		displayTime:   formatter,
 		SelectedEvent: -1,
 		EditingEvent:  -1,
 	}
@@ -153,6 +153,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.OpenInput = ""
 		m.activeSessionMetadataKnown = false
 		m.SelectedEvent = -1
+		m.DeleteConfirmEvent = 0
 		m.refreshActiveTimelineCache()
 		changed := m.setView(ActiveSession)
 		return m, clearScreenIfChanged(changed)
@@ -524,6 +525,10 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if key == "esc" {
+		if m.CurrentView == ActiveSession && m.DeleteConfirmEvent > 0 {
+			m.DeleteConfirmEvent = 0
+			return m, nil
+		}
 		if m.CurrentView == ActiveSession && m.SelectedEvent >= 0 {
 			m.SelectedEvent = -1
 			return m, nil
@@ -603,6 +608,18 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) activeSessionKeyHandler(key string) (tea.Model, tea.Cmd) {
+	if m.DeleteConfirmEvent > 0 {
+		switch key {
+		case "y":
+			return m.handleDeleteConfirm()
+		case "n", "esc":
+			m.DeleteConfirmEvent = 0
+			return m, nil
+		default:
+			return m, nil
+		}
+	}
+
 	switch key {
 	case "/":
 		if m.Palette != nil {
@@ -629,6 +646,12 @@ func (m Model) activeSessionKeyHandler(key string) (tea.Model, tea.Cmd) {
 	case "e", "enter":
 		if m.SelectedEvent >= 0 {
 			return m.handleEditEvent()
+		}
+		return m, nil
+
+	case "d":
+		if m.SelectedEvent >= 0 {
+			return m.handleDeleteEvent()
 		}
 		return m, nil
 
@@ -710,27 +733,12 @@ func (m Model) handleEditEvent() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	events := m.Events
-	visibleIdx := 0
-	fullIdx := -1
-	for i, e := range events {
-		if e.Type == "Start" || e.IsDeleted {
-			continue
-		}
-		if visibleIdx == m.SelectedEvent {
-			fullIdx = i
-			break
-		}
-		visibleIdx++
-	}
-	if fullIdx < 0 || fullIdx >= len(events) {
+	fullIdx := m.selectedEditableEventIndex()
+	if fullIdx < 0 || fullIdx >= len(m.Events) {
 		return m, nil
 	}
 
-	event := events[fullIdx]
-	if event.Type == "Start" || event.Type == "Stop" {
-		return m, nil
-	}
+	event := m.Events[fullIdx]
 
 	m.EditingEvent = fullIdx
 	m.Palette.OpenPalette()
@@ -745,6 +753,36 @@ func (m Model) handleEditEvent() (tea.Model, tea.Cmd) {
 	m.Palette.MultiLineIsBlocker = event.Type == "Blocker"
 	m.Palette.Input = ""
 	return m, nil
+}
+
+func (m Model) handleDeleteEvent() (tea.Model, tea.Cmd) {
+	fullIdx := m.selectedEditableEventIndex()
+	if fullIdx < 0 || fullIdx >= len(m.Events) {
+		return m, nil
+	}
+	m.DeleteConfirmEvent = fullIdx + 1
+	return m, nil
+}
+
+func (m Model) selectedEditableEventIndex() int {
+	if m.SelectedEvent < 0 {
+		return -1
+	}
+
+	visibleIdx := 0
+	for i, e := range m.Events {
+		if e.Type == "Start" || e.IsDeleted {
+			continue
+		}
+		if visibleIdx == m.SelectedEvent {
+			if e.Type == "Stop" {
+				return -1
+			}
+			return i
+		}
+		visibleIdx++
+	}
+	return -1
 }
 
 func (m Model) noSessionKeyHandler(key string) (tea.Model, tea.Cmd) {
@@ -1163,12 +1201,43 @@ func (m Model) handleCorrectionSubmit(body string) (tea.Model, tea.Cmd) {
 	}
 
 	event := m.Events[m.EditingEvent]
-	correctionBody := fmt.Sprintf("%s %02d:%02d\n%s\n%s", event.Type, event.Time.UTC().Hour(), event.Time.UTC().Minute(), event.Body, body)
+	correctionBody := store.FormatEditBody(event, "update", body)
 	sessionID := m.ActiveSession.ID
 	m.SelectedEvent = -1
 	m.EditingEvent = -1
 	return m, func() tea.Msg {
-		err := m.Store.AppendEvent(sessionID, "Correction", correctionBody)
+		err := m.Store.AppendEvent(sessionID, "Edit", correctionBody)
+		if err != nil {
+			return CommandErrorMsg{Error: err}
+		}
+		return m.reloadEvents()
+	}
+}
+
+func (m Model) handleDeleteConfirm() (tea.Model, tea.Cmd) {
+	idx := m.DeleteConfirmEvent - 1
+	if idx < 0 || idx >= len(m.Events) {
+		m.DeleteConfirmEvent = 0
+		return m, nil
+	}
+	if m.ActiveSession == nil {
+		m.DeleteConfirmEvent = 0
+		m.ErrorMessage = "No session displayed"
+		return m, nil
+	}
+	if m.ActiveSession.Closed {
+		m.DeleteConfirmEvent = 0
+		m.ErrorMessage = "Cannot delete events from a closed session"
+		return m, nil
+	}
+
+	event := m.Events[idx]
+	editBody := store.FormatEditBody(event, "delete", "")
+	sessionID := m.ActiveSession.ID
+	m.SelectedEvent = -1
+	m.DeleteConfirmEvent = 0
+	return m, func() tea.Msg {
+		err := m.Store.AppendEvent(sessionID, "Edit", editBody)
 		if err != nil {
 			return CommandErrorMsg{Error: err}
 		}
