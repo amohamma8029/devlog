@@ -145,7 +145,7 @@ func formatStatusDuration(d time.Duration) string {
 func recentStatusEvents(events []store.SessionEvent, number int) []store.SessionEvent {
 	var visible []store.SessionEvent
 	for _, event := range events {
-		if event.Type == "Start" {
+		if event.Type == "Start" || event.IsDeleted {
 			continue
 		}
 		visible = append(visible, event)
@@ -187,7 +187,7 @@ func writeStatusEvent(b *strings.Builder, event store.SessionEvent, formatter in
 func writeStatusBlockers(b *strings.Builder, events []store.SessionEvent, formatter internalconfig.DisplayTimeFormatter) {
 	found := false
 	for _, event := range events {
-		if event.Type != "Blocker" {
+		if event.Type != "Blocker" || event.IsDeleted {
 			continue
 		}
 
