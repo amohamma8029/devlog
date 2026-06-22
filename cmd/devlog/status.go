@@ -165,20 +165,18 @@ func writeRecentStatusEvents(b *strings.Builder, events []store.SessionEvent, fo
 	}
 
 	for i := len(events) - 1; i >= 0; i-- {
-		writeStatusEvent(b, events[i], formatter)
+		index := len(events) - i
+		writeStatusEvent(b, events[i], formatter, index)
 	}
 }
 
-func writeStatusEvent(b *strings.Builder, event store.SessionEvent, formatter internalconfig.DisplayTimeFormatter) {
+func writeStatusEvent(b *strings.Builder, event store.SessionEvent, formatter internalconfig.DisplayTimeFormatter, index int) {
 	var line string
 	if event.Time.IsZero() {
-		line = cliBulletLine(fmt.Sprintf("%s: %s", event.Type, oneLineStatusBody(event.Body)))
-		b.WriteString(cliEventText(event.Type, line))
-		b.WriteByte('\n')
-		return
+		line = cliBulletLine(fmt.Sprintf("[%d] %s: %s", index, event.Type, oneLineStatusBody(event.Body)))
+	} else {
+		line = cliBulletLine(fmt.Sprintf("[%d] %s %s: %s", index, formatStatusEventTime(event.Time, formatter), event.Type, oneLineStatusBody(event.Body)))
 	}
-
-	line = cliBulletLine(fmt.Sprintf("%s %s: %s", formatStatusEventTime(event.Time, formatter), event.Type, oneLineStatusBody(event.Body)))
 	b.WriteString(cliEventText(event.Type, line))
 	b.WriteByte('\n')
 }

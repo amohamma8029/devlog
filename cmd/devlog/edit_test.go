@@ -11,8 +11,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func executeCorrectCommand(args ...string) (string, error) {
-	cmd := newCorrectCommand()
+func executeEditCommand(args ...string) (string, error) {
+	cmd := newEditCommand()
 	var out bytes.Buffer
 	var errOut bytes.Buffer
 	cmd.SetOut(&out)
@@ -25,14 +25,14 @@ func executeCorrectCommand(args ...string) (string, error) {
 
 func mustExecuteCorrect(t *testing.T, args ...string) string {
 	t.Helper()
-	out, err := executeCorrectCommand(args...)
+	out, err := executeEditCommand(args...)
 	if err != nil {
 		t.Fatalf("correct command failed: %v\n%s", err, out)
 	}
 	return out
 }
 
-func TestCorrectCommandAppendsCorrection(t *testing.T) {
+func TestEditCommandAppendsCorrection(t *testing.T) {
 	requireCmdTestGit(t)
 
 	root := initCmdTestRepo(t)
@@ -47,12 +47,12 @@ func TestCorrectCommandAppendsCorrection(t *testing.T) {
 
 	out := mustExecuteCorrect(t, "1", "Corrected note text")
 
-	if !strings.Contains(out, "Corrected event 1") {
-		t.Errorf("output should contain 'Corrected event 1', got %q", out)
+	if !strings.Contains(out, "Edited event 1") {
+		t.Errorf("output should contain 'Edited event 1', got %q", out)
 	}
 
 	content := readCmdTestSessionFile(t, root, sess.ID)
-	if !strings.Contains(content, "## Correction - ") {
+	if !strings.Contains(content, "## Edit - ") {
 		t.Fatal("expected session file to contain Correction event")
 	}
 	expectedHeader := fmt.Sprintf("Note %02d:%02d", time.Now().UTC().Hour(), time.Now().UTC().Minute())
@@ -79,7 +79,7 @@ func TestCorrectCommandAppendsCorrection(t *testing.T) {
 	}
 }
 
-func TestCorrectCommandDeleteFlag(t *testing.T) {
+func TestEditCommandDeleteFlag(t *testing.T) {
 	requireCmdTestGit(t)
 
 	root := initCmdTestRepo(t)
@@ -99,7 +99,7 @@ func TestCorrectCommandDeleteFlag(t *testing.T) {
 	}
 
 	content := readCmdTestSessionFile(t, root, sess.ID)
-	if !strings.Contains(content, "## Correction - ") {
+	if !strings.Contains(content, "## Edit - ") {
 		t.Fatal("expected session file to contain Correction event")
 	}
 	expectedHeader := fmt.Sprintf("Note %02d:%02d", time.Now().UTC().Hour(), time.Now().UTC().Minute())
@@ -122,7 +122,7 @@ func TestCorrectCommandDeleteFlag(t *testing.T) {
 	}
 }
 
-func TestCorrectCommandWithMessageFlag(t *testing.T) {
+func TestEditCommandWithMessageFlag(t *testing.T) {
 	requireCmdTestGit(t)
 
 	root := initCmdTestRepo(t)
@@ -137,8 +137,8 @@ func TestCorrectCommandWithMessageFlag(t *testing.T) {
 
 	out := mustExecuteCorrect(t, "-m", "Flag-corrected text", "1")
 
-	if !strings.Contains(out, "Corrected event 1") {
-		t.Errorf("output should contain 'Corrected event 1', got %q", out)
+	if !strings.Contains(out, "Edited event 1") {
+		t.Errorf("output should contain 'Edited event 1', got %q", out)
 	}
 
 	body, err := s.ReadSessionBody(sess.ID)
@@ -156,14 +156,14 @@ func TestCorrectCommandWithMessageFlag(t *testing.T) {
 	}
 }
 
-func TestCorrectCommandInvalidIndex(t *testing.T) {
+func TestEditCommandInvalidIndex(t *testing.T) {
 	requireCmdTestGit(t)
 
 	root := initCmdTestRepo(t)
 	writeCmdTestSession(t, root)
 	t.Chdir(root)
 
-	_, err := executeCorrectCommand("abc", "text")
+	_, err := executeEditCommand("abc", "text")
 	if err == nil {
 		t.Fatal("expected error for non-integer index")
 	}
@@ -172,14 +172,14 @@ func TestCorrectCommandInvalidIndex(t *testing.T) {
 	}
 }
 
-func TestCorrectCommandIndexOutOfRange(t *testing.T) {
+func TestEditCommandIndexOutOfRange(t *testing.T) {
 	requireCmdTestGit(t)
 
 	root := initCmdTestRepo(t)
 	writeCmdTestSession(t, root)
 	t.Chdir(root)
 
-	_, err := executeCorrectCommand("99", "text")
+	_, err := executeEditCommand("99", "text")
 	if err == nil {
 		t.Fatal("expected error for out-of-range index")
 	}
@@ -188,13 +188,13 @@ func TestCorrectCommandIndexOutOfRange(t *testing.T) {
 	}
 }
 
-func TestCorrectCommandNoActiveSession(t *testing.T) {
+func TestEditCommandNoActiveSession(t *testing.T) {
 	requireCmdTestGit(t)
 
 	root := initCmdTestRepo(t)
 	t.Chdir(root)
 
-	_, err := executeCorrectCommand("1", "text")
+	_, err := executeEditCommand("1", "text")
 	if err == nil {
 		t.Fatal("expected error when no active session")
 	}
@@ -203,15 +203,15 @@ func TestCorrectCommandNoActiveSession(t *testing.T) {
 	}
 }
 
-func TestCorrectCommandRequiresIndex(t *testing.T) {
-	cmd := newCorrectCommand()
+func TestEditCommandRequiresIndex(t *testing.T) {
+	cmd := newEditCommand()
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatal("expected error when no index provided")
 	}
 }
 
-func TestCorrectCommandCorrectsBlocker(t *testing.T) {
+func TestEditCommandCorrectsBlocker(t *testing.T) {
 	requireCmdTestGit(t)
 
 	root := initCmdTestRepo(t)
@@ -226,8 +226,8 @@ func TestCorrectCommandCorrectsBlocker(t *testing.T) {
 
 	out := mustExecuteCorrect(t, "1", "Updated blocker text")
 
-	if !strings.Contains(out, "Corrected event 1") {
-		t.Errorf("output should contain 'Corrected event 1', got %q", out)
+	if !strings.Contains(out, "Edited event 1") {
+		t.Errorf("output should contain 'Edited event 1', got %q", out)
 	}
 
 	body, err := s.ReadSessionBody(sess.ID)
@@ -250,7 +250,7 @@ func TestCorrectCommandCorrectsBlocker(t *testing.T) {
 	}
 }
 
-func TestCorrectCommandMultipleEventsIndexing(t *testing.T) {
+func TestEditCommandMultipleEventsIndexing(t *testing.T) {
 	requireCmdTestGit(t)
 
 	root := initCmdTestRepo(t)
@@ -303,4 +303,4 @@ func mustNewStore(t *testing.T, root string) *store.Store {
 }
 
 // Ensure correct command is a cobra command
-var _ = func() *cobra.Command { return newCorrectCommand() }
+var _ = func() *cobra.Command { return newEditCommand() }
