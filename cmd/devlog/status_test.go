@@ -103,6 +103,64 @@ func TestStatusCommandShowsAllRecentEventsWhenNumberIsZero(t *testing.T) {
 	assertNotContains(t, out, "Start: start message")
 }
 
+func TestStatusCommandHidesDeletedEvents(t *testing.T) {
+	requireCmdTestGit(t)
+	setConfigTestHome(t)
+
+	root := initCmdTestRepo(t)
+	sess := writeCmdTestSession(t, root)
+	s := mustNewStore(t, root)
+	if err := s.AppendEvent(sess.ID, "Note", "first note"); err != nil {
+		t.Fatalf("append first note: %v", err)
+	}
+	body, err := s.ReadSessionBody(sess.ID)
+	if err != nil {
+		t.Fatalf("ReadSessionBody: %v", err)
+	}
+	events := store.ParseSessionEvents(body)
+	if err := s.AppendEvent(sess.ID, "Edit", store.FormatEditBody(events[1], "delete", "")); err != nil {
+		t.Fatalf("append delete edit: %v", err)
+	}
+	t.Chdir(root)
+
+	out, err := executeStatusCommand("-n", "0")
+	if err != nil {
+		t.Fatalf("status command failed: %v", err)
+	}
+
+	assertNotContains(t, out, "first note")
+}
+
+func TestStatusCommandHidesDeletedBlockers(t *testing.T) {
+	requireCmdTestGit(t)
+	setConfigTestHome(t)
+
+	root := initCmdTestRepo(t)
+	sess := writeCmdTestSession(t, root)
+	s := mustNewStore(t, root)
+	if err := s.AppendEvent(sess.ID, "Blocker", "obsolete blocker"); err != nil {
+		t.Fatalf("append blocker: %v", err)
+	}
+	body, err := s.ReadSessionBody(sess.ID)
+	if err != nil {
+		t.Fatalf("ReadSessionBody: %v", err)
+	}
+	events := store.ParseSessionEvents(body)
+	if err := s.AppendEvent(sess.ID, "Edit", store.FormatEditBody(events[1], "delete", "")); err != nil {
+		t.Fatalf("append delete edit: %v", err)
+	}
+	t.Chdir(root)
+
+	out, err := executeStatusCommand("-n", "0")
+	if err != nil {
+		t.Fatalf("status command failed: %v", err)
+	}
+
+	assertNotContains(t, out, "obsolete blocker")
+	assertContains(t, out, "Blockers")
+	assertContains(t, out, "None")
+}
+
 func TestStatusCommandUsesConfiguredDisplayTime(t *testing.T) {
 	requireCmdTestGit(t)
 	_, configPath := setConfigTestHome(t)
