@@ -747,8 +747,8 @@ func mustParseEventTime(t *testing.T, value string) time.Time {
 	return at
 }
 
-func TestParseSessionEventsCorrectionReplacesBody(t *testing.T) {
-	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nOriginal note text\n\n## Correction - 2026-01-15 14:35 UTC\n\nNote 14:30\nCorrected note text\n"
+func TestParseSessionEventsEditReplacesBody(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nOriginal note text\n\n## Edit - 2026-01-15 14:35 UTC\n\nNote 14:30\nCorrected note text\n"
 
 	events := ParseSessionEvents(body)
 	if len(events) != 2 {
@@ -765,8 +765,8 @@ func TestParseSessionEventsCorrectionReplacesBody(t *testing.T) {
 	}
 }
 
-func TestParseSessionEventsCorrectionDeletesEvent(t *testing.T) {
-	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nOriginal note\n\n## Correction - 2026-01-15 14:35 UTC\n\nNote 14:30\n"
+func TestParseSessionEventsEditDeletesEvent(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nOriginal note\n\n## Edit - 2026-01-15 14:35 UTC\n\nNote 14:30\n"
 
 	events := ParseSessionEvents(body)
 	if len(events) != 2 {
@@ -783,12 +783,12 @@ func TestParseSessionEventsCorrectionDeletesEvent(t *testing.T) {
 	}
 }
 
-func TestParseSessionEventsCorrectionDoesNotMatchStart(t *testing.T) {
-	body := "\n## Start\n\nStarted work.\n\n## Correction - 2026-01-15 14:35 UTC\n\nStart \nNew start\n"
+func TestParseSessionEventsEditDoesNotMatchStart(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Edit - 2026-01-15 14:35 UTC\n\nStart \nNew start\n"
 
 	events := ParseSessionEvents(body)
 	if len(events) != 1 {
-		t.Fatalf("expected 1 event (Start, Correction should not match), got %d", len(events))
+		t.Fatalf("expected 1 event (Start, Edit should not match), got %d", len(events))
 	}
 	if events[0].Type != "Start" {
 		t.Errorf("expected Start, got %s", events[0].Type)
@@ -798,8 +798,8 @@ func TestParseSessionEventsCorrectionDoesNotMatchStart(t *testing.T) {
 	}
 }
 
-func TestParseSessionEventsCorrectionMultipleEvents(t *testing.T) {
-	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nFirst note\n\n## Note - 2026-01-15 14:35 UTC\n\nSecond note\n\n## Correction - 2026-01-15 14:40 UTC\n\nNote 14:30\nCorrected first note\n"
+func TestParseSessionEventsEditMultipleEvents(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nFirst note\n\n## Note - 2026-01-15 14:35 UTC\n\nSecond note\n\n## Edit - 2026-01-15 14:40 UTC\n\nNote 14:30\nCorrected first note\n"
 
 	events := ParseSessionEvents(body)
 	if len(events) != 3 {
@@ -813,8 +813,8 @@ func TestParseSessionEventsCorrectionMultipleEvents(t *testing.T) {
 	}
 }
 
-func TestParseSessionEventsCorrectionLastOneWins(t *testing.T) {
-	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nOriginal\n\n## Correction - 2026-01-15 14:35 UTC\n\nNote 14:30\nFirst correction\n\n## Correction - 2026-01-15 14:40 UTC\n\nNote 14:30\nSecond correction\n"
+func TestParseSessionEventsEditLastOneWins(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nOriginal\n\n## Edit - 2026-01-15 14:35 UTC\n\nNote 14:30\nFirst correction\n\n## Edit - 2026-01-15 14:40 UTC\n\nNote 14:30\nSecond correction\n"
 
 	events := ParseSessionEvents(body)
 	if len(events) != 2 {
@@ -825,8 +825,8 @@ func TestParseSessionEventsCorrectionLastOneWins(t *testing.T) {
 	}
 }
 
-func TestParseSessionEventsCorrectionBlocker(t *testing.T) {
-	body := "\n## Start\n\nStarted work.\n\n## Blocker - 2026-01-15 14:30 UTC\n\nOriginal blocker\n\n## Correction - 2026-01-15 14:35 UTC\n\nBlocker 14:30\nUpdated blocker\n"
+func TestParseSessionEventsEditBlocker(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Blocker - 2026-01-15 14:30 UTC\n\nOriginal blocker\n\n## Edit - 2026-01-15 14:35 UTC\n\nBlocker 14:30\nUpdated blocker\n"
 
 	events := ParseSessionEvents(body)
 	if len(events) != 2 {
@@ -840,20 +840,20 @@ func TestParseSessionEventsCorrectionBlocker(t *testing.T) {
 	}
 }
 
-func TestParseSessionEventsCorrectionNoMatch(t *testing.T) {
-	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nOriginal note\n\n## Correction - 2026-01-15 14:35 UTC\n\nNote 99:99\nDoes not match\n"
+func TestParseSessionEventsEditNoMatch(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nOriginal note\n\n## Edit - 2026-01-15 14:35 UTC\n\nNote 99:99\nDoes not match\n"
 
 	events := ParseSessionEvents(body)
 	if len(events) != 2 {
-		t.Fatalf("expected 2 events (bad correction ignored), got %d", len(events))
+		t.Fatalf("expected 2 events (bad edit ignored), got %d", len(events))
 	}
 	if events[1].Body != "Original note" {
 		t.Errorf("note body should be unchanged, got %q", events[1].Body)
 	}
 }
 
-func TestParseSessionEventsCorrectionEmptyBodyNoop(t *testing.T) {
-	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nOriginal note\n\n## Correction - 2026-01-15 14:35 UTC\n"
+func TestParseSessionEventsEditEmptyBodyNoop(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nOriginal note\n\n## Edit - 2026-01-15 14:35 UTC\n"
 
 	events := ParseSessionEvents(body)
 	if len(events) != 2 {

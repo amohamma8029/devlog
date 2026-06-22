@@ -276,7 +276,7 @@ func parseSessionEvents(body string) ([]SessionEvent, bool) {
 	}
 
 	flush()
-	return applyCorrections(events), hasStart
+	return applyEdits(events), hasStart
 }
 
 func parseEventHeading(line string) (string, time.Time, bool) {
@@ -285,7 +285,7 @@ func parseEventHeading(line string) (string, time.Time, bool) {
 	}
 
 	heading := strings.TrimSpace(strings.TrimPrefix(line, "## "))
-	for _, eventType := range []string{"Start", "Note", "Blocker", "Stop", "Correction"} {
+	for _, eventType := range []string{"Start", "Note", "Blocker", "Stop", "Edit"} {
 		if heading == eventType {
 			return eventType, time.Time{}, true
 		}
@@ -303,10 +303,10 @@ func parseEventHeading(line string) (string, time.Time, bool) {
 	return "", time.Time{}, false
 }
 
-func applyCorrections(events []SessionEvent) []SessionEvent {
-	byHeader := make(map[string]int) // "Note 14:30" → index of last matching event
+func applyEdits(events []SessionEvent) []SessionEvent {
+	byHeader := make(map[string]int)
 	for i := range events {
-		if events[i].Type == "Correction" {
+		if events[i].Type == "Edit" {
 			continue
 		}
 		header := fmt.Sprintf("%s %02d:%02d", events[i].Type, events[i].Time.UTC().Hour(), events[i].Time.UTC().Minute())
@@ -314,7 +314,7 @@ func applyCorrections(events []SessionEvent) []SessionEvent {
 	}
 
 	for i := range events {
-		if events[i].Type != "Correction" {
+		if events[i].Type != "Edit" {
 			continue
 		}
 
@@ -349,7 +349,7 @@ func applyCorrections(events []SessionEvent) []SessionEvent {
 
 	result := events[:0]
 	for i := range events {
-		if events[i].Type == "Correction" {
+		if events[i].Type == "Edit" {
 			continue
 		}
 		result = append(result, events[i])
