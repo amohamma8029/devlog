@@ -765,6 +765,43 @@ func TestParseSessionEventsEditReplacesBody(t *testing.T) {
 	}
 }
 
+func TestParseSessionEventsStructuredEditReplacesBody(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nOriginal note text\n\n## Edit - 2026-01-15 14:35 UTC\n\nTarget: Note 14:30\nAction: update\n\nOriginal:\nOriginal note text\n\nNew:\nCorrected note text\n"
+
+	events := ParseSessionEvents(body)
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events (Start + corrected Note), got %d", len(events))
+	}
+	if events[1].Body != "Corrected note text" {
+		t.Errorf("expected corrected body %q, got %q", "Corrected note text", events[1].Body)
+	}
+	if events[1].IsDeleted {
+		t.Error("IsDeleted should be false for corrected event")
+	}
+	expectedModified := mustParseEventTime(t, "2026-01-15 14:35 UTC")
+	if !events[1].CorrectedAt.Equal(expectedModified) {
+		t.Errorf("CorrectedAt = %v, want %v", events[1].CorrectedAt, expectedModified)
+	}
+}
+
+func TestParseSessionEventsStructuredEditDeletesBodyMatchedEvent(t *testing.T) {
+	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nFirst note\n\n## Note - 2026-01-15 14:30 UTC\n\nSecond note\n\n## Edit - 2026-01-15 14:35 UTC\n\nTarget: Note 14:30\nAction: delete\n\nOriginal:\nFirst note\n"
+
+	events := ParseSessionEvents(body)
+	if len(events) != 3 {
+		t.Fatalf("expected 3 events, got %d", len(events))
+	}
+	if !events[1].IsDeleted {
+		t.Error("first matching note should be deleted")
+	}
+	if events[2].IsDeleted {
+		t.Error("second same-minute note should not be deleted")
+	}
+	if events[2].Body != "Second note" {
+		t.Errorf("second note body = %q, want %q", events[2].Body, "Second note")
+	}
+}
+
 func TestParseSessionEventsEditDeletesEvent(t *testing.T) {
 	body := "\n## Start\n\nStarted work.\n\n## Note - 2026-01-15 14:30 UTC\n\nOriginal note\n\n## Edit - 2026-01-15 14:35 UTC\n\nNote 14:30\n"
 
