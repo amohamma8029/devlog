@@ -36,10 +36,11 @@ const eventTimeLayout = "2006-01-02 15:04"
 
 // SessionEvent represents a structured event parsed from a session Markdown body.
 type SessionEvent struct {
-	Type      string // Start, Note, Blocker, Stop
-	Time      time.Time
-	Body      string
-	IsDeleted bool
+	Type        string // Start, Note, Blocker, Stop
+	Time        time.Time
+	Body        string
+	IsDeleted   bool
+	CorrectedAt time.Time
 }
 
 // SessionFileMetadata is the cheap-to-read state used to detect session file changes.
@@ -341,9 +342,11 @@ func applyEdits(events []SessionEvent) []SessionEvent {
 		if newBody != "" {
 			events[idx].Body = newBody
 			events[idx].IsDeleted = false
+			events[idx].CorrectedAt = events[i].Time
 		} else {
 			events[idx].IsDeleted = true
 			events[idx].Body = ""
+			events[idx].CorrectedAt = events[i].Time
 		}
 	}
 
