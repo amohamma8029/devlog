@@ -227,8 +227,29 @@ func TestRenderActiveSessionUsesConfiguredDisplayTime(t *testing.T) {
 	if !strings.Contains(v, "Started: 2026-01-15 9:30:22 AM EST") {
 		t.Fatalf("active session header should use configured display time, got:\n%s", v)
 	}
-	if !strings.Contains(v, "Note · 2026-01-15 10:30 AM EST") {
+	if !strings.Contains(v, "[1] Note · 2026-01-15 10:30 AM EST") {
 		t.Fatalf("active session timeline should use configured display time, got:\n%s", v)
+	}
+}
+
+func TestRenderEventLinesShowsRecencyIndexes(t *testing.T) {
+	events := []store.SessionEvent{
+		{Type: "Note", Time: testEventTime(14, 30), Body: "old note"},
+		{Type: "Blocker", Time: testEventTime(14, 35), Body: "middle blocker"},
+		{Type: "Note", Time: testEventTime(14, 40), Body: "new note"},
+	}
+
+	lines, _ := renderEventLines(events, 80, internalconfig.DefaultDisplayTimeFormatter(), -1)
+	plain := xansi.Strip(strings.Join(lines, "\n"))
+
+	if !strings.Contains(plain, "[3] Note") {
+		t.Fatalf("oldest visible event should render as [3], got:\n%s", plain)
+	}
+	if !strings.Contains(plain, "[2] Blocker") {
+		t.Fatalf("middle visible event should render as [2], got:\n%s", plain)
+	}
+	if !strings.Contains(plain, "[1] Note") {
+		t.Fatalf("newest visible event should render as [1], got:\n%s", plain)
 	}
 }
 

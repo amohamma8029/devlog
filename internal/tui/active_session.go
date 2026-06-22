@@ -63,9 +63,16 @@ func renderBottomSection(m Model, includePalette bool) string {
 		m.Palette.SetWidth(m.Width)
 		parts = append(parts, m.Palette.View())
 	}
+	if m.CurrentView == ActiveSession && m.DeleteConfirmEvent > 0 {
+		parts = append(parts, renderDeleteConfirmation())
+	}
 	parts = append(parts, renderTransientMessages(m, m.Width)...)
 	parts = append(parts, renderFooter(m))
 	return strings.Join(parts, "\n")
+}
+
+func renderDeleteConfirmation() string {
+	return SavePromptStyle.Render(" Hide selected event? y/n ")
 }
 
 func renderTransientMessages(m Model, width int) []string {
@@ -130,9 +137,9 @@ func renderFooter(m Model) string {
 	if m.CurrentView == ActiveSession {
 		if m.ActiveSession != nil {
 			if m.Width < 80 {
-				text = "? help  ·  ↑/↓ scroll  ·  q quit"
+				text = "? help  ·  tab event  ·  e edit  ·  d hide  ·  q quit"
 			} else {
-				text = "? help  ·  ↑/↓ line  ·  pgup/pgdn page  ·  home/end jump  ·  tab/s-tab event  ·  e edit  ·  q quit"
+				text = "? help  ·  ↑/↓ line  ·  pgup/pgdn page  ·  home/end jump  ·  tab/s-tab event  ·  e edit  ·  d hide  ·  q quit"
 			}
 		} else {
 			text = "l: session list  ·  o: open new session  ·  q quit"
@@ -477,7 +484,7 @@ func generalEntries() []keyEntry {
 		{"end", "Jump to bottom"},
 		{"tab", "Select next event"},
 		{"shift+tab", "Select previous event"},
-		{"e", "Edit selected event"},
+		{"e/d", "Edit/hide event"},
 		{"q", "Quit"},
 	}
 }
@@ -489,6 +496,8 @@ func compactGeneralEntries() []keyEntry {
 		{"↑/↓", "Scroll one line"},
 		{"pgup/pgdn", "Scroll one page"},
 		{"home/end", "Jump to top/bottom"},
+		{"tab", "Select event"},
+		{"e/d", "Edit or hide selected event"},
 		{"q", "Back or quit"},
 	}
 }
@@ -755,7 +764,7 @@ func renderEventLines(events []store.SessionEvent, maxWidth int, formatter inter
 			timeStr = "     "
 		}
 
-		headerLine := fmt.Sprintf("%s · %s", event.Type, timeStr)
+		headerLine := fmt.Sprintf("[%d] %s · %s", len(events)-idx, event.Type, timeStr)
 		header := labelStyle.Render(headerLine)
 
 		bodyLines := splitLines(event.Body, eventWidth-4)
