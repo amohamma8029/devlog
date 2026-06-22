@@ -2,10 +2,10 @@ package handoff
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/amo/devlog/internal/store"
 	"gopkg.in/yaml.v3"
 )
 
@@ -59,19 +59,13 @@ type sessionMeta struct {
 	Branch string `yaml:"branch"`
 }
 
-type event struct {
-	Type string // Start, Note, Blocker, Stop
-	Time string // YYYY-MM-DD HH:MM (empty for Start events)
-	Body string
-}
-
-func parseSession(content string) (*sessionMeta, []event, error) {
+func parseSession(content string) (*sessionMeta, []store.SessionEvent, error) {
 	meta, body, err := extractFrontMatter(content)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	events := parseEvents(body)
+	events := store.ParseSessionEvents(body)
 	return meta, events, nil
 }
 
@@ -99,45 +93,9 @@ func extractFrontMatter(content string) (*sessionMeta, string, error) {
 	return &meta, parts[1], nil
 }
 
-var eventHeaderRe = regexp.MustCompile(`^## (Start|Note|Blocker|Stop)(?: - (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) UTC)?$`)
-
-func parseEvents(body string) []event {
-	lines := strings.Split(body, "\n")
-	var events []event
-	var currentEvent *event
-
-	for _, line := range lines {
-		matches := eventHeaderRe.FindStringSubmatch(strings.TrimSpace(line))
-		if matches != nil {
-			if currentEvent != nil {
-				currentEvent.Body = strings.TrimSpace(currentEvent.Body)
-				events = append(events, *currentEvent)
-			}
-			currentEvent = &event{
-				Type: matches[1],
-				Time: matches[2],
-			}
-			continue
-		}
-		if currentEvent != nil {
-			if currentEvent.Body != "" {
-				currentEvent.Body += "\n"
-			}
-			currentEvent.Body += line
-		}
-	}
-
-	if currentEvent != nil {
-		currentEvent.Body = strings.TrimSpace(currentEvent.Body)
-		events = append(events, *currentEvent)
-	}
-
-	return events
-}
-
-func deriveStatus(events []event) string {
+func deriveStatus(events []store.SessionEvent) string {
 	for _, e := range events {
-		if e.Type == "Stop" {
+		if e.Type == "Stop" && !e.IsDeleted {
 			return "closed"
 		}
 	}
@@ -150,12 +108,12 @@ func formatHeader(meta *sessionMeta, status string) string {
 	return fmt.Sprintf("# Handoff: %s — %s (%s) [%s]\n\n", meta.Branch, meta.ID, meta.Author, status)
 }
 
-func formatSummary(events []event) string {
+func formatSummary(events []store.SessionEvent) string {
 	var notes []string
 	var blockers []string
 
 	for _, e := range events {
-		if e.Body == "" {
+		if e.Body == "" || e.IsDeleted {
 			continue
 		}
 		switch e.Type {
