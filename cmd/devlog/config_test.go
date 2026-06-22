@@ -80,9 +80,19 @@ func TestConfigEditCommandCreatesMissingConfigAndUsesEnvEditor(t *testing.T) {
 	}
 
 	assertEditorCall(t, calls, "env-editor", []string{"--wait"}, configPath)
-	if _, err := internalconfig.LoadFile(configPath); err != nil {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read starter config failed: %v", err)
+	}
+	cfg, err := internalconfig.Parse(data)
+	if err != nil {
 		t.Fatalf("starter config did not validate: %v", err)
 	}
+	if len(cfg.Author.Profiles) != 0 {
+		t.Fatalf("starter config profiles = %v, want empty", cfg.Author.Profiles)
+	}
+	assertDocumentedConfigTemplate(t, string(data))
+	assertDefaultConfigTemplateValues(t, string(data))
 	assertContains(t, out, "Config created")
 	assertContains(t, out, "Opening editor")
 	assertContains(t, out, "env-editor --wait")
@@ -132,7 +142,7 @@ display:
 	var calls []editorCall
 	withConfigEditor(t, func(cmd *cobra.Command, editor configEditor, path string) error {
 		calls = append(calls, editorCall{editor: editor, path: path})
-		return os.WriteFile(path, []byte(starterConfigYAML), 0600)
+		return os.WriteFile(path, []byte(defaultConfigTemplateForTest(t)), 0600)
 	})
 
 	if _, err := executeRootCommand("config", "edit"); err != nil {
@@ -171,7 +181,7 @@ func TestConfigEditCommandFallsBackToEnvEditorForInvalidExistingConfig(t *testin
 	var calls []editorCall
 	withConfigEditor(t, func(cmd *cobra.Command, editor configEditor, path string) error {
 		calls = append(calls, editorCall{editor: editor, path: path})
-		return os.WriteFile(path, []byte(starterConfigYAML), 0600)
+		return os.WriteFile(path, []byte(defaultConfigTemplateForTest(t)), 0600)
 	})
 
 	if _, err := executeRootCommand("config", "edit"); err != nil {
@@ -414,6 +424,68 @@ func assertEditorCall(t *testing.T, calls []editorCall, command string, args []s
 	}
 	if calls[0].path != path {
 		t.Fatalf("editor path = %q, want %q", calls[0].path, path)
+	}
+}
+
+func defaultConfigTemplateForTest(t *testing.T) string {
+	t.Helper()
+
+	body, err := renderConfigYAML(internalconfig.Default())
+	if err != nil {
+		t.Fatalf("render default config template failed: %v", err)
+	}
+	return body
+}
+
+func assertDocumentedConfigTemplate(t *testing.T, body string) {
+	t.Helper()
+
+	for _, want := range []string{
+		"# devlog global config",
+		"author:",
+		"default_profile:",
+		"Each profile supports display and optional email",
+		"profiles:",
+		"editor:",
+		"Leave command empty to use $VISUAL, $EDITOR",
+		"command:",
+		"args:",
+		"display:",
+		"IANA timezone",
+		"timezone:",
+		"clock_format:",
+		"handoff:",
+		"diff_context_lines:",
+		"Number of unchanged context lines",
+		"tui:",
+		"handoff_preview:",
+		"diff_line_limit:",
+		"Maximum raw diff lines",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("generated config missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func assertDefaultConfigTemplateValues(t *testing.T, body string) {
+	t.Helper()
+
+	for _, want := range []string{
+		"default_profile: \"git\"",
+		"command: \"\"",
+		"args: []",
+		"timezone: \"UTC\"",
+		"clock_format: \"24h\"",
+		"diff_context_lines: 3",
+		"diff_line_limit: 100",
+		"# work:",
+		"#   display: \"Your Name\"",
+		"#   email: \"you@example.com\"",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("default config missing %q:\n%s", want, body)
+		}
 	}
 }
 

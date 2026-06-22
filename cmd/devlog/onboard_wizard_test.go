@@ -60,9 +60,14 @@ func TestWriteDefaultConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse config: %v", err)
 	}
+	assertDocumentedConfigTemplate(t, string(data))
+	assertDefaultConfigTemplateValues(t, string(data))
 
 	if cfg.Author.DefaultProfile != "git" {
 		t.Errorf("default author profile = %q, want %q", cfg.Author.DefaultProfile, "git")
+	}
+	if len(cfg.Author.Profiles) != 0 {
+		t.Errorf("default profiles = %v, want empty", cfg.Author.Profiles)
 	}
 }
 
@@ -114,6 +119,7 @@ func TestRunWizardAllValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse config: %v", err)
 	}
+	assertDocumentedConfigTemplate(t, string(data))
 
 	if cfg.Author.DefaultProfile != "default" {
 		t.Errorf("default_profile = %q, want %q", cfg.Author.DefaultProfile, "default")
@@ -132,6 +138,12 @@ func TestRunWizardAllValues(t *testing.T) {
 	}
 	if cfg.Display.ClockFormat != "12h" {
 		t.Errorf("clock_format = %q, want %q", cfg.Display.ClockFormat, "12h")
+	}
+	if cfg.Handoff.DiffContextLines != config.DefaultHandoffDiffContextLines {
+		t.Errorf("diff_context_lines = %d, want %d", cfg.Handoff.DiffContextLines, config.DefaultHandoffDiffContextLines)
+	}
+	if cfg.TUI.HandoffPreview.DiffLineLimit != config.DefaultHandoffPreviewLineLimit {
+		t.Errorf("diff_line_limit = %d, want %d", cfg.TUI.HandoffPreview.DiffLineLimit, config.DefaultHandoffPreviewLineLimit)
 	}
 }
 

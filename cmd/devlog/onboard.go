@@ -10,7 +10,6 @@ import (
 
 	"github.com/amo/devlog/internal/config"
 	internalgit "github.com/amo/devlog/internal/git"
-	"gopkg.in/yaml.v3"
 )
 
 type onboarder struct {
@@ -133,7 +132,7 @@ func (o *onboarder) welcomeMessage() string {
 }
 
 func (o *onboarder) writeConfig(cfg config.Config) error {
-	data, err := yaml.Marshal(cfg)
+	body, err := renderConfigYAML(cfg)
 	if err != nil {
 		return fmt.Errorf("encode config: %w", err)
 	}
@@ -141,7 +140,7 @@ func (o *onboarder) writeConfig(cfg config.Config) error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
-	if err := os.WriteFile(o.configPath, data, 0644); err != nil {
+	if err := os.WriteFile(o.configPath, []byte(body), 0644); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}
 	return nil
