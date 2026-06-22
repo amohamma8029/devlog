@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/amo/devlog/internal/config"
+	internalgit "github.com/amo/devlog/internal/git"
 )
 
 type onboarder struct {
 	configPath string
+	repoRoot   string
 }
 
 func newOnboarder() *onboarder {
@@ -19,15 +22,38 @@ func newOnboarder() *onboarder {
 	if err != nil {
 		return &onboarder{configPath: ""}
 	}
-	return &onboarder{configPath: path}
+
+	root, err := internalgit.RepoRoot()
+	if err != nil {
+		root = ""
+	}
+
+	return &onboarder{configPath: path, repoRoot: root}
 }
 
 func (o *onboarder) shouldRun() bool {
 	if o.configPath == "" {
 		return false
 	}
-	_, err := os.Stat(o.configPath)
-	return os.IsNotExist(err)
+	if _, err := os.Stat(o.configPath); err == nil {
+		return false
+	} else if !os.IsNotExist(err) {
+		return false
+	}
+
+	if o.repoRoot != "" {
+		sessionsDir := filepath.Join(o.repoRoot, ".devlog", "sessions")
+		entries, err := os.ReadDir(sessionsDir)
+		if err == nil {
+			for _, entry := range entries {
+				if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".md") {
+					return false
+				}
+			}
+		}
+	}
+
+	return true
 }
 
 func (o *onboarder) run(out io.Writer, in io.Reader) error {

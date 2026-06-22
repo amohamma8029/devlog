@@ -48,6 +48,45 @@ func TestShouldRunFalseWhenConfigPathEmpty(t *testing.T) {
 	}
 }
 
+func TestShouldRunFalseWhenSessionsExistButNoConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yml")
+
+	sessionsDir := filepath.Join(dir, ".devlog", "sessions")
+	if err := os.MkdirAll(sessionsDir, 0755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	sessionFile := filepath.Join(sessionsDir, "2026-01-15T140000Z.md")
+	if err := os.WriteFile(sessionFile, []byte("---\nid: 2026-01-15T140000Z\nstatus: closed\n---\n\n## Start\n\ntest\n"), 0644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	o := &onboarder{configPath: configPath, repoRoot: dir}
+	if o.shouldRun() {
+		t.Error("shouldRun: expected false when sessions exist even without config, got true")
+	}
+}
+
+func TestShouldRunTrueWhenNoSessionsAndNoConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yml")
+
+	o := &onboarder{configPath: configPath, repoRoot: dir}
+	if !o.shouldRun() {
+		t.Error("shouldRun: expected true when no config and no sessions, got false")
+	}
+}
+
+func TestShouldRunTrueWhenNoRepoRootAndNoConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.yml")
+
+	o := &onboarder{configPath: configPath, repoRoot: ""}
+	if !o.shouldRun() {
+		t.Error("shouldRun: expected true when no config and no repoRoot, got false")
+	}
+}
+
 func TestWelcomeMessageContainsExpectedContent(t *testing.T) {
 	o := &onboarder{configPath: "/tmp/config.yml"}
 	msg := o.welcomeMessage()
