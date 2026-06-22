@@ -279,6 +279,126 @@ func TestGenerateSummaryWithNotesAndBlockers(t *testing.T) {
 	}
 }
 
+func TestGenerateSummaryUsesEditedSessionState(t *testing.T) {
+	sessionEdited := `---
+id: 2026-01-15T143022Z
+author: Ayman
+email: ayman@example.com
+started: 2026-01-15T14:30:22Z
+branch: feat/auth
+status: active
+---
+
+## Start
+
+Starting work.
+
+## Note - 2026-01-15 15:00 UTC
+
+Original progress note
+
+## Blocker - 2026-01-15 16:00 UTC
+
+Original blocker text
+
+## Edit - 2026-01-15 16:30 UTC
+
+Target: Note 15:00
+Action: update
+
+Original:
+Original progress note
+
+New:
+Updated progress note
+
+## Edit - 2026-01-15 16:45 UTC
+
+Target: Blocker 16:00
+Action: update
+
+Original:
+Original blocker text
+
+New:
+Updated blocker text
+`
+
+	out, err := Generate(sessionEdited, "")
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	if !strings.Contains(out, "Updated progress note") {
+		t.Error("expected edited note body in summary")
+	}
+	if !strings.Contains(out, "Updated blocker text") {
+		t.Error("expected edited blocker body in summary")
+	}
+	if strings.Contains(out, "Original progress note") || strings.Contains(out, "Original blocker text") {
+		t.Errorf("summary should not include original edited bodies, got:\n%s", out)
+	}
+}
+
+func TestGenerateSummaryOmitsDeletedSessionEvents(t *testing.T) {
+	sessionWithDeletedEvents := `---
+id: 2026-01-15T143022Z
+author: Ayman
+email: ayman@example.com
+started: 2026-01-15T14:30:22Z
+branch: feat/auth
+status: active
+---
+
+## Start
+
+Starting work.
+
+## Note - 2026-01-15 15:00 UTC
+
+Keep this note
+
+## Note - 2026-01-15 15:30 UTC
+
+Delete this note
+
+## Blocker - 2026-01-15 16:00 UTC
+
+Delete this blocker
+
+## Edit - 2026-01-15 16:30 UTC
+
+Target: Note 15:30
+Action: delete
+
+Original:
+Delete this note
+
+## Edit - 2026-01-15 16:45 UTC
+
+Target: Blocker 16:00
+Action: delete
+
+Original:
+Delete this blocker
+`
+
+	out, err := Generate(sessionWithDeletedEvents, "")
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+
+	if !strings.Contains(out, "Keep this note") {
+		t.Error("expected undeleted note in summary")
+	}
+	if strings.Contains(out, "Delete this note") || strings.Contains(out, "Delete this blocker") {
+		t.Errorf("summary should omit deleted bodies, got:\n%s", out)
+	}
+	if strings.Contains(out, "Blockers:") {
+		t.Errorf("Blockers line should not appear when all blockers are deleted, got:\n%s", out)
+	}
+}
+
 func TestGenerateSummaryNoNotes(t *testing.T) {
 	out, err := Generate(sessionNoNotes, "")
 	if err != nil {
