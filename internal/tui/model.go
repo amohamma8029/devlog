@@ -10,7 +10,6 @@ import (
 	"github.com/amo/devlog/internal/session"
 	"github.com/amo/devlog/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 type View int
@@ -1021,12 +1020,11 @@ func (m Model) View() string {
 		v = "<devlog TUI>"
 	}
 
-	// Force view to fill terminal height so no stale content persists on resize.
-	// lipgloss.Place pads with newlines — ANSI-aware, zero flicker.
-	v = lipgloss.Place(m.Width, m.Height, lipgloss.Left, lipgloss.Top, v)
+	// Force every frame to the latest terminal size so resize redraws clear stale cells.
+	v = fitRenderedBlock(v, m.Width, m.Height)
 
 	if m.ShowHelp {
-		return renderHelpOverView(m, v)
+		return fitRenderedBlock(renderHelpOverView(m, v), m.Width, m.Height)
 	}
 
 	return v
@@ -1078,7 +1076,7 @@ func renderSessionList(m Model) string {
 	sl.height = contentHeight
 	sl.cw = calcColumnWidths(m.Width)
 
-	content := lipgloss.Place(m.Width, contentHeight, lipgloss.Left, lipgloss.Top, sl.View())
+	content := fitRenderedBlock(sl.View(), m.Width, contentHeight)
 	if bottom == "" {
 		return content
 	}

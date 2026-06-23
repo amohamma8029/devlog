@@ -36,6 +36,16 @@ func testModel() Model {
 	}
 }
 
+func assertRenderedLinesWithinWidth(t *testing.T, rendered string, width int) {
+	t.Helper()
+
+	for i, line := range strings.Split(rendered, "\n") {
+		if got := xansi.StringWidth(line); got > width {
+			t.Fatalf("line %d width = %d, want <= %d: %q", i, got, width, xansi.Strip(line))
+		}
+	}
+}
+
 func testScrollableActiveModel() Model {
 	m := testModel()
 	m.CurrentView = ActiveSession
@@ -203,6 +213,24 @@ func TestRenderActiveSessionShowsMetadata(t *testing.T) {
 	}
 }
 
+func TestRenderActiveSessionHeaderUsesTerminalWidth(t *testing.T) {
+	m := testModel()
+	m.CurrentView = ActiveSession
+	m.ActiveSession = testActiveSession()
+	m.Title = "Test title"
+	m.Width = 80
+	m.Height = 24
+
+	header := renderHeader(m)
+	lines := strings.Split(header, "\n")
+	if len(lines) == 0 {
+		t.Fatal("renderHeader returned no lines")
+	}
+	if got := xansi.StringWidth(lines[0]); got != m.Width {
+		t.Fatalf("active session header width = %d, want %d", got, m.Width)
+	}
+}
+
 func TestRenderActiveSessionUsesConfiguredDisplayTime(t *testing.T) {
 	m := testModel()
 	m.CurrentView = ActiveSession
@@ -284,6 +312,47 @@ func TestRenderActiveSessionDoesNotOverflowHeight(t *testing.T) {
 	v := renderActiveSession(m)
 	if got := countLines(v); got > m.Height {
 		t.Fatalf("renderActiveSession returned %d lines, want at most %d", got, m.Height)
+	}
+}
+
+func TestRenderActiveSessionDoesNotOverflowNarrowWidth(t *testing.T) {
+	m := testModel()
+	m.CurrentView = ActiveSession
+	m.ActiveSession = testActiveSession()
+	m.ActiveSession.Branch = "feature/very-long-branch-name-that-must-fit"
+	m.Title = "A very long active session title that must be clipped to the terminal width"
+	m.Width = 24
+	m.Height = 12
+	m.Events = []store.SessionEvent{
+		{Type: "Start", Body: "Test title"},
+		{Type: "Note", Time: testEventTime(14, 30), Body: "averyveryveryverylongword plus more text that should never overflow"},
+	}
+
+	v := renderActiveSession(m)
+	assertRenderedLinesWithinWidth(t, v, m.Width)
+}
+
+func TestModelViewFitsLatestWindowSize(t *testing.T) {
+	m := testModel()
+	m.CurrentView = ActiveSession
+	m.ActiveSession = testActiveSession()
+	m.Title = "A very long active session title that must be clipped to the terminal width"
+	m.Width = 24
+	m.Height = 8
+	m.Events = []store.SessionEvent{
+		{Type: "Start", Body: "Test title"},
+		{Type: "Note", Time: testEventTime(14, 30), Body: "long note body that should fit the latest frame width"},
+	}
+
+	v := m.View()
+	lines := strings.Split(v, "\n")
+	if len(lines) != m.Height {
+		t.Fatalf("View returned %d lines, want %d", len(lines), m.Height)
+	}
+	for i, line := range lines {
+		if got := xansi.StringWidth(line); got != m.Width {
+			t.Fatalf("line %d width = %d, want %d: %q", i, got, m.Width, xansi.Strip(line))
+		}
 	}
 }
 

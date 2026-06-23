@@ -310,6 +310,22 @@ func TestSessionListViewContainsColumns(t *testing.T) {
 	}
 }
 
+func TestRenderSessionListDoesNotOverflowNarrowWidth(t *testing.T) {
+	s, root := newTestStore(t)
+	writeTestSession(t, s, "2026-01-15T140000Z", "feature/very-long-branch-name-that-must-fit", "Alice", "very long session title that must fit", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	m := NewModel(s, root)
+	m.CurrentView = SessionList
+	m.Width = 24
+	m.Height = 8
+	m.SessionList = loadTestModel(t, s, root)
+	m.SessionList.filterMode = true
+	m.SessionList.filterText = "very-long-filter-text-that-must-fit"
+
+	v := renderSessionList(m)
+	assertRenderedLinesWithinWidth(t, v, m.Width)
+}
+
 func TestSessionListUsesConfiguredDisplayTime(t *testing.T) {
 	s, root := newTestStore(t)
 	writeTestSession(t, s, "2026-01-15T140000Z", "feat/a", "Alice", "auth", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))

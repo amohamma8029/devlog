@@ -242,12 +242,22 @@ func (m SessionListModel) View() string {
 
 	body := strings.Join(lines, "\n")
 
+	width := terminalRenderWidth(m.width)
+	boxWidth := width - 2
+	if boxWidth < 1 {
+		boxWidth = 1
+	}
+	bodyWidth := width - BorderStyle.GetHorizontalFrameSize()
+	if bodyWidth < 1 {
+		bodyWidth = 1
+	}
+
 	if m.filterMode {
-		filterBar := m.renderFilterBar()
+		filterBar := m.renderFilterBar(bodyWidth)
 		body = filterBar + "\n" + body
 	}
 
-	return BorderStyle.Render(body)
+	return clampRenderedBlock(BorderStyle.Width(boxWidth).Render(body), width)
 }
 
 func (m SessionListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -401,15 +411,15 @@ func padCell(s string, width int) string {
 func (m SessionListModel) renderHeader() string {
 	w := m.cw
 	cells := []string{
-		padCell("TITLE", w.id),
-		padCell("BRANCH", w.branch),
+		padCell(truncateCell("TITLE", w.id), w.id),
+		padCell(truncateCell("BRANCH", w.branch), w.branch),
 	}
 	if w.showAuthor {
-		cells = append(cells, padCell("AUTHOR", w.author))
+		cells = append(cells, padCell(truncateCell("AUTHOR", w.author), w.author))
 	}
 	cells = append(cells,
-		padCell("STARTED", w.started),
-		padCell("STATUS", w.status),
+		padCell(truncateCell("STARTED", w.started), w.started),
+		padCell(truncateCell("STATUS", w.status), w.status),
 	)
 	return headerStyle.Render(strings.Join(cells, colSep))
 }
@@ -436,12 +446,12 @@ func (m SessionListModel) renderRow(s store.SessionRecord) string {
 	}
 	cells = append(cells,
 		padCell(truncateCell(m.displayTime.DateTime(s.Started), w.started), w.started),
-		padCell(style.Render(status), w.status),
+		padCell(style.Render(truncateCell(status, w.status)), w.status),
 	)
 	return strings.Join(cells, colSep)
 }
 
-func (m SessionListModel) renderFilterBar() string {
+func (m SessionListModel) renderFilterBar(width int) string {
 	var b strings.Builder
 	b.WriteString("Filter: ")
 	b.WriteString(m.filterText)
@@ -450,7 +460,7 @@ func (m SessionListModel) renderFilterBar() string {
 	} else {
 		b.WriteString(" (no matches)")
 	}
-	return b.String()
+	return clampRenderedLine(b.String(), width)
 }
 
 func truncateCell(s string, width int) string {

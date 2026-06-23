@@ -24,7 +24,9 @@ func renderActiveSession(m Model) string {
 	timeline := ""
 	if len(m.Events) > 1 {
 		timelineHeight := activeSessionTimelineHeight(m)
-		timeline = renderTimeline(m, timelineHeight)
+		if timelineHeight > 0 {
+			timeline = renderTimeline(m, timelineHeight)
+		}
 	}
 
 	contentTop := header
@@ -64,15 +66,15 @@ func renderBottomSection(m Model, includePalette bool) string {
 		parts = append(parts, m.Palette.View())
 	}
 	if m.CurrentView == ActiveSession && m.DeleteConfirmEvent > 0 {
-		parts = append(parts, renderDeleteConfirmation())
+		parts = append(parts, renderDeleteConfirmation(m.Width))
 	}
 	parts = append(parts, renderTransientMessages(m, m.Width)...)
 	parts = append(parts, renderFooter(m))
-	return strings.Join(parts, "\n")
+	return clampRenderedBlock(strings.Join(parts, "\n"), terminalRenderWidth(m.Width))
 }
 
-func renderDeleteConfirmation() string {
-	return SavePromptStyle.Render(" Hide selected event? y/n ")
+func renderDeleteConfirmation(width int) string {
+	return clampRenderedLine(SavePromptStyle.Render(" Hide selected event? y/n "), terminalRenderWidth(width))
 }
 
 func renderTransientMessages(m Model, width int) []string {
@@ -98,12 +100,25 @@ func renderHeader(m Model) string {
 	if sess == nil {
 		return ""
 	}
+	width := terminalRenderWidth(m.Width)
+	boxWidth := width - 2
+	if boxWidth < 1 {
+		boxWidth = 1
+	}
+	textWidth := width - BorderStyle.GetHorizontalFrameSize()
+	if textWidth < 1 {
+		textWidth = 1
+	}
 
 	var b strings.Builder
 
 	if m.Title != "" {
-		titleLine := TitleStyle.Render(m.Title) + " " + IDParenStyle.Render("("+sess.ID+")")
-		b.WriteString(titleLine)
+		titleLine := m.Title + " (" + sess.ID + ")"
+		if xansi.StringWidth(titleLine) <= textWidth {
+			b.WriteString(TitleStyle.Render(m.Title) + " " + IDParenStyle.Render("("+sess.ID+")"))
+		} else {
+			b.WriteString(TitleStyle.Render(clampRenderedLine(titleLine, textWidth)))
+		}
 		b.WriteByte('\n')
 		b.WriteByte('\n')
 	}
@@ -113,23 +128,22 @@ func renderHeader(m Model) string {
 	author := formatAuthor(sess.Author, sess.Email)
 	formatter := modelDisplayTimeFormatter(m)
 
-	if m.Width >= 80 {
-		b.WriteString(MetadataStyle.Render(
-			fmt.Sprintf("Author: %s  ·  Branch: %s  ·  Started: %s  ·  Duration: %s",
-				author, sess.Branch, formatter.DateTime(sess.Started), dur),
-		))
+	metadata := fmt.Sprintf("Author: %s  ·  Branch: %s  ·  Started: %s  ·  Duration: %s",
+		author, sess.Branch, formatter.DateTime(sess.Started), dur)
+	if m.Width >= 80 && xansi.StringWidth(metadata) <= textWidth {
+		b.WriteString(MetadataStyle.Render(metadata))
 	} else {
-		b.WriteString(MetadataStyle.Render("Author: " + author))
+		b.WriteString(MetadataStyle.Render(clampRenderedLine("Author: "+author, textWidth)))
 		b.WriteByte('\n')
-		b.WriteString(MetadataStyle.Render("Branch: " + sess.Branch))
+		b.WriteString(MetadataStyle.Render(clampRenderedLine("Branch: "+sess.Branch, textWidth)))
 		b.WriteByte('\n')
-		b.WriteString(MetadataStyle.Render("Started: " + formatter.DateTime(sess.Started)))
+		b.WriteString(MetadataStyle.Render(clampRenderedLine("Started: "+formatter.DateTime(sess.Started), textWidth)))
 		b.WriteByte('\n')
-		b.WriteString(MetadataStyle.Render("Duration: " + dur))
+		b.WriteString(MetadataStyle.Render(clampRenderedLine("Duration: "+dur, textWidth)))
 	}
 
 	b.WriteByte('\n')
-	return BorderStyle.Render(b.String())
+	return clampRenderedBlock(BorderStyle.Width(boxWidth).Render(b.String()), width)
 }
 
 func renderFooter(m Model) string {
@@ -159,7 +173,8 @@ func renderFooter(m Model) string {
 	} else {
 		text = "q quit"
 	}
-	return HintStyle.Render(clampPreviewLine(text, m.Width))
+	width := terminalRenderWidth(m.Width)
+	return clampRenderedLine(HintStyle.Render(clampPreviewLine(text, width)), width)
 }
 
 func renderNoSession(m Model) string {
@@ -203,7 +218,7 @@ func renderOpenSessionPrompt(m Model) string {
 	if cursorVisible {
 		input += CursorStyle.Render(" ")
 	}
-	return SavePromptStyle.Render(" Open session: " + input + " ")
+	return clampRenderedLine(SavePromptStyle.Render(" Open session: "+input+" "), terminalRenderWidth(m.Width))
 }
 
 func renderHelpOverlay(m Model) string {
@@ -593,6 +608,64 @@ func countLines(s string) int {
 	return strings.Count(s, "\n") + 1
 }
 
+func terminalRenderWidth(width int) int {
+	if width > 0 {
+		return width
+	}
+	return 80
+}
+
+func fitRenderedBlock(s string, width, height int) string {
+	if width <= 0 {
+		return s
+	}
+
+	lines := splitRenderedLines(s)
+	if height > 0 && len(lines) > height {
+		lines = lines[:height]
+	}
+	for height > 0 && len(lines) < height {
+		lines = append(lines, "")
+	}
+	for i := range lines {
+		lines[i] = fitRenderedLine(lines[i], width)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func fitRenderedLine(line string, width int) string {
+	line = clampRenderedLine(line, width)
+	if width <= 0 {
+		return line
+	}
+	if padding := width - xansi.StringWidth(line); padding > 0 {
+		return line + strings.Repeat(" ", padding)
+	}
+	return line
+}
+
+func clampRenderedBlock(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	lines := splitRenderedLines(s)
+	for i := range lines {
+		lines[i] = clampRenderedLine(lines[i], width)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func clampRenderedLine(line string, width int) string {
+	line = strings.TrimRight(strings.ReplaceAll(line, "\t", "    "), "\r")
+	if width <= 0 {
+		return line
+	}
+	if xansi.StringWidth(line) <= width {
+		return line
+	}
+	return xansi.Truncate(line, width, "")
+}
+
 func formatAuthor(author, email string) string {
 	author = strings.TrimSpace(author)
 	email = strings.TrimSpace(email)
@@ -698,16 +771,15 @@ func activeSessionTimelineLines(m Model) []string {
 
 func buildActiveSessionTimelineLines(m Model) ([]string, []int) {
 	width := m.Width
-	if width < 40 {
-		width = 40
+	if width < 1 {
+		width = 80
 	}
-	contentWidth := width - 2
 
 	nonStartEvents := filterVisibleEvents(m.Events)
 	if len(nonStartEvents) == 0 {
 		return nil, nil
 	}
-	lines, starts := renderEventLines(nonStartEvents, contentWidth, modelDisplayTimeFormatter(m), m.SelectedEvent)
+	lines, starts := renderEventLines(nonStartEvents, width, modelDisplayTimeFormatter(m), m.SelectedEvent)
 	return lines, starts
 }
 
@@ -728,10 +800,8 @@ func renderEventLines(events []store.SessionEvent, maxWidth int, formatter inter
 	if len(events) == 0 {
 		return lines, starts
 	}
-
-	eventWidth := maxWidth - 4
-	if eventWidth < 20 {
-		eventWidth = 20
+	if maxWidth < 1 {
+		maxWidth = 1
 	}
 
 	timelineChar := "│"
@@ -759,33 +829,43 @@ func renderEventLines(events []store.SessionEvent, maxWidth int, formatter inter
 			}
 		}
 
+		panelFrameWidth := eventStyle.GetHorizontalFrameSize()
+		panelContentWidth := maxWidth - 3 - panelFrameWidth
+		if panelContentWidth < 1 {
+			panelContentWidth = 1
+		}
+		eventWidth := maxWidth - 4
+		if eventWidth < 0 {
+			eventWidth = 0
+		}
+
 		timeStr := formatter.EventTime(event.Time)
 		if event.Time.IsZero() {
 			timeStr = "     "
 		}
 
 		headerLine := fmt.Sprintf("[%d] %s · %s", len(events)-idx, event.Type, timeStr)
-		header := labelStyle.Render(headerLine)
+		header := clampRenderedLine(labelStyle.Render(headerLine), panelContentWidth)
 
-		bodyLines := splitLines(event.Body, eventWidth-4)
+		bodyLines := splitLines(event.Body, panelContentWidth)
 		var paneLines []string
 		paneLines = append(paneLines, header)
 
 		if !event.CorrectedAt.IsZero() {
 			modifiedStr := formatter.EventTime(event.CorrectedAt)
-			paneLines = append(paneLines, MetadataStyle.Render("modified "+modifiedStr))
+			paneLines = append(paneLines, clampRenderedLine(MetadataStyle.Render("modified "+modifiedStr), panelContentWidth))
 		}
 
 		if len(bodyLines) == 1 && bodyLines[0] == "" {
 		} else {
 			for _, bl := range bodyLines {
 				if strings.TrimSpace(bl) != "" {
-					paneLines = append(paneLines, EventStyle.Render(bl))
+					paneLines = append(paneLines, clampRenderedLine(EventStyle.Render(bl), panelContentWidth))
 				}
 			}
 		}
 
-		pane := eventStyle.Render(strings.Join(paneLines, "\n"))
+		pane := eventStyle.Width(panelContentWidth).Render(strings.Join(paneLines, "\n"))
 		eventLines := strings.Split(pane, "\n")
 
 		for i, el := range eventLines {
@@ -794,15 +874,15 @@ func renderEventLines(events []store.SessionEvent, maxWidth int, formatter inter
 				if len(events) > 0 {
 					connHead = "├"
 				}
-				lines = append(lines, connectorStyle.Render(timelineChar+" "+connHead)+el)
+				lines = append(lines, clampRenderedLine(connectorStyle.Render(timelineChar+" "+connHead)+el, maxWidth))
 			} else {
 				connector := connectorStyle.Render(timelineChar + " │")
-				lines = append(lines, connector+el)
+				lines = append(lines, clampRenderedLine(connector+el, maxWidth))
 			}
 		}
 
 		bottomBar := connectorStyle.Render(timelineChar + " └" + strings.Repeat("─", eventWidth) + "┘")
-		lines = append(lines, bottomBar)
+		lines = append(lines, clampRenderedLine(bottomBar, maxWidth))
 	}
 
 	return lines, starts
