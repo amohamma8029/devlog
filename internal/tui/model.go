@@ -25,6 +25,7 @@ const (
 	scrollDirectionDown   = 1
 	lineScrollMinInterval = 16 * time.Millisecond
 	activeRefreshInterval = time.Second
+	sessionListResizeWait = 75 * time.Millisecond
 )
 
 type Model struct {
@@ -67,6 +68,8 @@ type Model struct {
 	displayTime                internalconfig.DisplayTimeFormatter
 	activeSessionMetadata      store.SessionFileMetadata
 	activeSessionMetadataKnown bool
+	sessionListResizing        bool
+	sessionListResizeSeq       int
 }
 
 type SearchState struct {
@@ -136,11 +139,25 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		blankSessionList := m.shouldBlankSessionListForResize(msg)
+		restoreSessionList := m.shouldRestoreSessionListOnResize(msg)
 		m.Width = msg.Width
 		m.Height = msg.Height
 		sl, _ := m.SessionList.Update(msg)
 		m.SessionList = sl.(SessionListModel)
 		m.refreshScrollBodyCaches()
+		if restoreSessionList {
+			m.sessionListResizing = false
+		}
+		if blankSessionList {
+			return m, m.startSessionListResizeSettle()
+		}
+		return m, nil
+
+	case sessionListResizeSettledMsg:
+		if msg.Seq == m.sessionListResizeSeq {
+			m.sessionListResizing = false
+		}
 		return m, nil
 
 	case ActiveSessionLoadedMsg:
@@ -380,6 +397,31 @@ func (m *Model) refreshHandoffBodyCache() {
 	lineWidth := previewLineWidth(m.Width)
 	m.handoffBodyLines = clampPreviewLines(splitRenderedLines(renderHandoffBody(*m)), lineWidth)
 	m.handoffBodyLineWidth = lineWidth
+}
+
+func (m Model) shouldBlankSessionListForResize(msg tea.WindowSizeMsg) bool {
+	return m.CurrentView == SessionList &&
+		m.SessionList.loaded &&
+		m.Width > 0 &&
+		m.Height > 0 &&
+		msg.Width > 0 &&
+		msg.Width < m.Width
+}
+
+func (m Model) shouldRestoreSessionListOnResize(msg tea.WindowSizeMsg) bool {
+	return m.CurrentView == SessionList &&
+		m.sessionListResizing &&
+		m.Width > 0 &&
+		msg.Width > m.Width
+}
+
+func (m *Model) startSessionListResizeSettle() tea.Cmd {
+	m.sessionListResizing = true
+	m.sessionListResizeSeq++
+	seq := m.sessionListResizeSeq
+	return tea.Tick(sessionListResizeWait, func(t time.Time) tea.Msg {
+		return sessionListResizeSettledMsg{Seq: seq}
+	})
 }
 
 func activeSessionRefreshTickCmd() tea.Cmd {
@@ -1035,6 +1077,9 @@ func (m *Model) setView(view View) bool {
 	if changed {
 		m.stopLineScroll()
 		m.clearTransientMessages()
+		if view != SessionList {
+			m.sessionListResizing = false
+		}
 		if view != HandoffPreview {
 			m.SavePromptOpen = false
 			m.SaveInput = ""
@@ -1075,6 +1120,14 @@ func renderSessionList(m Model) string {
 	sl.width = m.Width
 	sl.height = contentHeight
 	sl.cw = calcColumnWidths(m.Width)
+
+	if m.sessionListResizing {
+		content := fitRenderedBlock("", m.Width, contentHeight)
+		if bottom == "" {
+			return content
+		}
+		return content + "\n" + bottom
+	}
 
 	content := fitRenderedBlock(sl.View(), m.Width, contentHeight)
 	if bottom == "" {

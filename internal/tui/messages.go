@@ -23,6 +23,10 @@ type ActiveSessionLoadedMsg struct {
 
 type ActiveSessionRefreshTickMsg struct{}
 
+type sessionListResizeSettledMsg struct {
+	Seq int
+}
+
 type ActiveSessionRefreshResultMsg struct {
 	SessionID string
 	Metadata  store.SessionFileMetadata

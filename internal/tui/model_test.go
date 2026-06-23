@@ -501,6 +501,120 @@ func TestModelUpdateWindowSize(t *testing.T) {
 	}
 }
 
+func TestModelSessionListBlanksDuringWidthShrink(t *testing.T) {
+	s, root := newTestStore(t)
+	writeTestSession(t, s, "2026-01-15T140000Z", "feat/a", "Alice", "auth", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	m := NewModel(s, root)
+	m.CurrentView = SessionList
+	m.Width = 80
+	m.Height = 12
+	m.SessionList = loadTestModel(t, s, root)
+
+	updatedModel, cmd := m.Update(tea.WindowSizeMsg{Width: 60, Height: 12})
+	if cmd == nil {
+		t.Fatal("session list width shrink should start a settle command")
+	}
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from Update, got %T", updatedModel)
+	}
+	if !updated.sessionListResizing {
+		t.Fatal("session list should be marked resizing")
+	}
+
+	v := updated.View()
+	assertRenderedLinesWithinWidth(t, v, updated.Width)
+	if strings.Contains(v, "TITLE") || strings.Contains(v, "auth") {
+		t.Fatalf("session list content should be blank while resizing, got:\n%s", v)
+	}
+}
+
+func TestModelSessionListDoesNotBlankDuringWidthExpansion(t *testing.T) {
+	s, root := newTestStore(t)
+	writeTestSession(t, s, "2026-01-15T140000Z", "feat/a", "Alice", "auth", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	m := NewModel(s, root)
+	m.CurrentView = SessionList
+	m.Width = 60
+	m.Height = 12
+	m.SessionList = loadTestModel(t, s, root)
+
+	updatedModel, cmd := m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+	if cmd != nil {
+		t.Fatal("session list width expansion should not start a settle command")
+	}
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from Update, got %T", updatedModel)
+	}
+	if updated.sessionListResizing {
+		t.Fatal("session list should not be marked resizing while expanding")
+	}
+	if !strings.Contains(updated.View(), "TITLE") {
+		t.Fatalf("session list content should stay visible while expanding, got:\n%s", updated.View())
+	}
+}
+
+func TestModelSessionListWidthExpansionRestoresShrinkBlank(t *testing.T) {
+	s, root := newTestStore(t)
+	writeTestSession(t, s, "2026-01-15T140000Z", "feat/a", "Alice", "auth", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	m := NewModel(s, root)
+	m.CurrentView = SessionList
+	m.Width = 80
+	m.Height = 12
+	m.SessionList = loadTestModel(t, s, root)
+
+	shrunkModel, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 12})
+	shrunk := shrunkModel.(Model)
+	if !shrunk.sessionListResizing {
+		t.Fatal("session list should be blank after width shrink")
+	}
+
+	expandedModel, cmd := shrunk.Update(tea.WindowSizeMsg{Width: 70, Height: 12})
+	if cmd != nil {
+		t.Fatal("session list width expansion should restore immediately without a settle command")
+	}
+	expanded := expandedModel.(Model)
+	if expanded.sessionListResizing {
+		t.Fatal("session list should restore immediately on width expansion")
+	}
+	if !strings.Contains(expanded.View(), "TITLE") {
+		t.Fatalf("session list content should render after expansion restore, got:\n%s", expanded.View())
+	}
+}
+
+func TestModelSessionListResizeSettleRestoresContent(t *testing.T) {
+	s, root := newTestStore(t)
+	writeTestSession(t, s, "2026-01-15T140000Z", "feat/a", "Alice", "auth", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	m := NewModel(s, root)
+	m.CurrentView = SessionList
+	m.Width = 80
+	m.Height = 12
+	m.SessionList = loadTestModel(t, s, root)
+
+	updatedModel, _ := m.Update(tea.WindowSizeMsg{Width: 60, Height: 12})
+	updated := updatedModel.(Model)
+	seq := updated.sessionListResizeSeq
+
+	staleModel, _ := updated.Update(sessionListResizeSettledMsg{Seq: seq - 1})
+	stale := staleModel.(Model)
+	if !stale.sessionListResizing {
+		t.Fatal("stale resize settle message should not restore session list content")
+	}
+
+	settledModel, _ := stale.Update(sessionListResizeSettledMsg{Seq: seq})
+	settled := settledModel.(Model)
+	if settled.sessionListResizing {
+		t.Fatal("latest resize settle message should restore session list content")
+	}
+	if !strings.Contains(settled.View(), "TITLE") {
+		t.Fatalf("settled session list should render table content, got:\n%s", settled.View())
+	}
+}
+
 func TestModelUpdateNavigationMsgReturnsLoadCommand(t *testing.T) {
 	s, root := newTestStore(t)
 	const sessionID = "2026-01-15T140000Z"
