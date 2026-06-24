@@ -34,5 +34,10 @@ jobs:
       - name: Build
         run: go build -o devlog ./cmd/devlog
 
+      - name: Configure git
+        run: |
+          git config --global user.email "ci@devlog.local"
+          git config --global user.name "CI"
+
       - name: Test
         run: go test ./... -count=1
