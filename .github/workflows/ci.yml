@@ -38,6 +38,7 @@ jobs:
         run: |
           git config --global user.email "ci@devlog.local"
           git config --global user.name "CI"
+          git checkout -b ci-test || true
 
       - name: Test
         run: go test ./... -count=1
