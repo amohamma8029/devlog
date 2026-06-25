@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
@@ -27,6 +29,7 @@ func newTodoCommand() *cobra.Command {
 	cmd.AddCommand(newTodoDoneCommand())
 	cmd.AddCommand(newTodoReopenCommand())
 	cmd.AddCommand(newTodoDeleteCommand())
+	cmd.AddCommand(newTodoPruneCommand())
 
 	return cmd
 }
@@ -41,8 +44,8 @@ func newTodoListCommand() *cobra.Command {
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if filters.all && filters.done {
-				return fmt.Errorf("todo list: --all and --done cannot be used together")
+			if err := filters.validate("todo list"); err != nil {
+				return err
 			}
 
 			store, err := newTodoStore()
@@ -120,6 +123,10 @@ func newTodoEditCommand() *cobra.Command {
 		Args:         cobra.ArbitraryArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := filters.validate("todo edit"); err != nil {
+				return err
+			}
+
 			ref, err := todoRefFromArgs(args)
 			if err != nil {
 				return err
@@ -161,24 +168,77 @@ func newTodoEditCommand() *cobra.Command {
 }
 
 func newTodoDoneCommand() *cobra.Command {
-	return newTodoTransitionCommand("done", "Mark a todo done.", "Completed todo", func(store *todo.Store, id string) error {
+	return newTodoTransitionCommand("done", "Mark a todo done.", "Completed todo", true, func(store *todo.Store, id string) error {
 		return store.Complete(id)
 	})
 }
 
 func newTodoReopenCommand() *cobra.Command {
-	return newTodoTransitionCommand("reopen", "Reopen a done todo.", "Reopened todo", func(store *todo.Store, id string) error {
+	return newTodoTransitionCommand("reopen", "Reopen a done todo.", "Reopened todo", true, func(store *todo.Store, id string) error {
 		return store.Reopen(id)
 	})
 }
 
 func newTodoDeleteCommand() *cobra.Command {
-	return newTodoTransitionCommand("delete", "Delete a todo.", "Deleted todo", func(store *todo.Store, id string) error {
+	return newTodoTransitionCommand("delete", "Delete a todo.", "Deleted todo", false, func(store *todo.Store, id string) error {
 		return store.Delete(id)
 	})
 }
 
-func newTodoTransitionCommand(use, short, confirmation string, transition func(*todo.Store, string) error) *cobra.Command {
+func newTodoPruneCommand() *cobra.Command {
+	var yes bool
+
+	cmd := &cobra.Command{
+		Use:          "prune",
+		Short:        "Prune completed todos.",
+		Args:         cobra.NoArgs,
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, err := newTodoStore()
+			if err != nil {
+				return err
+			}
+
+			done, err := store.List(todo.Filter{IncludeDone: true, MatchSessionAny: true, MatchBranchAny: true})
+			if err != nil {
+				return err
+			}
+			if len(done) == 0 {
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "No completed todos to prune.")
+				return err
+			}
+
+			if !yes {
+				confirmed, err := confirmTodoPrune(cmd, len(done))
+				if err != nil {
+					return err
+				}
+				if !confirmed {
+					_, err = fmt.Fprintln(cmd.OutOrStdout(), "Prune cancelled.")
+					return err
+				}
+			}
+
+			removed, err := store.PruneCompleted()
+			if err != nil {
+				return err
+			}
+			if removed == 0 {
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "No completed todos to prune.")
+				return err
+			}
+
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Pruned %s.\n", completedTodoCount(removed))
+			return err
+		},
+	}
+
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Prune completed todos without confirmation")
+
+	return cmd
+}
+
+func newTodoTransitionCommand(use, short, confirmation string, confirmAfterTransition bool, transition func(*todo.Store, string) error) *cobra.Command {
 	var filters todoFilterFlags
 
 	cmd := &cobra.Command{
@@ -187,6 +247,10 @@ func newTodoTransitionCommand(use, short, confirmation string, transition func(*
 		Args:         cobra.ArbitraryArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := filters.validate("todo " + use); err != nil {
+				return err
+			}
+
 			ref, err := todoRefFromArgs(args)
 			if err != nil {
 				return err
@@ -202,13 +266,23 @@ func newTodoTransitionCommand(use, short, confirmation string, transition func(*
 				return err
 			}
 
+			var item todo.Item
+			if !confirmAfterTransition {
+				item, err = findTodoByID(store, id)
+				if err != nil {
+					return err
+				}
+			}
+
 			if err := transition(store, id); err != nil {
 				return err
 			}
 
-			item, err := findTodoByID(store, id)
-			if err != nil {
-				return err
+			if confirmAfterTransition {
+				item, err = findTodoByID(store, id)
+				if err != nil {
+					return err
+				}
 			}
 
 			_, err = fmt.Fprint(cmd.OutOrStdout(), renderTodoConfirmation(confirmation, item))
@@ -230,33 +304,41 @@ func newTodoStore() (*todo.Store, error) {
 }
 
 type todoFilterFlags struct {
-	all     bool
+	open    bool
 	done    bool
 	branch  string
 	session string
 }
 
 func (f *todoFilterFlags) addFlags(cmd *cobra.Command) {
-	cmd.Flags().BoolVar(&f.all, "all", false, "Include open and done todos")
+	cmd.Flags().BoolVar(&f.open, "open", false, "Include only open todos")
 	cmd.Flags().BoolVar(&f.done, "done", false, "Include only done todos")
 	cmd.Flags().StringVar(&f.branch, "branch", "", "Filter by branch")
 	cmd.Flags().StringVar(&f.session, "session", "", "Filter by session ID")
 }
 
-func (f *todoFilterFlags) filter() todo.Filter {
-	return todoListFilter(f.all, f.done, f.session, f.branch)
+func (f todoFilterFlags) validate(command string) error {
+	if f.open && f.done {
+		return fmt.Errorf("%s: --open and --done cannot be used together", command)
+	}
+	return nil
 }
 
-func todoListFilter(all, done bool, sessionID, branch string) todo.Filter {
+func (f *todoFilterFlags) filter() todo.Filter {
+	return todoListFilter(f.open, f.done, f.session, f.branch)
+}
+
+func todoListFilter(open, done bool, sessionID, branch string) todo.Filter {
 	filter := todo.Filter{
 		IncludeOpen:     true,
+		IncludeDone:     true,
 		SessionID:       strings.TrimSpace(sessionID),
 		Branch:          strings.TrimSpace(branch),
 		MatchSessionAny: strings.TrimSpace(sessionID) == "",
 		MatchBranchAny:  strings.TrimSpace(branch) == "",
 	}
-	if all {
-		filter.IncludeDone = true
+	if open {
+		filter.IncludeDone = false
 	}
 	if done {
 		filter.IncludeOpen = false
@@ -304,6 +386,27 @@ func resolveTodoText(flagMsg string, args []string, label string) (string, error
 	return text, nil
 }
 
+func confirmTodoPrune(cmd *cobra.Command, count int) (bool, error) {
+	out := cmd.OutOrStdout()
+	if _, err := fmt.Fprintf(out, "Prune %s? Open todos will be kept. [y/N] ", completedTodoCount(count)); err != nil {
+		return false, err
+	}
+
+	answer, err := bufio.NewReader(cmd.InOrStdin()).ReadString('\n')
+	if err != nil && err != io.EOF {
+		return false, err
+	}
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	return answer == "y" || answer == "yes", nil
+}
+
+func completedTodoCount(count int) string {
+	if count == 1 {
+		return "1 completed todo"
+	}
+	return fmt.Sprintf("%d completed todos", count)
+}
+
 func todoRefFromArgs(args []string) (string, error) {
 	if len(args) < 1 {
 		return "", fmt.Errorf("todo ref is required")
@@ -324,6 +427,7 @@ func resolveTodoRef(store *todo.Store, ref string, filter todo.Filter) (string, 
 		if n > len(items) {
 			return "", fmt.Errorf("todo number %d out of range (list has %d items)", n, len(items))
 		}
+		items = orderedTodoListItems(items)
 		return items[n-1].ID, nil
 	}
 
@@ -369,7 +473,7 @@ func oneLineTodoText(text string) string {
 
 func renderTodoList(items []todo.Item, showIDs bool) string {
 	var b strings.Builder
-	b.WriteString(cliTitleStyle.Render("Todos"))
+	b.WriteString(cliTitleStyle.Render("Todo List"))
 	b.WriteByte('\n')
 
 	if len(items) == 0 {
@@ -377,17 +481,52 @@ func renderTodoList(items []todo.Item, showIDs bool) string {
 		return b.String()
 	}
 
-	for i, item := range items {
-		fmt.Fprintf(&b, "  %d. %s ", i+1, todoCheckbox(item))
+	ordered := orderedTodoListItems(items)
+	nextNumber := 1
+	nextNumber = renderTodoListSection(&b, "Open", ordered, todo.StatusOpen, showIDs, nextNumber)
+	renderTodoListSection(&b, "Completed", ordered, todo.StatusDone, showIDs, nextNumber)
+
+	return b.String()
+}
+
+func renderTodoListSection(b *strings.Builder, title string, items []todo.Item, status todo.Status, showIDs bool, nextNumber int) int {
+	shown := false
+	for _, item := range items {
+		if item.Status != status {
+			continue
+		}
+		if !shown {
+			b.WriteByte('\n')
+			b.WriteString(cliLabelStyle.Render(title))
+			b.WriteByte('\n')
+			shown = true
+		}
+
+		fmt.Fprintf(b, "  %d. %s ", nextNumber, todoCheckbox(item))
 		b.WriteString(cliValueStyle.Render(oneLineTodoText(item.Text)))
 		b.WriteByte('\n')
 
 		if showIDs {
-			writeCLIField(&b, "id", item.ID)
+			writeCLIField(b, "id", item.ID)
+		}
+		nextNumber++
+	}
+	return nextNumber
+}
+
+func orderedTodoListItems(items []todo.Item) []todo.Item {
+	ordered := make([]todo.Item, 0, len(items))
+	for _, item := range items {
+		if item.Status == todo.StatusOpen {
+			ordered = append(ordered, item)
 		}
 	}
-
-	return b.String()
+	for _, item := range items {
+		if item.Status == todo.StatusDone {
+			ordered = append(ordered, item)
+		}
+	}
+	return ordered
 }
 
 func renderTodoConfirmation(title string, item todo.Item) string {

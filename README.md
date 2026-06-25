@@ -31,6 +31,8 @@ go build -o devlog.exe ./cmd/devlog
 ./devlog.exe todo add "Follow up on docs"
 ./devlog.exe todo list
 ./devlog.exe todo done 1
+./devlog.exe todo list
+./devlog.exe todo prune --yes
 
 # Generate a handoff artifact
 ./devlog.exe handoff

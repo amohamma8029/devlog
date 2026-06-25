@@ -56,10 +56,10 @@ func TestTodoAddAttributesActiveSession(t *testing.T) {
 		t.Fatalf("Branch = %q, want feat/test", items[0].Branch)
 	}
 
-	log := readCmdTestTodoLog(t, root)
-	assertContains(t, log, "action: add")
-	assertContains(t, log, "session_id: "+sess.ID)
-	assertContains(t, log, "branch: feat/test")
+	state := readCmdTestTodoState(t, root)
+	assertContains(t, state, "status: open")
+	assertContains(t, state, "session_id: "+sess.ID)
+	assertContains(t, state, "branch: feat/test")
 }
 
 func TestTodoAddWithoutActiveSessionKeepsAttributionEmpty(t *testing.T) {
@@ -122,6 +122,19 @@ func TestTodoCRUDWithListNumbers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list after done failed: %v", err)
 	}
+	assertContains(t, out, "Open")
+	assertContains(t, out, "Completed")
+	assertContains(t, out, "1. [ ]")
+	assertContains(t, out, "[x]")
+	assertContains(t, out, "first todo")
+	assertContains(t, out, "second todo")
+
+	out, err = executeTodoCommand("list", "--open")
+	if err != nil {
+		t.Fatalf("open list failed: %v", err)
+	}
+	assertContains(t, out, "Open")
+	assertNotContains(t, out, "Completed")
 	assertContains(t, out, "second todo")
 	assertNotContains(t, out, "first todo")
 
@@ -129,11 +142,13 @@ func TestTodoCRUDWithListNumbers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("done list failed: %v", err)
 	}
+	assertNotContains(t, out, "Open")
+	assertContains(t, out, "Completed")
 	assertContains(t, out, "[x]")
 	assertContains(t, out, "first todo")
 	assertNotContains(t, out, "second todo")
 
-	out, err = executeTodoCommand("reopen", "1", "--done")
+	out, err = executeTodoCommand("reopen", "2")
 	if err != nil {
 		t.Fatalf("reopen failed: %v", err)
 	}
@@ -180,10 +195,13 @@ func TestTodoListShowsCheckboxAndNumbers(t *testing.T) {
 	executeTodoCommand("add", "done", "item")
 	executeTodoCommand("done", "2")
 
-	out, err := executeTodoCommand("list", "--all")
+	out, err := executeTodoCommand("list")
 	if err != nil {
-		t.Fatalf("list --all failed: %v", err)
+		t.Fatalf("list failed: %v", err)
 	}
+	assertContains(t, out, "Todo List")
+	assertContains(t, out, "Open")
+	assertContains(t, out, "Completed")
 	assertContains(t, out, "1.")
 	assertContains(t, out, "[ ]")
 	assertContains(t, out, "open item")
@@ -245,9 +263,9 @@ func TestTodoListFilters(t *testing.T) {
 	assertContains(t, out, "active todo")
 	assertNotContains(t, out, "other todo")
 
-	out, err = executeTodoCommand("list", "--all")
+	out, err = executeTodoCommand("list")
 	if err != nil {
-		t.Fatalf("all list failed: %v", err)
+		t.Fatalf("list failed: %v", err)
 	}
 	assertContains(t, out, "active todo")
 	assertContains(t, out, "other todo")
@@ -274,9 +292,9 @@ func TestTodoCommandAcceptsInternalID(t *testing.T) {
 	assertContains(t, out, "[x]")
 	assertContains(t, out, "tracked todo")
 
-	out, err = executeTodoCommand("list", "--done")
+	out, err = executeTodoCommand("list")
 	if err != nil {
-		t.Fatalf("done list failed: %v", err)
+		t.Fatalf("list failed: %v", err)
 	}
 	assertContains(t, out, "tracked todo")
 }
@@ -296,7 +314,7 @@ func TestTodoCommandValidationErrors(t *testing.T) {
 	if _, err := executeTodoCommand("done", "99"); err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Fatalf("expected out of range error, got: %v", err)
 	}
-	if _, err := executeTodoCommand("list", "--all", "--done"); err == nil || !strings.Contains(err.Error(), "cannot be used together") {
+	if _, err := executeTodoCommand("list", "--open", "--done"); err == nil || !strings.Contains(err.Error(), "cannot be used together") {
 		t.Fatalf("expected conflicting filter error, got: %v", err)
 	}
 	if _, err := executeTodoCommand("done", "nonexistent-id-123"); err == nil || !strings.Contains(err.Error(), "not found") {
@@ -316,21 +334,21 @@ func TestTodoCommandValidationErrors(t *testing.T) {
 	if _, err := executeTodoCommand("done", "1"); err != nil {
 		t.Fatalf("first done failed: %v", err)
 	}
-	if _, err := executeTodoCommand("done", "1", "--done"); err == nil || !strings.Contains(err.Error(), "already done") {
+	if _, err := executeTodoCommand("done", "1"); err == nil || !strings.Contains(err.Error(), "already done") {
 		t.Fatalf("expected repeated done error, got: %v", err)
 	}
-	if _, err := executeTodoCommand("reopen", "1", "--done"); err != nil {
+	if _, err := executeTodoCommand("reopen", "1"); err != nil {
 		t.Fatalf("reopen failed: %v", err)
 	}
 	if _, err := executeTodoCommand("delete", "1"); err != nil {
 		t.Fatalf("delete failed: %v", err)
 	}
-	if _, err := executeTodoCommand("edit", id, "new", "text"); err == nil || !strings.Contains(err.Error(), "deleted") {
-		t.Fatalf("expected deleted edit error, got: %v", err)
+	if _, err := executeTodoCommand("edit", id, "new", "text"); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected deleted todo not found error, got: %v", err)
 	}
 }
 
-func TestTodoAddUpdatesTodoLog(t *testing.T) {
+func TestTodoAddUpdatesTodoStateFile(t *testing.T) {
 	requireCmdTestGit(t)
 
 	root := initCmdTestRepo(t)
@@ -341,9 +359,9 @@ func TestTodoAddUpdatesTodoLog(t *testing.T) {
 		t.Fatalf("todo add failed: %v", err)
 	}
 
-	log := readCmdTestTodoLog(t, root)
-	assertContains(t, log, "action: add")
-	assertContains(t, log, "log entry")
+	state := readCmdTestTodoState(t, root)
+	assertContains(t, state, "log entry")
+	assertContains(t, state, "status: open")
 }
 
 func TestTodoAddWithMessageFlag(t *testing.T) {
@@ -365,6 +383,90 @@ func TestTodoAddWithMessageFlag(t *testing.T) {
 	}
 }
 
+func TestTodoPruneRemovesCompletedWithYes(t *testing.T) {
+	requireCmdTestGit(t)
+
+	root := initCmdTestRepo(t)
+	t.Chdir(root)
+
+	executeTodoCommand("add", "open", "todo")
+	executeTodoCommand("add", "done", "one")
+	executeTodoCommand("add", "done", "two")
+
+	for _, item := range loadCmdTestTodos(t, root) {
+		if strings.HasPrefix(item.Text, "done ") {
+			if _, err := executeTodoCommand("done", item.ID); err != nil {
+				t.Fatalf("done by internal ID failed: %v", err)
+			}
+		}
+	}
+
+	out, err := executeTodoCommand("prune", "--yes")
+	if err != nil {
+		t.Fatalf("todo prune --yes failed: %v", err)
+	}
+	assertContains(t, out, "Pruned 2 completed todos.")
+
+	items := loadCmdTestTodos(t, root)
+	if len(items) != 1 || items[0].Text != "open todo" {
+		t.Fatalf("expected only open todo after prune, got: %+v", items)
+	}
+	state := readCmdTestTodoState(t, root)
+	assertContains(t, state, "open todo")
+	assertNotContains(t, state, "done one")
+	assertNotContains(t, state, "done two")
+
+	out, err = executeTodoCommand("list")
+	if err != nil {
+		t.Fatalf("list after prune failed: %v", err)
+	}
+	assertContains(t, out, "Open")
+	assertNotContains(t, out, "Completed")
+}
+
+func TestTodoPrunePromptsBeforeRemovingCompleted(t *testing.T) {
+	requireCmdTestGit(t)
+
+	root := initCmdTestRepo(t)
+	t.Chdir(root)
+
+	executeTodoCommand("add", "done", "todo")
+	if _, err := executeTodoCommand("done", "1"); err != nil {
+		t.Fatalf("done failed: %v", err)
+	}
+
+	out, err := executeTodoCommandWithInput("n\n", "prune")
+	if err != nil {
+		t.Fatalf("todo prune cancellation failed: %v", err)
+	}
+	assertContains(t, out, "Prune 1 completed todo? Open todos will be kept. [y/N]")
+	assertContains(t, out, "Prune cancelled.")
+
+	items := loadCmdTestTodos(t, root)
+	if len(items) != 1 || items[0].Status != todo.StatusDone {
+		t.Fatalf("expected completed todo to remain after cancellation, got: %+v", items)
+	}
+}
+
+func TestTodoPruneNoCompletedTodos(t *testing.T) {
+	requireCmdTestGit(t)
+
+	root := initCmdTestRepo(t)
+	t.Chdir(root)
+
+	executeTodoCommand("add", "open", "todo")
+	out, err := executeTodoCommand("prune", "--yes")
+	if err != nil {
+		t.Fatalf("todo prune --yes failed: %v", err)
+	}
+	assertContains(t, out, "No completed todos to prune.")
+
+	items := loadCmdTestTodos(t, root)
+	if len(items) != 1 || items[0].Text != "open todo" {
+		t.Fatalf("expected open todo to remain, got: %+v", items)
+	}
+}
+
 func todoRootHelp(t *testing.T) string {
 	t.Helper()
 
@@ -380,11 +482,18 @@ func todoRootHelp(t *testing.T) string {
 }
 
 func executeTodoCommand(args ...string) (string, error) {
+	return executeTodoCommandWithInput("", args...)
+}
+
+func executeTodoCommandWithInput(input string, args ...string) (string, error) {
 	cmd := newTodoCommand()
 	var out bytes.Buffer
 	var errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
+	if input != "" {
+		cmd.SetIn(strings.NewReader(input))
+	}
 	cmd.SetArgs(args)
 
 	err := cmd.Execute()
@@ -411,7 +520,7 @@ func loadCmdTestTodos(t *testing.T, root string) []todo.Item {
 	return items
 }
 
-func readCmdTestTodoLog(t *testing.T, root string) string {
+func readCmdTestTodoState(t *testing.T, root string) string {
 	t.Helper()
 
 	data, err := os.ReadFile(filepath.Join(root, todo.LogPath()))
