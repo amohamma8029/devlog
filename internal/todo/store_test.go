@@ -24,6 +24,17 @@ func newTestStoreAt(t *testing.T, at time.Time) *Store {
 	return store
 }
 
+func withTestIDs(store *Store, ids ...string) {
+	store.newID = func() (string, error) {
+		if len(ids) == 0 {
+			return "", nil
+		}
+		id := ids[0]
+		ids = ids[1:]
+		return id, nil
+	}
+}
+
 func readLog(t *testing.T, root string) string {
 	t.Helper()
 	path := filepath.Join(root, LogPath())
@@ -66,6 +77,7 @@ func TestAddCreatesLogAndDirectory(t *testing.T) {
 	store := newTestStore(t, root)
 	at := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
 	store.now = func() time.Time { return at }
+	withTestIDs(store, "opaque-alpha")
 
 	item, err := store.Add(AddInput{Text: "refactor parser", SessionID: "sess-1", Branch: "feat/todo"})
 	if err != nil {
@@ -74,6 +86,9 @@ func TestAddCreatesLogAndDirectory(t *testing.T) {
 	if item.ID == "" {
 		t.Fatal("expected non-empty ID")
 	}
+	if item.ID != "opaque-alpha" {
+		t.Fatalf("ID = %q, want opaque-alpha", item.ID)
+	}
 	if item.Status != StatusOpen {
 		t.Fatalf("expected open status, got: %v", item.Status)
 	}
@@ -81,6 +96,9 @@ func TestAddCreatesLogAndDirectory(t *testing.T) {
 	log := readLog(t, root)
 	if !strings.Contains(log, "action: add") {
 		t.Errorf("expected log to contain add action, got: %q", log)
+	}
+	if !strings.Contains(log, "id: opaque-alpha") {
+		t.Errorf("expected log to contain generated opaque id, got: %q", log)
 	}
 	if !strings.Contains(log, "refactor parser") {
 		t.Errorf("expected log to contain text, got: %q", log)
@@ -105,6 +123,7 @@ func TestLoadRoundTripsAddedItem(t *testing.T) {
 	store := newTestStore(t, root)
 	at := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
 	store.now = func() time.Time { return at }
+	withTestIDs(store, "opaque-alpha")
 
 	added, err := store.Add(AddInput{Text: "ship auth", SessionID: "sess-1", Branch: "feat/todo"})
 	if err != nil {
@@ -139,11 +158,44 @@ func TestLoadRoundTripsAddedItem(t *testing.T) {
 	}
 }
 
+func TestAddRetriesWhenGeneratedIDCollides(t *testing.T) {
+	root := t.TempDir()
+	store := newTestStore(t, root)
+	store.now = func() time.Time { return time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC) }
+	withTestIDs(store, "opaque-alpha")
+
+	first, err := store.Add(AddInput{Text: "first"})
+	if err != nil {
+		t.Fatalf("Add first failed: %v", err)
+	}
+	if first.ID != "opaque-alpha" {
+		t.Fatalf("first ID = %q, want opaque-alpha", first.ID)
+	}
+
+	withTestIDs(store, "opaque-alpha", "opaque-beta")
+	second, err := store.Add(AddInput{Text: "second"})
+	if err != nil {
+		t.Fatalf("Add second failed after collision retry: %v", err)
+	}
+	if second.ID != "opaque-beta" {
+		t.Fatalf("second ID = %q, want opaque-beta", second.ID)
+	}
+
+	items, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(items))
+	}
+}
+
 func TestMutationsAreAppendOnly(t *testing.T) {
 	root := t.TempDir()
 	at := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
 	store := newTestStore(t, root)
 	store.now = func() time.Time { return at }
+	withTestIDs(store, "opaque-alpha")
 
 	first, err := store.Add(AddInput{Text: "first"})
 	if err != nil {
@@ -168,6 +220,7 @@ func TestMutationsAreAppendOnly(t *testing.T) {
 
 func TestCompleteRequiresExistingOpenTodo(t *testing.T) {
 	store := newTestStoreAt(t, time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC))
+	withTestIDs(store, "opaque-alpha")
 	if err := store.Complete("missing"); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("expected not found error, got: %v", err)
 	}
@@ -187,6 +240,7 @@ func TestCompleteRequiresExistingOpenTodo(t *testing.T) {
 func TestCompleteSetsCompletedAt(t *testing.T) {
 	created := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
 	store := newTestStoreAt(t, created)
+	withTestIDs(store, "opaque-alpha")
 	added, err := store.Add(AddInput{Text: "thing"})
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
@@ -221,6 +275,7 @@ func TestCompleteSetsCompletedAt(t *testing.T) {
 func TestReopenRestoresOpenStatus(t *testing.T) {
 	created := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
 	store := newTestStoreAt(t, created)
+	withTestIDs(store, "opaque-alpha")
 	added, err := store.Add(AddInput{Text: "thing"})
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
@@ -250,6 +305,7 @@ func TestReopenRestoresOpenStatus(t *testing.T) {
 func TestUpdateTextRevisesBody(t *testing.T) {
 	created := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
 	store := newTestStoreAt(t, created)
+	withTestIDs(store, "opaque-alpha")
 	added, err := store.Add(AddInput{Text: "thing"})
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
@@ -275,6 +331,7 @@ func TestUpdateTextRevisesBody(t *testing.T) {
 
 func TestUpdateTextRejectsEmpty(t *testing.T) {
 	store := newTestStoreAt(t, time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC))
+	withTestIDs(store, "opaque-alpha")
 	added, err := store.Add(AddInput{Text: "thing"})
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
@@ -287,6 +344,7 @@ func TestUpdateTextRejectsEmpty(t *testing.T) {
 func TestUpdateTextRejectsDoneAndDeleted(t *testing.T) {
 	created := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
 	store := newTestStoreAt(t, created)
+	withTestIDs(store, "opaque-alpha")
 	added, err := store.Add(AddInput{Text: "thing"})
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
@@ -310,6 +368,7 @@ func TestUpdateTextRejectsDoneAndDeleted(t *testing.T) {
 
 func TestDeletePreservesHistory(t *testing.T) {
 	store := newTestStoreAt(t, time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC))
+	withTestIDs(store, "opaque-alpha")
 	added, err := store.Add(AddInput{Text: "thing"})
 	if err != nil {
 		t.Fatalf("Add failed: %v", err)
@@ -336,6 +395,7 @@ func TestDeletePreservesHistory(t *testing.T) {
 func TestListAppliesFilter(t *testing.T) {
 	created := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
 	store := newTestStoreAt(t, created)
+	withTestIDs(store, "opaque-alpha", "opaque-beta", "opaque-gamma")
 
 	if _, err := store.Add(AddInput{Text: "first", SessionID: "sess-1", Branch: "feat/a"}); err != nil {
 		t.Fatalf("Add first failed: %v", err)
@@ -382,6 +442,7 @@ func TestListAppliesFilter(t *testing.T) {
 
 func TestListExcludesDeletedByDefault(t *testing.T) {
 	store := newTestStoreAt(t, time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC))
+	withTestIDs(store, "opaque-alpha", "opaque-beta")
 	first, err := store.Add(AddInput{Text: "first"})
 	if err != nil {
 		t.Fatalf("Add first failed: %v", err)
@@ -413,6 +474,7 @@ func TestListExcludesDeletedByDefault(t *testing.T) {
 func TestListIsDeterministicByCreatedAtThenID(t *testing.T) {
 	created := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
 	store := newTestStoreAt(t, created)
+	withTestIDs(store, "opaque-alpha", "opaque-beta", "opaque-gamma")
 	for _, text := range []string{"alpha", "beta", "gamma"} {
 		if _, err := store.Add(AddInput{Text: text}); err != nil {
 			t.Fatalf("Add %q failed: %v", text, err)
@@ -457,7 +519,7 @@ func TestLoadNormalizesLineEndings(t *testing.T) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	content := "---\r\naction: add\r\nid: 2026-01-15T143022Z-000001\r\nat: 2026-01-15T14:30:22Z\r\nstatus: open\r\ntext: hello\r\n---\r\n"
+	content := "---\r\naction: add\r\nid: opaque-alpha\r\nat: 2026-01-15T14:30:22Z\r\nstatus: open\r\ntext: hello\r\n---\r\n"
 	if err := os.WriteFile(filepath.Join(root, LogPath()), []byte(content), 0644); err != nil {
 		t.Fatalf("write log: %v", err)
 	}
@@ -478,6 +540,7 @@ func TestStoreRejectsFileAsDirectory(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 	store := newTestStore(t, root)
+	withTestIDs(store, "opaque-alpha")
 	if _, err := store.Add(AddInput{Text: "thing"}); err == nil || !strings.Contains(err.Error(), "not a directory") {
 		t.Fatalf("expected not a directory error, got: %v", err)
 	}
