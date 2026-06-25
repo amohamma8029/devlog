@@ -2,6 +2,8 @@ package todo
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -17,8 +19,9 @@ import (
 // the current state for callers. All mutating methods append a new event to
 // the log; they never rewrite the full file for a single mutation.
 type Store struct {
-	root string
-	now  func() time.Time
+	root  string
+	now   func() time.Time
+	newID func() (string, error)
 }
 
 // NewStore creates a Store scoped to a repository root. The todo log lives
@@ -40,7 +43,7 @@ func NewStore(root string) (*Store, error) {
 		return nil, fmt.Errorf("todo.NewStore: root is not a directory: %s", absRoot)
 	}
 
-	return &Store{root: absRoot, now: func() time.Time { return time.Now().UTC() }}, nil
+	return &Store{root: absRoot, now: func() time.Time { return time.Now().UTC() }, newID: randomID}, nil
 }
 
 // Root returns the absolute repository root the Store is scoped to.
@@ -62,9 +65,18 @@ func (s *Store) Add(in AddInput) (Item, error) {
 		return Item{}, fmt.Errorf("todo.Store.Add: text is empty")
 	}
 
+	existing, err := s.existingIDs()
+	if err != nil {
+		return Item{}, err
+	}
+	id, err := s.nextID(existing)
+	if err != nil {
+		return Item{}, err
+	}
+
 	at := s.now()
 	item := Item{
-		ID:        NewID(at),
+		ID:        id,
 		Text:      text,
 		Status:    StatusOpen,
 		CreatedAt: at,
@@ -77,6 +89,40 @@ func (s *Store) Add(in AddInput) (Item, error) {
 		return Item{}, err
 	}
 	return item, nil
+}
+
+func (s *Store) existingIDs() (map[string]struct{}, error) {
+	items, err := s.Load()
+	if err != nil {
+		return nil, err
+	}
+	ids := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		ids[item.ID] = struct{}{}
+	}
+	return ids, nil
+}
+
+func (s *Store) nextID(existing map[string]struct{}) (string, error) {
+	if s == nil || s.newID == nil {
+		return "", fmt.Errorf("todo.Store.nextID: id generator is nil")
+	}
+
+	for attempt := 0; attempt < 100; attempt++ {
+		id, err := s.newID()
+		if err != nil {
+			return "", err
+		}
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, exists := existing[id]; exists {
+			continue
+		}
+		return id, nil
+	}
+	return "", fmt.Errorf("todo.Store.nextID: could not generate a unique todo id")
 }
 
 // UpdateText changes the body of an existing open todo.
@@ -451,4 +497,12 @@ func sortItems(items []Item) {
 		}
 		return items[i].CreatedAt.Before(items[j].CreatedAt)
 	})
+}
+
+func randomID() (string, error) {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("todo.Store.randomID: %w", err)
+	}
+	return hex.EncodeToString(b[:]), nil
 }

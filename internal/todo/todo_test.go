@@ -14,8 +14,8 @@ func TestLogPathStable(t *testing.T) {
 
 func TestStatusValid(t *testing.T) {
 	cases := map[Status]bool{
-		StatusOpen: true,
-		StatusDone: true,
+		StatusOpen:  true,
+		StatusDone:  true,
 		Status(""):  false,
 		Status("x"): false,
 	}
@@ -45,7 +45,7 @@ func TestActionValid(t *testing.T) {
 
 func TestItemValidateOpen(t *testing.T) {
 	it := Item{
-		ID:        "2026-01-15T143022Z-000001",
+		ID:        "opaque-alpha",
 		Text:      "refactor parser",
 		Status:    StatusOpen,
 		CreatedAt: time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC),
@@ -59,7 +59,7 @@ func TestItemValidateOpen(t *testing.T) {
 func TestItemValidateDone(t *testing.T) {
 	completed := time.Date(2026, 1, 15, 15, 0, 0, 0, time.UTC)
 	it := Item{
-		ID:        "2026-01-15T143022Z-000002",
+		ID:        "opaque-beta",
 		Text:      "ship auth",
 		Status:    StatusDone,
 		CreatedAt: time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC),
@@ -186,11 +186,11 @@ func TestFilterRespectsIncludeFlags(t *testing.T) {
 	done.Completed = &completed
 
 	cases := []struct {
-		name    string
-		filter  Filter
-		openOK  bool
-		doneOK  bool
-		delOK   bool
+		name   string
+		filter Filter
+		openOK bool
+		doneOK bool
+		delOK  bool
 	}{
 		{"default", DefaultFilter("", ""), true, false, false},
 		{"open only", Filter{IncludeOpen: true, MatchSessionAny: true, MatchBranchAny: true}, true, false, false},
@@ -213,24 +213,9 @@ func TestFilterRespectsIncludeFlags(t *testing.T) {
 	}
 }
 
-func TestNewIDIsUniqueAndFormatted(t *testing.T) {
-	at := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
-	seen := make(map[string]struct{}, 1000)
-	for i := 0; i < 1000; i++ {
-		id := NewID(at)
-		if !strings.HasPrefix(id, "2026-01-15T143022Z-") {
-			t.Fatalf("NewID = %q, missing timestamp prefix", id)
-		}
-		if _, dup := seen[id]; dup {
-			t.Fatalf("NewID %q returned twice in a row", id)
-		}
-		seen[id] = struct{}{}
-	}
-}
-
 func validOpen() Item {
 	return Item{
-		ID:        "2026-01-15T143022Z-000001",
+		ID:        "opaque-alpha",
 		Text:      "refactor parser",
 		Status:    StatusOpen,
 		CreatedAt: time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC),

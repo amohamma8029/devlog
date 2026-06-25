@@ -8,7 +8,6 @@ package todo
 import (
 	"fmt"
 	"strings"
-	"sync/atomic"
 	"time"
 )
 
@@ -167,17 +166,4 @@ func (it Item) Validate() error {
 		return fmt.Errorf("todo %q: status is open but completed_at is set", it.ID)
 	}
 	return nil
-}
-
-// idCounter provides a process-local tie-breaker for IDs generated in the
-// same nanosecond. Storage owns the authoritative uniqueness rule; this
-// counter only guarantees the stub generates distinct IDs back-to-back.
-var idCounter uint64
-
-// NewID returns a project-wide unique todo ID based on the given time and
-// an in-process counter. The format mirrors the session ID style so the
-// storage slice can parse and sort both kinds of identifier consistently.
-func NewID(at time.Time) string {
-	n := atomic.AddUint64(&idCounter, 1)
-	return fmt.Sprintf("%s-%06d", at.UTC().Format("2006-01-02T150405Z"), n%1_000_000)
 }
