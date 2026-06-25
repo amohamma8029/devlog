@@ -27,6 +27,11 @@ go build -o devlog.exe ./cmd/devlog
 # See where things stand
 ./devlog.exe status
 
+# Track repo-wide follow-up work
+./devlog.exe todo add "Follow up on docs"
+./devlog.exe todo list
+./devlog.exe todo done 1
+
 # Generate a handoff artifact
 ./devlog.exe handoff
 
