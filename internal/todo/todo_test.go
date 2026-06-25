@@ -26,23 +26,6 @@ func TestStatusValid(t *testing.T) {
 	}
 }
 
-func TestActionValid(t *testing.T) {
-	cases := map[Action]bool{
-		ActionAdd:      true,
-		ActionUpdate:   true,
-		ActionComplete: true,
-		ActionReopen:   true,
-		ActionDelete:   true,
-		Action(""):     false,
-		Action("x"):    false,
-	}
-	for a, want := range cases {
-		if got := a.Valid(); got != want {
-			t.Errorf("Action(%q).Valid() = %v, want %v", a, got, want)
-		}
-	}
-}
-
 func TestItemValidateOpen(t *testing.T) {
 	it := Item{
 		ID:        "opaque-alpha",
@@ -168,18 +151,10 @@ func TestAllFilterSurfacesEverything(t *testing.T) {
 	if !f.Matches(done) {
 		t.Fatal("all filter should match done items")
 	}
-
-	deleted := open
-	deleted.Deleted = true
-	if !f.Matches(deleted) {
-		t.Fatal("all filter should match deleted items")
-	}
 }
 
 func TestFilterRespectsIncludeFlags(t *testing.T) {
 	open := validOpen()
-	deleted := open
-	deleted.Deleted = true
 	completed := time.Date(2026, 1, 15, 15, 0, 0, 0, time.UTC)
 	done := open
 	done.Status = StatusDone
@@ -190,12 +165,10 @@ func TestFilterRespectsIncludeFlags(t *testing.T) {
 		filter Filter
 		openOK bool
 		doneOK bool
-		delOK  bool
 	}{
-		{"default", DefaultFilter("", ""), true, false, false},
-		{"open only", Filter{IncludeOpen: true, MatchSessionAny: true, MatchBranchAny: true}, true, false, false},
-		{"open and done", Filter{IncludeOpen: true, IncludeDone: true, MatchSessionAny: true, MatchBranchAny: true}, true, true, false},
-		{"include deleted", Filter{IncludeOpen: true, IncludeDone: true, IncludeDeleted: true, MatchSessionAny: true, MatchBranchAny: true}, true, true, true},
+		{"default", DefaultFilter("", ""), true, false},
+		{"open only", Filter{IncludeOpen: true, MatchSessionAny: true, MatchBranchAny: true}, true, false},
+		{"open and done", Filter{IncludeOpen: true, IncludeDone: true, MatchSessionAny: true, MatchBranchAny: true}, true, true},
 	}
 
 	for _, tc := range cases {
@@ -205,9 +178,6 @@ func TestFilterRespectsIncludeFlags(t *testing.T) {
 			}
 			if got := tc.filter.Matches(done); got != tc.doneOK {
 				t.Errorf("done match = %v, want %v", got, tc.doneOK)
-			}
-			if got := tc.filter.Matches(deleted); got != tc.delOK {
-				t.Errorf("deleted match = %v, want %v", got, tc.delOK)
 			}
 		})
 	}

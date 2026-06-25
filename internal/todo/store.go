@@ -1,7 +1,6 @@
 package todo
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -15,16 +14,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Store persists todo events in an append-only repo-local log and projects
-// the current state for callers. All mutating methods append a new event to
-// the log; they never rewrite the full file for a single mutation.
+// Store persists the current state of all todos in a repo-local single-state
+// YAML file. Every mutation loads the file, modifies the in-memory list, and
+// rewrites the full file with current state.
 type Store struct {
 	root  string
 	now   func() time.Time
 	newID func() (string, error)
 }
 
-// NewStore creates a Store scoped to a repository root. The todo log lives
+// NewStore creates a Store scoped to a repository root. The todo file lives
 // under the provided root and is created on first mutation.
 func NewStore(root string) (*Store, error) {
 	if strings.TrimSpace(root) == "" {
@@ -58,18 +57,19 @@ type AddInput struct {
 	Branch    string
 }
 
-// Add appends an add event and returns the projected item.
+// Add creates a new todo, appends it to the item list, and rewrites the file.
 func (s *Store) Add(in AddInput) (Item, error) {
 	text := strings.TrimSpace(in.Text)
 	if text == "" {
 		return Item{}, fmt.Errorf("todo.Store.Add: text is empty")
 	}
 
-	existing, err := s.existingIDs()
+	items, err := s.Load()
 	if err != nil {
 		return Item{}, err
 	}
-	id, err := s.nextID(existing)
+
+	id, err := s.nextID(items)
 	if err != nil {
 		return Item{}, err
 	}
@@ -85,44 +85,11 @@ func (s *Store) Add(in AddInput) (Item, error) {
 		Branch:    strings.TrimSpace(in.Branch),
 	}
 
-	if err := s.appendEntry(entry{Action: ActionAdd, ID: item.ID, At: at, SessionID: item.SessionID, Branch: item.Branch, Status: string(item.Status), Text: text}); err != nil {
+	items = append(items, item)
+	if err := s.writeFile(items); err != nil {
 		return Item{}, err
 	}
 	return item, nil
-}
-
-func (s *Store) existingIDs() (map[string]struct{}, error) {
-	items, err := s.Load()
-	if err != nil {
-		return nil, err
-	}
-	ids := make(map[string]struct{}, len(items))
-	for _, item := range items {
-		ids[item.ID] = struct{}{}
-	}
-	return ids, nil
-}
-
-func (s *Store) nextID(existing map[string]struct{}) (string, error) {
-	if s == nil || s.newID == nil {
-		return "", fmt.Errorf("todo.Store.nextID: id generator is nil")
-	}
-
-	for attempt := 0; attempt < 100; attempt++ {
-		id, err := s.newID()
-		if err != nil {
-			return "", err
-		}
-		id = strings.TrimSpace(id)
-		if id == "" {
-			continue
-		}
-		if _, exists := existing[id]; exists {
-			continue
-		}
-		return id, nil
-	}
-	return "", fmt.Errorf("todo.Store.nextID: could not generate a unique todo id")
 }
 
 // UpdateText changes the body of an existing open todo.
@@ -135,24 +102,19 @@ func (s *Store) UpdateText(id, text string) error {
 		if item.Status == StatusDone {
 			return Item{}, fmt.Errorf("todo.Store.UpdateText: todo %q is done", id)
 		}
-		if item.Deleted {
-			return Item{}, fmt.Errorf("todo.Store.UpdateText: todo %q is deleted", id)
-		}
 		item.Text = newText
 		item.UpdatedAt = s.now()
 		return item, nil
-	}, entry{Action: ActionUpdate, ID: id, At: s.now(), Text: text})
+	})
 }
 
 // Complete marks an open todo as done.
 func (s *Store) Complete(id string) error {
-	return s.transition(id, ActionComplete, "todo.Store.Complete", func(item Item, at time.Time) (Item, error) {
-		if item.Deleted {
-			return Item{}, fmt.Errorf("todo.Store.Complete: todo %q is deleted", id)
-		}
+	return s.mutate(id, "todo.Store.Complete", func(item Item) (Item, error) {
 		if item.Status == StatusDone {
 			return Item{}, fmt.Errorf("todo.Store.Complete: todo %q is already done", id)
 		}
+		at := s.now()
 		item.Status = StatusDone
 		item.Completed = &at
 		item.UpdatedAt = at
@@ -162,34 +124,45 @@ func (s *Store) Complete(id string) error {
 
 // Reopen moves a done todo back to open.
 func (s *Store) Reopen(id string) error {
-	return s.transition(id, ActionReopen, "todo.Store.Reopen", func(item Item, at time.Time) (Item, error) {
-		if item.Deleted {
-			return Item{}, fmt.Errorf("todo.Store.Reopen: todo %q is deleted", id)
-		}
+	return s.mutate(id, "todo.Store.Reopen", func(item Item) (Item, error) {
 		if item.Status == StatusOpen {
 			return Item{}, fmt.Errorf("todo.Store.Reopen: todo %q is already open", id)
 		}
 		item.Status = StatusOpen
 		item.Completed = nil
-		item.UpdatedAt = at
+		item.UpdatedAt = s.now()
 		return item, nil
 	})
 }
 
-// Delete marks a todo as deleted; history is preserved in the log.
+// Delete removes a todo from the file entirely.
 func (s *Store) Delete(id string) error {
-	return s.transition(id, ActionDelete, "todo.Store.Delete", func(item Item, at time.Time) (Item, error) {
-		if item.Deleted {
-			return Item{}, fmt.Errorf("todo.Store.Delete: todo %q is already deleted", id)
+	if strings.TrimSpace(id) == "" {
+		return fmt.Errorf("todo.Store.Delete: id is empty")
+	}
+
+	items, err := s.Load()
+	if err != nil {
+		return err
+	}
+
+	idx := -1
+	for i := range items {
+		if items[i].ID == id {
+			idx = i
+			break
 		}
-		item.Deleted = true
-		item.UpdatedAt = at
-		return item, nil
-	})
+	}
+	if idx == -1 {
+		return fmt.Errorf("todo.Store.Delete: todo %q not found", id)
+	}
+
+	items = append(items[:idx], items[idx+1:]...)
+	return s.writeFile(items)
 }
 
-// List returns projected todos that match the given filter, ordered by
-// CreatedAt ascending and then by ID.
+// List returns todos that match the given filter, ordered by CreatedAt
+// ascending and then by ID.
 func (s *Store) List(filter Filter) ([]Item, error) {
 	items, err := s.Load()
 	if err != nil {
@@ -204,8 +177,8 @@ func (s *Store) List(filter Filter) ([]Item, error) {
 	return out, nil
 }
 
-// Load returns the full projected state of every todo in the log, including
-// deleted items, sorted by CreatedAt then ID.
+// Load returns the full current state of every todo in the file, sorted by
+// CreatedAt then ID.
 func (s *Store) Load() ([]Item, error) {
 	path, err := s.logPath()
 	if err != nil {
@@ -216,20 +189,19 @@ func (s *Store) Load() ([]Item, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("todo.Store.Load: read log: %w", err)
+		return nil, fmt.Errorf("todo.Store.Load: read file: %w", err)
 	}
 
-	entries, err := parseLog(data)
-	if err != nil {
-		return nil, fmt.Errorf("todo.Store.Load: %w", err)
+	var items []Item
+	if err := yaml.Unmarshal(data, &items); err != nil {
+		return nil, fmt.Errorf("todo.Store.Load: parse: %w", err)
 	}
 
-	items := project(entries)
 	sortItems(items)
 	return items, nil
 }
 
-func (s *Store) mutate(id, op string, transform func(Item) (Item, error), ent entry) error {
+func (s *Store) mutate(id, op string, transform func(Item) (Item, error)) error {
 	if strings.TrimSpace(id) == "" {
 		return fmt.Errorf("%s: id is empty", op)
 	}
@@ -239,18 +211,18 @@ func (s *Store) mutate(id, op string, transform func(Item) (Item, error), ent en
 		return err
 	}
 
-	var match *Item
+	idx := -1
 	for i := range items {
 		if items[i].ID == id {
-			match = &items[i]
+			idx = i
 			break
 		}
 	}
-	if match == nil {
+	if idx == -1 {
 		return fmt.Errorf("%s: todo %q not found", op, id)
 	}
 
-	next, err := transform(*match)
+	next, err := transform(items[idx])
 	if err != nil {
 		return err
 	}
@@ -258,61 +230,38 @@ func (s *Store) mutate(id, op string, transform func(Item) (Item, error), ent en
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	ent.ID = id
-	ent.At = next.UpdatedAt
-	if ent.Text == "" {
-		ent.Text = next.Text
-	}
-	return s.appendEntry(ent)
+	items[idx] = next
+	return s.writeFile(items)
 }
 
-func (s *Store) transition(id string, action Action, op string, transform func(Item, time.Time) (Item, error)) error {
-	if strings.TrimSpace(id) == "" {
-		return fmt.Errorf("%s: id is empty", op)
+func (s *Store) nextID(existing []Item) (string, error) {
+	if s == nil || s.newID == nil {
+		return "", fmt.Errorf("todo.Store.nextID: id generator is nil")
 	}
 
-	items, err := s.Load()
-	if err != nil {
-		return err
+	ids := make(map[string]struct{}, len(existing))
+	for _, item := range existing {
+		ids[item.ID] = struct{}{}
 	}
 
-	var match *Item
-	for i := range items {
-		if items[i].ID == id {
-			match = &items[i]
-			break
+	for attempt := 0; attempt < 100; attempt++ {
+		id, err := s.newID()
+		if err != nil {
+			return "", err
 		}
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, exists := ids[id]; exists {
+			continue
+		}
+		return id, nil
 	}
-	if match == nil {
-		return fmt.Errorf("%s: todo %q not found", op, id)
-	}
-
-	at := s.now()
-	next, err := transform(*match, at)
-	if err != nil {
-		return err
-	}
-	if err := next.Validate(); err != nil {
-		return fmt.Errorf("%s: %w", op, err)
-	}
-
-	ent := entry{Action: action, ID: id, At: at, Status: string(next.Status), Text: next.Text}
-	if next.Completed != nil {
-		ent.Completed = next.Completed
-	}
-	return s.appendEntry(ent)
+	return "", fmt.Errorf("todo.Store.nextID: could not generate a unique todo id")
 }
 
-func (s *Store) appendEntry(ent entry) error {
-	if !ent.Action.Valid() {
-		return fmt.Errorf("todo.Store.appendEntry: action %q is not recognized", ent.Action)
-	}
-	if strings.TrimSpace(ent.ID) == "" {
-		return fmt.Errorf("todo.Store.appendEntry: id is empty")
-	}
-	if ent.At.IsZero() {
-		return fmt.Errorf("todo.Store.appendEntry: at is zero")
-	}
+func (s *Store) writeFile(items []Item) error {
 	if err := s.ensureDir(); err != nil {
 		return err
 	}
@@ -322,25 +271,13 @@ func (s *Store) appendEntry(ent entry) error {
 		return err
 	}
 
-	var buf bytes.Buffer
-	if err := yaml.NewEncoder(&buf).Encode(ent); err != nil {
-		return fmt.Errorf("todo.Store.appendEntry: marshal entry: %w", err)
-	}
-	buf.WriteString("---\n\n")
-
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	data, err := yaml.Marshal(items)
 	if err != nil {
-		return fmt.Errorf("todo.Store.appendEntry: open log: %w", err)
+		return fmt.Errorf("todo.Store.writeFile: marshal: %w", err)
 	}
-	if _, err := f.Write(buf.Bytes()); err != nil {
-		closeErr := f.Close()
-		if closeErr != nil {
-			return fmt.Errorf("todo.Store.appendEntry: write log: %w (close failed: %v)", err, closeErr)
-		}
-		return fmt.Errorf("todo.Store.appendEntry: write log: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("todo.Store.appendEntry: close log: %w", err)
+
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("todo.Store.writeFile: write: %w", err)
 	}
 	return nil
 }
@@ -368,126 +305,6 @@ func (s *Store) logPath() (string, error) {
 		return "", fmt.Errorf("todo.Store: root is empty")
 	}
 	return filepath.Join(s.root, LogPath()), nil
-}
-
-type entry struct {
-	Action    Action     `yaml:"action"`
-	ID        string     `yaml:"id"`
-	At        time.Time  `yaml:"at"`
-	Status    string     `yaml:"status,omitempty"`
-	Text      string     `yaml:"text,omitempty"`
-	SessionID string     `yaml:"session_id,omitempty"`
-	Branch    string     `yaml:"branch,omitempty"`
-	Completed *time.Time `yaml:"completed_at,omitempty"`
-}
-
-func parseLog(data []byte) ([]entry, error) {
-	text := strings.ReplaceAll(string(data), "\r\n", "\n")
-	if strings.TrimSpace(text) == "" {
-		return nil, nil
-	}
-
-	parts := strings.Split(text, "\n---")
-	if len(parts) == 0 {
-		return nil, nil
-	}
-
-	var entries []entry
-	for _, part := range parts {
-		raw := strings.TrimSpace(part)
-		if raw == "" {
-			continue
-		}
-		raw = strings.TrimPrefix(raw, "---")
-		raw = strings.TrimSpace(raw)
-		if raw == "" {
-			return nil, fmt.Errorf("entry has no YAML body")
-		}
-		var ent entry
-		if err := yaml.Unmarshal([]byte(raw), &ent); err != nil {
-			return nil, fmt.Errorf("parse entry: %w", err)
-		}
-		if !ent.Action.Valid() {
-			return nil, fmt.Errorf("entry has invalid action %q", ent.Action)
-		}
-		if strings.TrimSpace(ent.ID) == "" {
-			return nil, fmt.Errorf("entry has empty id")
-		}
-		if ent.At.IsZero() {
-			return nil, fmt.Errorf("entry %q has zero at", ent.ID)
-		}
-		entries = append(entries, ent)
-	}
-	return entries, nil
-}
-
-func project(entries []entry) []Item {
-	byID := make(map[string]Item, len(entries))
-	for _, ent := range entries {
-		switch ent.Action {
-		case ActionAdd:
-			item := Item{
-				ID:        ent.ID,
-				Text:      ent.Text,
-				Status:    Status(ent.Status),
-				CreatedAt: ent.At,
-				UpdatedAt: ent.At,
-				SessionID: ent.SessionID,
-				Branch:    ent.Branch,
-			}
-			if item.Status == "" {
-				item.Status = StatusOpen
-			}
-			byID[ent.ID] = item
-		case ActionUpdate:
-			item, ok := byID[ent.ID]
-			if !ok {
-				continue
-			}
-			item.Text = ent.Text
-			item.UpdatedAt = ent.At
-			byID[ent.ID] = item
-		case ActionComplete:
-			item, ok := byID[ent.ID]
-			if !ok {
-				continue
-			}
-			completed := ent.At
-			if ent.Completed != nil {
-				completed = *ent.Completed
-			}
-			item.Status = StatusDone
-			item.Completed = &completed
-			item.UpdatedAt = ent.At
-			byID[ent.ID] = item
-		case ActionReopen:
-			item, ok := byID[ent.ID]
-			if !ok {
-				continue
-			}
-			item.Status = StatusOpen
-			item.Completed = nil
-			item.UpdatedAt = ent.At
-			byID[ent.ID] = item
-		case ActionDelete:
-			item, ok := byID[ent.ID]
-			if !ok {
-				continue
-			}
-			item.Deleted = true
-			item.UpdatedAt = ent.At
-			byID[ent.ID] = item
-		}
-	}
-
-	items := make([]Item, 0, len(byID))
-	for _, item := range byID {
-		if item.Status == "" {
-			item.Status = StatusOpen
-		}
-		items = append(items, item)
-	}
-	return items
 }
 
 func sortItems(items []Item) {

@@ -35,12 +35,12 @@ func withTestIDs(store *Store, ids ...string) {
 	}
 }
 
-func readLog(t *testing.T, root string) string {
+func readFile(t *testing.T, root string) string {
 	t.Helper()
 	path := filepath.Join(root, LogPath())
 	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read log: %v", err)
+		t.Fatalf("read file: %v", err)
 	}
 	return string(data)
 }
@@ -61,7 +61,7 @@ func TestNewStoreRequiresDirectory(t *testing.T) {
 	}
 }
 
-func TestLoadMissingLogReturnsEmpty(t *testing.T) {
+func TestLoadMissingFileReturnsEmpty(t *testing.T) {
 	store := newTestStore(t, t.TempDir())
 	items, err := store.Load()
 	if err != nil {
@@ -72,7 +72,7 @@ func TestLoadMissingLogReturnsEmpty(t *testing.T) {
 	}
 }
 
-func TestAddCreatesLogAndDirectory(t *testing.T) {
+func TestAddCreatesFileAndDirectory(t *testing.T) {
 	root := t.TempDir()
 	store := newTestStore(t, root)
 	at := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
@@ -93,21 +93,18 @@ func TestAddCreatesLogAndDirectory(t *testing.T) {
 		t.Fatalf("expected open status, got: %v", item.Status)
 	}
 
-	log := readLog(t, root)
-	if !strings.Contains(log, "action: add") {
-		t.Errorf("expected log to contain add action, got: %q", log)
+	content := readFile(t, root)
+	if !strings.Contains(content, "id: opaque-alpha") {
+		t.Errorf("expected file to contain generated opaque id, got: %q", content)
 	}
-	if !strings.Contains(log, "id: opaque-alpha") {
-		t.Errorf("expected log to contain generated opaque id, got: %q", log)
+	if !strings.Contains(content, "refactor parser") {
+		t.Errorf("expected file to contain text, got: %q", content)
 	}
-	if !strings.Contains(log, "refactor parser") {
-		t.Errorf("expected log to contain text, got: %q", log)
+	if !strings.Contains(content, "session_id: sess-1") {
+		t.Errorf("expected file to contain session_id, got: %q", content)
 	}
-	if !strings.Contains(log, "session_id: sess-1") {
-		t.Errorf("expected log to contain session_id, got: %q", log)
-	}
-	if !strings.Contains(log, "branch: feat/todo") {
-		t.Errorf("expected log to contain branch, got: %q", log)
+	if !strings.Contains(content, "branch: feat/todo") {
+		t.Errorf("expected file to contain branch, got: %q", content)
 	}
 }
 
@@ -190,7 +187,7 @@ func TestAddRetriesWhenGeneratedIDCollides(t *testing.T) {
 	}
 }
 
-func TestMutationsAreAppendOnly(t *testing.T) {
+func TestMutationsRewriteFile(t *testing.T) {
 	root := t.TempDir()
 	at := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
 	store := newTestStore(t, root)
@@ -201,20 +198,24 @@ func TestMutationsAreAppendOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Add first failed: %v", err)
 	}
-	afterFirst := readLog(t, root)
+	afterAdd := readFile(t, root)
+
+	if !strings.Contains(afterAdd, "first") {
+		t.Fatalf("expected file to contain 'first' after add, got: %q", afterAdd)
+	}
 
 	completedAt := at.Add(time.Minute)
 	store.now = func() time.Time { return completedAt }
 	if err := store.Complete(first.ID); err != nil {
 		t.Fatalf("Complete failed: %v", err)
 	}
-	afterComplete := readLog(t, root)
+	afterComplete := readFile(t, root)
 
-	if !strings.Contains(afterComplete, afterFirst) {
-		t.Fatalf("expected later log to retain earlier events; first=%q second=%q", afterFirst, afterComplete)
+	if !strings.Contains(afterComplete, "done") {
+		t.Errorf("expected file to contain done status, got: %q", afterComplete)
 	}
-	if !strings.Contains(afterComplete, "action: complete") {
-		t.Errorf("expected complete event in log, got: %q", afterComplete)
+	if !strings.Contains(afterComplete, "first") {
+		t.Errorf("expected file to still contain 'first', got: %q", afterComplete)
 	}
 }
 
@@ -341,7 +342,7 @@ func TestUpdateTextRejectsEmpty(t *testing.T) {
 	}
 }
 
-func TestUpdateTextRejectsDoneAndDeleted(t *testing.T) {
+func TestUpdateTextRejectsDone(t *testing.T) {
 	created := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
 	store := newTestStoreAt(t, created)
 	withTestIDs(store, "opaque-alpha")
@@ -355,25 +356,20 @@ func TestUpdateTextRejectsDoneAndDeleted(t *testing.T) {
 	if err := store.UpdateText(added.ID, "new body"); err == nil || !strings.Contains(err.Error(), "is done") {
 		t.Fatalf("expected done error, got: %v", err)
 	}
-	if err := store.Reopen(added.ID); err != nil {
-		t.Fatalf("Reopen failed: %v", err)
-	}
-	if err := store.Delete(added.ID); err != nil {
-		t.Fatalf("Delete failed: %v", err)
-	}
-	if err := store.UpdateText(added.ID, "new body"); err == nil || !strings.Contains(err.Error(), "is deleted") {
-		t.Fatalf("expected deleted error, got: %v", err)
-	}
 }
 
-func TestDeletePreservesHistory(t *testing.T) {
+func TestDeleteRemovesItem(t *testing.T) {
 	store := newTestStoreAt(t, time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC))
-	withTestIDs(store, "opaque-alpha")
-	added, err := store.Add(AddInput{Text: "thing"})
+	withTestIDs(store, "opaque-alpha", "opaque-beta")
+	first, err := store.Add(AddInput{Text: "first"})
 	if err != nil {
-		t.Fatalf("Add failed: %v", err)
+		t.Fatalf("Add first failed: %v", err)
 	}
-	if err := store.Delete(added.ID); err != nil {
+	if _, err := store.Add(AddInput{Text: "second"}); err != nil {
+		t.Fatalf("Add second failed: %v", err)
+	}
+
+	if err := store.Delete(first.ID); err != nil {
 		t.Fatalf("Delete failed: %v", err)
 	}
 
@@ -382,13 +378,14 @@ func TestDeletePreservesHistory(t *testing.T) {
 		t.Fatalf("Load failed: %v", err)
 	}
 	if len(items) != 1 {
-		t.Fatalf("expected deleted item to remain, got: %d items", len(items))
+		t.Fatalf("expected 1 item after delete, got: %d", len(items))
 	}
-	if !items[0].Deleted {
-		t.Errorf("expected Deleted=true, got: %+v", items[0])
+	if items[0].Text != "second" {
+		t.Errorf("expected remaining item to be 'second', got: %q", items[0].Text)
 	}
-	if err := store.Delete(added.ID); err == nil || !strings.Contains(err.Error(), "already deleted") {
-		t.Fatalf("expected already deleted error, got: %v", err)
+
+	if err := store.Delete(first.ID); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("expected not found error on re-delete, got: %v", err)
 	}
 }
 
@@ -440,37 +437,6 @@ func TestListAppliesFilter(t *testing.T) {
 	}
 }
 
-func TestListExcludesDeletedByDefault(t *testing.T) {
-	store := newTestStoreAt(t, time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC))
-	withTestIDs(store, "opaque-alpha", "opaque-beta")
-	first, err := store.Add(AddInput{Text: "first"})
-	if err != nil {
-		t.Fatalf("Add first failed: %v", err)
-	}
-	if _, err := store.Add(AddInput{Text: "second"}); err != nil {
-		t.Fatalf("Add second failed: %v", err)
-	}
-	if err := store.Delete(first.ID); err != nil {
-		t.Fatalf("Delete failed: %v", err)
-	}
-
-	open, err := store.List(Filter{IncludeOpen: true, MatchSessionAny: true, MatchBranchAny: true})
-	if err != nil {
-		t.Fatalf("List open failed: %v", err)
-	}
-	if len(open) != 1 {
-		t.Fatalf("expected 1 open item after delete, got: %d", len(open))
-	}
-
-	withDeleted, err := store.List(Filter{IncludeOpen: true, IncludeDeleted: true, MatchSessionAny: true, MatchBranchAny: true})
-	if err != nil {
-		t.Fatalf("List with deleted failed: %v", err)
-	}
-	if len(withDeleted) != 2 {
-		t.Fatalf("expected 2 items when including deleted, got: %d", len(withDeleted))
-	}
-}
-
 func TestListIsDeterministicByCreatedAtThenID(t *testing.T) {
 	created := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
 	store := newTestStoreAt(t, created)
@@ -498,38 +464,18 @@ func TestListIsDeterministicByCreatedAtThenID(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsMalformedLog(t *testing.T) {
+func TestLoadRejectsMalformedFile(t *testing.T) {
 	root := t.TempDir()
 	store := newTestStore(t, root)
 	dir := filepath.Join(root, DirName)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, LogPath()), []byte("not: valid: yaml: :::\n---\n"), 0644); err != nil {
-		t.Fatalf("write bad log: %v", err)
+	if err := os.WriteFile(filepath.Join(root, LogPath()), []byte("not: valid: yaml: :::\n"), 0644); err != nil {
+		t.Fatalf("write bad file: %v", err)
 	}
 	if _, err := store.Load(); err == nil {
-		t.Fatal("expected Load to fail on malformed log")
-	}
-}
-
-func TestLoadNormalizesLineEndings(t *testing.T) {
-	root := t.TempDir()
-	dir := filepath.Join(root, DirName)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	content := "---\r\naction: add\r\nid: opaque-alpha\r\nat: 2026-01-15T14:30:22Z\r\nstatus: open\r\ntext: hello\r\n---\r\n"
-	if err := os.WriteFile(filepath.Join(root, LogPath()), []byte(content), 0644); err != nil {
-		t.Fatalf("write log: %v", err)
-	}
-	store := newTestStore(t, root)
-	items, err := store.Load()
-	if err != nil {
-		t.Fatalf("Load failed: %v", err)
-	}
-	if len(items) != 1 || items[0].Text != "hello" {
-		t.Fatalf("expected one item with text hello, got: %+v", items)
+		t.Fatal("expected Load to fail on malformed file")
 	}
 }
 
