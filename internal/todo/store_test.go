@@ -389,6 +389,53 @@ func TestDeleteRemovesItem(t *testing.T) {
 	}
 }
 
+func TestPruneCompletedRemovesOnlyDoneItems(t *testing.T) {
+	store := newTestStoreAt(t, time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC))
+	withTestIDs(store, "opaque-alpha", "opaque-beta", "opaque-gamma")
+	open, err := store.Add(AddInput{Text: "open"})
+	if err != nil {
+		t.Fatalf("Add open failed: %v", err)
+	}
+	firstDone, err := store.Add(AddInput{Text: "first done"})
+	if err != nil {
+		t.Fatalf("Add first done failed: %v", err)
+	}
+	secondDone, err := store.Add(AddInput{Text: "second done"})
+	if err != nil {
+		t.Fatalf("Add second done failed: %v", err)
+	}
+	if err := store.Complete(firstDone.ID); err != nil {
+		t.Fatalf("Complete first done failed: %v", err)
+	}
+	if err := store.Complete(secondDone.ID); err != nil {
+		t.Fatalf("Complete second done failed: %v", err)
+	}
+
+	removed, err := store.PruneCompleted()
+	if err != nil {
+		t.Fatalf("PruneCompleted failed: %v", err)
+	}
+	if removed != 2 {
+		t.Fatalf("expected 2 pruned items, got %d", removed)
+	}
+
+	items, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != open.ID {
+		t.Fatalf("expected only open item to remain, got: %+v", items)
+	}
+
+	removed, err = store.PruneCompleted()
+	if err != nil {
+		t.Fatalf("second PruneCompleted failed: %v", err)
+	}
+	if removed != 0 {
+		t.Fatalf("expected no pruned items on second run, got %d", removed)
+	}
+}
+
 func TestListAppliesFilter(t *testing.T) {
 	created := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
 	store := newTestStoreAt(t, created)

@@ -161,6 +161,33 @@ func (s *Store) Delete(id string) error {
 	return s.writeFile(items)
 }
 
+// PruneCompleted removes every completed todo from the file and returns the
+// number of items removed.
+func (s *Store) PruneCompleted() (int, error) {
+	items, err := s.Load()
+	if err != nil {
+		return 0, err
+	}
+
+	kept := make([]Item, 0, len(items))
+	removed := 0
+	for _, item := range items {
+		if item.Status == StatusDone {
+			removed++
+			continue
+		}
+		kept = append(kept, item)
+	}
+	if removed == 0 {
+		return 0, nil
+	}
+
+	if err := s.writeFile(kept); err != nil {
+		return 0, err
+	}
+	return removed, nil
+}
+
 // List returns todos that match the given filter, ordered by CreatedAt
 // ascending and then by ID.
 func (s *Store) List(filter Filter) ([]Item, error) {
