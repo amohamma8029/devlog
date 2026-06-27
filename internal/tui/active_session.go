@@ -139,7 +139,7 @@ func renderFooter(m Model) string {
 			if m.Width < 80 {
 				text = "? help  ·  tab event  ·  e edit  ·  d hide  ·  q quit"
 			} else {
-				text = "? help  ·  ↑/↓ line  ·  pgup/pgdn page  ·  home/end jump  ·  tab/s-tab event  ·  e edit  ·  d hide  ·  q quit"
+				text = "? help  ·  ↑/↓ line  ·  pgup/pgdn page  ·  tab/s-tab event  ·  e edit  ·  d hide  ·  q quit"
 			}
 		} else {
 			text = "l: session list  ·  o: open new session  ·  q quit"
@@ -517,6 +517,7 @@ func slashCommandEntries() []keyEntry {
 		{"/close", "Close the active session"},
 		{"/handoff", "Generate handoff summary"},
 		{"/list", "Go to session list"},
+		{"/todo", "Open todo list"},
 	}
 }
 

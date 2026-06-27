@@ -1,6 +1,9 @@
 package tui
 
-import "github.com/amo/devlog/internal/store"
+import (
+	"github.com/amo/devlog/internal/store"
+	"github.com/amo/devlog/internal/todo"
+)
 
 type HandoffGeneratedMsg struct {
 	Content string
@@ -19,6 +22,14 @@ type ActiveSessionLoadedMsg struct {
 	Session *store.SessionRecord
 	Events  []store.SessionEvent
 	Title   string
+}
+
+type TodoLoadedMsg struct {
+	Items      []todo.Item
+	Error      error
+	Selection  int
+	SelectedID string
+	Message    string
 }
 
 type ActiveSessionRefreshTickMsg struct{}
