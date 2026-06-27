@@ -643,3 +643,170 @@ func TestClearSessionAttributionRejectsEmptySessionID(t *testing.T) {
 		t.Fatalf("expected empty sessionID error, got: %v", err)
 	}
 }
+
+func TestWriteFileLeavesNoTempFiles(t *testing.T) {
+	root := t.TempDir()
+	store := newTestStoreAt(t, time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC))
+	withTestIDs(store, "opaque-alpha", "opaque-beta")
+
+	assertNoTempFiles := func() {
+		t.Helper()
+		dir := filepath.Join(root, DirName)
+		matches, err := filepath.Glob(filepath.Join(dir, "*.tmp.*"))
+		if err != nil {
+			t.Fatalf("glob temp files: %v", err)
+		}
+		if len(matches) > 0 {
+			t.Fatalf("expected no .tmp.* files, found: %v", matches)
+		}
+	}
+
+	if _, err := store.Add(AddInput{Text: "first"}); err != nil {
+		t.Fatalf("Add first failed: %v", err)
+	}
+	if _, err := store.Add(AddInput{Text: "second"}); err != nil {
+		t.Fatalf("Add second failed: %v", err)
+	}
+	assertNoTempFiles()
+
+	items, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items after add, got: %d", len(items))
+	}
+
+	store.now = func() time.Time { return time.Date(2026, 1, 15, 15, 0, 0, 0, time.UTC) }
+	if err := store.Complete(items[0].ID); err != nil {
+		t.Fatalf("Complete failed: %v", err)
+	}
+	assertNoTempFiles()
+
+	if err := store.UpdateText(items[1].ID, "modified"); err != nil {
+		t.Fatalf("UpdateText failed: %v", err)
+	}
+	assertNoTempFiles()
+}
+
+func TestLoadRejectsItemWithEmptyID(t *testing.T) {
+	root := t.TempDir()
+	writeTestTodoFile(t, root, []byte(`
+- id: ""
+  text: something
+  status: open
+  created_at: "2026-01-15T14:30:22Z"
+  updated_at: "2026-01-15T14:30:22Z"
+`))
+	store := newTestStore(t, root)
+	if _, err := store.Load(); err == nil || !strings.Contains(err.Error(), "id is empty") {
+		t.Fatalf("expected empty id error, got: %v", err)
+	}
+}
+
+func TestLoadRejectsItemWithEmptyText(t *testing.T) {
+	root := t.TempDir()
+	writeTestTodoFile(t, root, []byte(`
+- id: opaque-alpha
+  text: ""
+  status: open
+  created_at: "2026-01-15T14:30:22Z"
+  updated_at: "2026-01-15T14:30:22Z"
+`))
+	store := newTestStore(t, root)
+	if _, err := store.Load(); err == nil || !strings.Contains(err.Error(), "text is empty") {
+		t.Fatalf("expected empty text error, got: %v", err)
+	}
+}
+
+func TestLoadRejectsItemWithUnknownStatus(t *testing.T) {
+	root := t.TempDir()
+	writeTestTodoFile(t, root, []byte(`
+- id: opaque-alpha
+  text: something
+  status: bogus
+  created_at: "2026-01-15T14:30:22Z"
+  updated_at: "2026-01-15T14:30:22Z"
+`))
+	store := newTestStore(t, root)
+	if _, err := store.Load(); err == nil || !strings.Contains(err.Error(), "not recognized") {
+		t.Fatalf("expected unknown status error, got: %v", err)
+	}
+}
+
+func TestLoadRejectsItemWithZeroCreatedAt(t *testing.T) {
+	root := t.TempDir()
+	writeTestTodoFile(t, root, []byte(`
+- id: opaque-alpha
+  text: something
+  status: open
+  updated_at: "2026-01-15T14:30:22Z"
+`))
+	store := newTestStore(t, root)
+	if _, err := store.Load(); err == nil || !strings.Contains(err.Error(), "created_at is zero") {
+		t.Fatalf("expected zero created_at error, got: %v", err)
+	}
+}
+
+func TestLoadRejectsOpenItemWithCompletedSet(t *testing.T) {
+	root := t.TempDir()
+	writeTestTodoFile(t, root, []byte(`
+- id: opaque-alpha
+  text: something
+  status: open
+  created_at: "2026-01-15T14:30:22Z"
+  updated_at: "2026-01-15T14:30:22Z"
+  completed_at: "2026-01-15T15:00:00Z"
+`))
+	store := newTestStore(t, root)
+	if _, err := store.Load(); err == nil || !strings.Contains(err.Error(), "completed_at is set") {
+		t.Fatalf("expected completed_at set error for open item, got: %v", err)
+	}
+}
+
+func TestLoadRejectsDoneItemWithCompletedNil(t *testing.T) {
+	root := t.TempDir()
+	writeTestTodoFile(t, root, []byte(`
+- id: opaque-alpha
+  text: something
+  status: done
+  created_at: "2026-01-15T14:30:22Z"
+  updated_at: "2026-01-15T14:30:22Z"
+`))
+	store := newTestStore(t, root)
+	if _, err := store.Load(); err == nil || !strings.Contains(err.Error(), "completed_at is nil") {
+		t.Fatalf("expected completed_at nil error for done item, got: %v", err)
+	}
+}
+
+func TestLoadRejectsInvalidItemAmongstValid(t *testing.T) {
+	root := t.TempDir()
+	writeTestTodoFile(t, root, []byte(`
+- id: opaque-alpha
+  text: valid item
+  status: open
+  created_at: "2026-01-15T14:30:22Z"
+  updated_at: "2026-01-15T14:30:22Z"
+- id: opaque-beta
+  text: ""
+  status: open
+  created_at: "2026-01-15T14:30:22Z"
+  updated_at: "2026-01-15T14:30:22Z"
+`))
+	store := newTestStore(t, root)
+	if _, err := store.Load(); err == nil || !strings.Contains(err.Error(), "item 1") {
+		t.Fatalf("expected item index in error, got: %v", err)
+	}
+}
+
+func writeTestTodoFile(t *testing.T, root string, data []byte) {
+	t.Helper()
+	dir := filepath.Join(root, DirName)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(root, LogPath())
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+}

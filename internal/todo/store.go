@@ -260,6 +260,12 @@ func (s *Store) Load() ([]Item, error) {
 		return nil, fmt.Errorf("todo.Store.Load: parse: %w", err)
 	}
 
+	for i := range items {
+		if err := items[i].Validate(); err != nil {
+			return nil, fmt.Errorf("todo.Store.Load: item %d: %w", i, err)
+		}
+	}
+
 	sortItems(items)
 	return items, nil
 }
@@ -339,10 +345,28 @@ func (s *Store) writeFile(items []Item) error {
 		return fmt.Errorf("todo.Store.writeFile: marshal: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("todo.Store.writeFile: write: %w", err)
+	tmpPath, err := s.tempPath(path)
+	if err != nil {
+		return fmt.Errorf("todo.Store.writeFile: temp path: %w", err)
+	}
+
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+		return fmt.Errorf("todo.Store.writeFile: write temp: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("todo.Store.writeFile: rename: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) tempPath(path string) (string, error) {
+	var b [4]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return path + ".tmp." + hex.EncodeToString(b[:]), nil
 }
 
 func (s *Store) ensureDir() error {
