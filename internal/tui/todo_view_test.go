@@ -528,3 +528,16 @@ func TestTodoViewBackReturnsToActiveSession(t *testing.T) {
 		t.Fatal("closing overlay should not require a command")
 	}
 }
+
+func TestTodoViewSlashDoesNotOpenPalette(t *testing.T) {
+	m, _, _ := newTodoViewTestModel(t)
+	m.ActiveSession = &store.SessionRecord{Session: store.Session{ID: "2026-01-15T143022Z", Started: time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC), Status: "active"}}
+
+	updated, cmd := pressTodoViewKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	if updated.Palette != nil && updated.Palette.Open {
+		t.Fatal("/ in todo modal should not open the command palette")
+	}
+	if cmd != nil {
+		t.Fatal("/ in todo modal should not return a command")
+	}
+}

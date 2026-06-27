@@ -534,6 +534,7 @@ func handoffPreviewEntries() []keyEntry {
 		{"home", "Jump to top"},
 		{"end", "Jump to bottom"},
 		{"d", "Toggle all diffs"},
+		{"t", "Open todo list"},
 		{"click", "Toggle file diff"},
 		{"q", "Go back"},
 	}
@@ -546,6 +547,7 @@ func compactHandoffPreviewEntries() []keyEntry {
 		{"/", "Search preview"},
 		{"Enter", "Next match"},
 		{"d", "Toggle all diffs"},
+		{"t", "Open todo list"},
 		{"q", "Go back"},
 	}
 }

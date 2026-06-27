@@ -594,13 +594,6 @@ func (m Model) todoKeyHandler(key string) (tea.Model, tea.Cmd) {
 		m.TodoPruneConfirm = false
 		return m, nil
 
-	case "/":
-		if m.Palette != nil {
-			m.Palette.OpenPalette()
-			m.Palette.Input = "/"
-			m.Palette.InputCursorPos = 1
-			return m, cursorTickCmd()
-		}
 	}
 
 	return m, nil
