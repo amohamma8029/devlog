@@ -20,15 +20,15 @@ import (
 )
 
 const (
-	handoffCopyButton           = "[y Copy]"
-	handoffSaveButton           = "[s Save]"
-	maxHandoffPreviewWidth      = 72
-	defaultHandoffPreviewRows   = 18
-	terminalSafetyCols          = 4
-	terminalSafetyRows          = 1
-	handoffDiffExpandedMarker   = "▼"
-	handoffDiffCollapsedMarker  = "▶"
-	inputOverflowMarker         = "…"
+	handoffCopyButton          = "[y Copy]"
+	handoffSaveButton          = "[s Save]"
+	maxHandoffPreviewWidth     = 72
+	defaultHandoffPreviewRows  = 18
+	terminalSafetyCols         = 4
+	terminalSafetyRows         = 1
+	handoffDiffExpandedMarker  = "▼"
+	handoffDiffCollapsedMarker = "▶"
+	inputOverflowMarker        = "…"
 )
 
 func renderHandoffPreview(m Model) string {
