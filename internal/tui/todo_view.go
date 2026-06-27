@@ -8,6 +8,7 @@ import (
 
 	"github.com/amo/devlog/internal/handoff"
 	"github.com/amo/devlog/internal/todo"
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
 )
@@ -21,7 +22,16 @@ const (
 )
 
 func renderTodoOverView(m Model, base string) string {
-	return overlayBlock(xansi.Strip(base), renderTodoView(m), m.Width, m.Height)
+	content := renderTodoView(m)
+	if m.TodoMultiLineOpen && m.Palette != nil && m.Palette.Open {
+		contentWidth := todoOverlayWidth(m.Width) - TodoPanelStyle.GetHorizontalFrameSize()
+		if contentWidth < 1 {
+			contentWidth = 1
+		}
+		m.Palette.SetWidth(contentWidth)
+		content += "\n\n" + m.Palette.View()
+	}
+	return overlayBlock(xansi.Strip(base), content, m.Width, m.Height)
 }
 
 func renderTodoView(m Model) string {
@@ -64,18 +74,11 @@ func todoScrollableBodyRows(maxRows, headerRows, supplementalRows int) int {
 
 func renderTodoSupplementalLines(m Model, width int) []string {
 	var lines []string
-	if m.TodoPromptOpen {
-		lines = append(lines, "", renderTodoPrompt(m, width))
-	}
 	if m.TodoDeleteConfirm {
 		lines = append(lines, "", renderTodoDeletePrompt(width))
 	}
 	if m.TodoPruneConfirm {
 		lines = append(lines, "", renderTodoPrunePrompt(width, m.TodoPruneCount))
-	}
-	if m.Palette != nil && m.Palette.Open {
-		m.Palette.SetWidth(width)
-		lines = append(lines, "", m.Palette.View())
 	}
 	if m.ErrorMessage != "" {
 		line := ErrorBannerStyle.Width(width).Render(" ERROR: " + m.ErrorMessage)
@@ -84,27 +87,8 @@ func renderTodoSupplementalLines(m Model, width int) []string {
 	if m.HandoffMsg != "" {
 		lines = append(lines, "", fitTodoLine(HintStyle.Render(formatHandoffConfirmation(m.HandoffMsg)), width))
 	}
-	lines = append(lines, "", fitTodoLine(TodoMutedStyle.Render("↑/↓ select  a add  e edit  enter toggle  d delete  q close"), width))
+	lines = append(lines, "", fitTodoLine(TodoMutedStyle.Render("↑/↓ select  a add  e edit  enter toggle  c copy  d delete  q close"), width))
 	return lines
-}
-
-func renderTodoPrompt(m Model, width int) string {
-	label := "Add todo"
-	if m.TodoPromptMode == todoPromptEdit {
-		label = "Edit todo"
-	}
-
-	input := m.TodoInput
-	cursorVisible := true
-	if m.Palette != nil {
-		cursorVisible = m.Palette.CursorVisible
-	}
-	if cursorVisible {
-		input += CursorStyle.Render(" ")
-	}
-	contentWidth := todoPromptContentWidth(width, TodoPromptStyle.GetHorizontalFrameSize())
-	content := clampPreviewLine(label+": "+input, contentWidth)
-	return TodoPromptStyle.Width(contentWidth).Render(content)
 }
 
 func renderTodoDeletePrompt(width int) string {
@@ -197,23 +181,66 @@ func renderTodoRow(item todo.Item, idx int, selected bool, width, numberWidth in
 	}
 	number := TodoNumberStyle.Render(fmt.Sprintf("%*d", numberWidth, idx+1))
 	checkbox := todoCheckbox(item)
-	text := oneLineTodoText(item.Text)
-	if item.Status == todo.StatusDone {
-		text = TodoCompletedTextStyle.Render(text)
-	} else {
-		text = EventStyle.Render(text)
-	}
 
 	prefix := rail + " " + number + "  " + checkbox + "  "
-	available := width - xansi.StringWidth(prefix)
+	prefixWidth := xansi.StringWidth(prefix)
+	available := width - prefixWidth
 	if available < 1 {
 		available = 1
 	}
-	line := fitTodoLine(prefix+clampPreviewLine(text, available), width)
-	if selected {
-		return TodoSelectedRowStyle.Width(width).Render(line)
+
+	lines := strings.Split(item.Text, "\n")
+	var textLines []string
+	textStyle := EventStyle
+	if item.Status == todo.StatusDone {
+		textStyle = TodoCompletedTextStyle
 	}
-	return line
+	for _, line := range lines {
+		line = strings.TrimRight(line, " \t\r")
+		if line == "" {
+			textLines = append(textLines, "")
+		} else {
+			for line != "" {
+				if xansi.StringWidth(line) <= available {
+					textLines = append(textLines, line)
+					break
+				}
+				textLines = append(textLines, xansi.Truncate(line, available, ""))
+				line = line[available:]
+			}
+		}
+	}
+	if len(textLines) == 0 {
+		textLines = []string{"(empty)"}
+	}
+
+	var b strings.Builder
+	for i, textLine := range textLines {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		if i == 0 {
+			b.WriteString(prefix)
+		} else {
+			b.WriteString(strings.Repeat(" ", prefixWidth))
+		}
+		styled := textStyle.Render(textLine)
+		padding := width - xansi.StringWidth(prefix) - xansi.StringWidth(textLine)
+		if i == 0 {
+			padding = width - xansi.StringWidth(prefix) - xansi.StringWidth(textLine)
+		} else {
+			padding = available - xansi.StringWidth(textLine)
+		}
+		if padding > 0 {
+			styled += strings.Repeat(" ", padding)
+		}
+		b.WriteString(styled)
+	}
+	result := b.String()
+	if selected {
+		return TodoSelectedRowStyle.Width(width).Render(result)
+	}
+	return result
 }
 
 func renderTodoEmptyState(width int) []string {
@@ -443,9 +470,105 @@ func (m Model) openTodoView() (tea.Model, tea.Cmd) {
 	return m, m.loadTodoItemsCmd(m.TodoSelected, "", "")
 }
 
+func (m Model) openTodoMultiLinePrompt(isEdit bool) (tea.Model, tea.Cmd) {
+	m.TodoMultiLineOpen = true
+	m.TodoMultiLineIsEdit = isEdit
+	m.TodoDeleteConfirm = false
+	m.TodoPruneConfirm = false
+	m.TodoPruneCount = 0
+	if m.Palette == nil {
+		m.TodoMultiLineOpen = false
+		return m, nil
+	}
+	m.Palette.OpenPalette()
+	m.Palette.MultiLine = true
+	m.Palette.MultiLineIsTodo = true
+	m.Palette.MultiLineIsBlocker = false
+	if isEdit {
+		item, ok := m.selectedTodoItem()
+		if !ok {
+			m.TodoMultiLineOpen = false
+			m.TodoMultiLineIsEdit = false
+			m.ErrorMessage = "No todo selected"
+			return m, nil
+		}
+		lines := strings.Split(item.Text, "\n")
+		m.Palette.MultiLineLines = lines
+		m.Palette.MultiLineCursorRow = len(lines) - 1
+		m.Palette.MultiLineCursorCol = len(lines[len(lines)-1])
+	} else {
+		m.Palette.MultiLineLines = []string{""}
+		m.Palette.MultiLineCursorRow = 0
+		m.Palette.MultiLineCursorCol = 0
+	}
+	return m, cursorTickCmd()
+}
+
+func (m Model) handleTodoMultiLineSubmit(body string) (tea.Model, tea.Cmd) {
+	isEdit := m.TodoMultiLineIsEdit
+	m.TodoMultiLineOpen = false
+	m.TodoMultiLineIsEdit = false
+	m.Palette.ClosePalette()
+	if isEdit {
+		item, ok := m.selectedTodoItem()
+		if !ok {
+			m.ErrorMessage = "No todo selected"
+			return m, nil
+		}
+		return m, m.todoMutationCmd(m.TodoSelected, item.ID, "Edited todo", func(store *todo.Store) (string, error) {
+			return item.ID, store.UpdateText(item.ID, body)
+		})
+	}
+	return m, m.todoAddCmd(body)
+}
+
+func (m Model) copyTodoList() (tea.Model, tea.Cmd) {
+	text := formatTodoListMarkdown(m.TodoItems)
+	return m, func() tea.Msg {
+		err := clipboard.WriteAll(text)
+		return TodoCopiedMsg{Error: err}
+	}
+}
+
+func formatTodoListMarkdown(items []todo.Item) string {
+	var openItems, doneItems []todo.Item
+	for _, item := range items {
+		if item.Status == todo.StatusDone {
+			doneItems = append(doneItems, item)
+		} else {
+			openItems = append(openItems, item)
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString("## Todo List\n")
+	if len(doneItems) > 0 {
+		b.WriteString("\n**Completed**\n\n")
+		for _, item := range doneItems {
+			fmt.Fprintf(&b, "- [x] %s\n", item.Text)
+		}
+	}
+	if len(openItems) > 0 {
+		b.WriteString("\n**Open**\n\n")
+		for _, item := range openItems {
+			fmt.Fprintf(&b, "- [ ] %s\n", item.Text)
+		}
+	}
+	return b.String()
+}
+
 func (m Model) closeTodoView() (tea.Model, tea.Cmd) {
 	if m.TodoPromptOpen {
-		m.clearTodoPrompt()
+		m.TodoPromptOpen = false
+		m.TodoPromptMode = ""
+		m.TodoInput = ""
+		m.TodoEditingID = ""
+		return m, nil
+	}
+	if m.TodoMultiLineOpen {
+		m.TodoMultiLineOpen = false
+		m.TodoMultiLineIsEdit = false
+		m.Palette.ClosePalette()
 		return m, nil
 	}
 	if m.TodoDeleteConfirm {
@@ -458,7 +581,10 @@ func (m Model) closeTodoView() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.TodoOpen = false
-	m.clearTodoPrompt()
+	m.TodoPromptOpen = false
+	m.TodoPromptMode = ""
+	m.TodoInput = ""
+	m.TodoEditingID = ""
 	m.TodoDeleteConfirm = false
 	m.TodoPruneConfirm = false
 	m.TodoPruneCount = 0
@@ -690,14 +816,17 @@ func (m Model) todoKeyHandler(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "a":
-		return m.openTodoPrompt(todoPromptAdd)
+		return m.openTodoMultiLinePrompt(false)
 
 	case "e":
 		if _, ok := m.selectedTodoItem(); !ok {
 			m.ErrorMessage = "No todo selected"
 			return m, nil
 		}
-		return m.openTodoPrompt(todoPromptEdit)
+		return m.openTodoMultiLinePrompt(true)
+
+	case "c":
+		return m.copyTodoList()
 
 	case "enter", " ", "space":
 		return m.toggleSelectedTodo()
@@ -713,28 +842,6 @@ func (m Model) todoKeyHandler(key string) (tea.Model, tea.Cmd) {
 
 	}
 
-	return m, nil
-}
-
-func (m Model) todoPromptKeyHandler(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.clearTodoPrompt()
-		return m, nil
-
-	case "enter":
-		return m.submitTodoPrompt()
-
-	case "backspace":
-		if len(m.TodoInput) > 0 {
-			m.TodoInput = m.TodoInput[:len(m.TodoInput)-1]
-		}
-		return m, nil
-	}
-
-	if len(msg.Runes) > 0 {
-		m.TodoInput += string(msg.Runes)
-	}
 	return m, nil
 }
 
@@ -760,60 +867,6 @@ func (m Model) todoPruneConfirmKeyHandler(key string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
-}
-
-func (m Model) openTodoPrompt(mode string) (tea.Model, tea.Cmd) {
-	m.TodoPromptOpen = true
-	m.TodoPromptMode = mode
-	m.TodoInput = ""
-	m.TodoEditingID = ""
-	m.TodoDeleteConfirm = false
-	m.TodoPruneConfirm = false
-	m.TodoPruneCount = 0
-	if mode == todoPromptEdit {
-		item, ok := m.selectedTodoItem()
-		if !ok {
-			m.clearTodoPrompt()
-			m.ErrorMessage = "No todo selected"
-			return m, nil
-		}
-		m.TodoInput = item.Text
-		m.TodoEditingID = item.ID
-	}
-	if m.Palette != nil {
-		m.Palette.CursorVisible = true
-	}
-	return m, cursorTickCmd()
-}
-
-func (m Model) submitTodoPrompt() (tea.Model, tea.Cmd) {
-	text := strings.TrimSpace(m.TodoInput)
-	mode := m.TodoPromptMode
-	editingID := m.TodoEditingID
-	selection := m.TodoSelected
-	m.clearTodoPrompt()
-	if text == "" {
-		m.ErrorMessage = "Todo text is required"
-		return m, nil
-	}
-
-	if mode == todoPromptAdd {
-		return m, m.todoAddCmd(text)
-	}
-	if editingID == "" {
-		m.ErrorMessage = "No todo selected"
-		return m, nil
-	}
-	return m, m.todoMutationCmd(selection, editingID, "Edited todo", func(store *todo.Store) (string, error) {
-		return editingID, store.UpdateText(editingID, text)
-	})
-}
-
-func (m *Model) clearTodoPrompt() {
-	m.TodoPromptOpen = false
-	m.TodoPromptMode = ""
-	m.TodoInput = ""
-	m.TodoEditingID = ""
 }
 
 func (m Model) todoAddCmd(text string) tea.Cmd {

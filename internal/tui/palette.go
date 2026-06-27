@@ -40,6 +40,7 @@ type CommandPalette struct {
 	MultiLineCursorRow int
 	MultiLineCursorCol int
 	MultiLineIsBlocker bool
+	MultiLineIsTodo    bool
 	SelectionAnchorRow int
 	SelectionAnchorCol int
 	HasSelection       bool
@@ -548,12 +549,13 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 	case "enter":
 		body := strings.TrimSpace(strings.Join(p.MultiLineLines, "\n"))
 		isBlocker := p.MultiLineIsBlocker
+		isTodo := p.MultiLineIsTodo
 		p.ClosePalette()
 		if body == "" {
 			return nil, p
 		}
 		return func() tea.Msg {
-			return MultiLineNoteMsg{Body: body, IsBlocker: isBlocker}
+			return MultiLineNoteMsg{Body: body, IsBlocker: isBlocker, IsTodo: isTodo}
 		}, p
 
 	case "esc":
@@ -610,6 +612,9 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 				p.MultiLineLines[p.MultiLineCursorRow+1:]...)
 			p.MultiLineCursorRow--
 		} else if len(p.MultiLineLines[0]) == 0 {
+			if p.MultiLineIsTodo {
+				return nil, p
+			}
 			p.MultiLine = false
 			p.MultiLineLines = nil
 			if p.MultiLineIsBlocker {
@@ -848,6 +853,9 @@ func (p CommandPalette) viewMultiLine() string {
 	if p.MultiLineIsBlocker {
 		token = "/block"
 		tokenStyle = ComposerBlockerTokenStyle
+	}
+	if p.MultiLineIsTodo {
+		token = "Todo"
 	}
 	tokenWidth := xansi.StringWidth(token) + 1 + MenuSelectedStyle.GetHorizontalFrameSize()
 	indent := strings.Repeat(" ", tokenWidth)
