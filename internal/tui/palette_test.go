@@ -357,8 +357,8 @@ func TestVisiblePaletteCommandsClosedSession(t *testing.T) {
 	p.Input = "/"
 	p.SessionClosed = true
 	visible := visiblePaletteCommands(p)
-	if len(visible) != 2 {
-		t.Errorf("closed session should show 2 commands, got %d", len(visible))
+	if len(visible) != 3 {
+		t.Errorf("closed session should show 3 commands, got %d", len(visible))
 	}
 	for _, cmd := range visible {
 		if cmd.Command == "/note" || cmd.Command == "/block" || cmd.Command == "/close" {

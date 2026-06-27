@@ -9,6 +9,7 @@ import (
 	"github.com/amo/devlog/internal/handoff"
 	"github.com/amo/devlog/internal/session"
 	"github.com/amo/devlog/internal/store"
+	"github.com/amo/devlog/internal/todo"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -68,6 +69,16 @@ type Model struct {
 	displayTime                internalconfig.DisplayTimeFormatter
 	activeSessionMetadata      store.SessionFileMetadata
 	activeSessionMetadataKnown bool
+	TodoOpen                   bool
+	TodoItems                  []todo.Item
+	TodoSelected               int
+	TodoScrollOffset           int
+	TodoLoaded                 bool
+	TodoPromptOpen             bool
+	TodoPromptMode             string
+	TodoInput                  string
+	TodoEditingID              string
+	TodoDeleteConfirm          bool
 }
 
 type SearchState struct {
@@ -104,6 +115,7 @@ func NewModelWithConfig(s *store.Store, root string, cfg internalconfig.Config) 
 		displayTime:   formatter,
 		SelectedEvent: -1,
 		EditingEvent:  -1,
+		TodoSelected:  -1,
 	}
 	if err != nil {
 		m.ErrorMessage = err.Error()
@@ -142,6 +154,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sl, _ := m.SessionList.Update(msg)
 		m.SessionList = sl.(SessionListModel)
 		m.refreshScrollBodyCaches()
+		clampTodoModelScroll(&m)
 		return m, nil
 
 	case ActiveSessionLoadedMsg:
@@ -157,6 +170,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshActiveTimelineCache()
 		changed := m.setView(ActiveSession)
 		return m, clearScreenIfChanged(changed)
+
+	case TodoLoadedMsg:
+		m.applyTodoLoaded(msg)
+		return m, nil
 
 	case ActiveSessionRefreshTickMsg:
 		return m, m.checkActiveSessionRefreshCmd()
@@ -309,6 +326,14 @@ func (m Model) handleCursorTick() (tea.Model, tea.Cmd) {
 		})
 	}
 	if m.CurrentView == ActiveSession && m.ActiveSession == nil && m.OpenPromptOpen {
+		if m.Palette != nil {
+			m.Palette.CursorVisible = !m.Palette.CursorVisible
+		}
+		return m, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+			return CursorTickMsg{}
+		})
+	}
+	if m.TodoOpen && m.TodoPromptOpen {
 		if m.Palette != nil {
 			m.Palette.CursorVisible = !m.Palette.CursorVisible
 		}
@@ -495,6 +520,10 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	if m.TodoOpen {
+		return m.handleTodoMouse(msg)
+	}
+
 	switch action {
 	case MouseScrollUp:
 		if m.ScrollOffset > 0 {
@@ -512,6 +541,21 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if key == "ctrl+c" {
 		return m, tea.Quit
+	}
+
+	if m.TodoOpen && m.TodoPromptOpen {
+		return m.todoPromptKeyHandler(msg)
+	}
+
+	if m.TodoOpen && m.TodoDeleteConfirm {
+		return m.todoDeleteConfirmKeyHandler(key)
+	}
+
+	if m.TodoOpen {
+		if key == "esc" || key == "q" {
+			return m.closeTodoView()
+		}
+		return m.todoKeyHandler(key)
 	}
 
 	if m.CurrentView == SessionList && m.SessionList.filterMode {
@@ -985,6 +1029,9 @@ func (m Model) handleCommand(msg CommandExecutedMsg) (tea.Model, tea.Cmd) {
 		m.setView(SessionList)
 		return m, m.SessionList.Init()
 
+	case "/todo":
+		return m.handleTodoCommand(args)
+
 	default:
 		m.ErrorMessage = "Unknown command: " + cmdStr
 		return m, nil
@@ -1024,6 +1071,10 @@ func (m Model) View() string {
 	// Force view to fill terminal height so no stale content persists on resize.
 	// lipgloss.Place pads with newlines — ANSI-aware, zero flicker.
 	v = lipgloss.Place(m.Width, m.Height, lipgloss.Left, lipgloss.Top, v)
+
+	if m.TodoOpen {
+		v = renderTodoOverView(m, v)
+	}
 
 	if m.ShowHelp {
 		return renderHelpOverView(m, v)
@@ -1126,6 +1177,9 @@ func formatDuration(d time.Duration) string {
 }
 
 func countContentLines(m Model) int {
+	if m.TodoOpen {
+		return countTodoContentLines(m)
+	}
 	h := countLines(renderHeader(m))
 	if len(m.Events) > 1 {
 		tl := renderTimeline(m, 0)

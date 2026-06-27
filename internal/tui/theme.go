@@ -156,3 +156,46 @@ var SelectedEventStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
 	BorderForeground(lipgloss.Color("#7DD3FC")).
 	Padding(0, 1)
+
+var TodoPanelStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(lipgloss.Color("#4B5563")).
+	Padding(0, 2)
+
+var TodoHeaderStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(lipgloss.Color("#FFFFFF"))
+
+var TodoAccentStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#7DD3FC"))
+
+var TodoMutedStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#6B7280"))
+
+var TodoActionStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#A7F3D0"))
+
+var TodoSelectedRowStyle = lipgloss.NewStyle().
+	Background(lipgloss.Color("#1F2937")).
+	Foreground(lipgloss.Color("#FFFFFF"))
+
+var TodoNumberStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#93C5FD"))
+
+var TodoOpenCheckboxStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#9CA3AF"))
+
+var TodoDoneCheckboxStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#22C55E")).
+	Bold(true)
+
+var TodoCompletedTextStyle = lipgloss.NewStyle().
+	Foreground(lipgloss.Color("#6B7280"))
+
+var TodoEmptyTitleStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(lipgloss.Color("#FFFFFF"))
+
+var TodoPromptStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(lipgloss.Color("#7DD3FC"))
