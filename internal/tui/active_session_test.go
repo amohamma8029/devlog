@@ -362,6 +362,15 @@ func TestHandoffPreviewHelpEntriesIncludeSearch(t *testing.T) {
 	}
 }
 
+func TestHandoffPreviewHelpEntriesIncludeTodoShortcut(t *testing.T) {
+	if !keyEntriesContain(handoffPreviewEntries(), "t", "Open todo list") {
+		t.Fatal("handoff preview help entries should include todo shortcut")
+	}
+	if !keyEntriesContain(compactHandoffPreviewEntries(), "t", "Open todo list") {
+		t.Fatal("compact handoff preview help entries should include todo shortcut")
+	}
+}
+
 func keyEntriesContain(entries []keyEntry, key, desc string) bool {
 	for _, entry := range entries {
 		if entry.key == key && entry.desc == desc {
@@ -655,6 +664,25 @@ func TestHandleHandoffKeyQRestoresActiveSessionScroll(t *testing.T) {
 	}
 	if updated.ScrollOffset != 4 {
 		t.Fatalf("ScrollOffset = %d, want restored active session offset 4", updated.ScrollOffset)
+	}
+}
+
+func TestHandleHandoffKeyTOpensTodoOverlay(t *testing.T) {
+	m := testModel()
+	m.CurrentView = HandoffPreview
+	m.ActiveSession = testActiveSession()
+	m.TodoOpen = false
+
+	updatedModel, cmd := handleHandoffKey(&m, "t")
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model from handleHandoffKey, got %T", updatedModel)
+	}
+	if !updated.TodoOpen {
+		t.Fatal("pressing t should open the todo overlay")
+	}
+	if cmd == nil {
+		t.Fatal("pressing t should return a load items command")
 	}
 }
 

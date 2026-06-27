@@ -1299,6 +1299,9 @@ func handleHandoffKey(m *Model, key string) (tea.Model, tea.Cmd) {
 		m.ScrollOffset = handoffMaxScrollOffset(*m)
 		return *m, nil
 
+	case "t":
+		return m.openTodoView()
+
 	case "q":
 		if m.ActiveSession != nil {
 			changed := m.setView(ActiveSession)
