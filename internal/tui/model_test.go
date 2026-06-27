@@ -8,6 +8,7 @@ import (
 
 	internalconfig "github.com/amo/devlog/internal/config"
 	"github.com/amo/devlog/internal/store"
+	"github.com/amo/devlog/internal/todo"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -659,6 +660,169 @@ func TestModelUpdateHandoffGeneratedClearsScreen(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("expected clear-screen command when entering handoff preview")
+	}
+}
+
+func TestModelHandoffCommandIncludesRelevantTodos(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git binary not available: %v", err)
+	}
+	root := t.TempDir()
+	runModelTestGit(t, root, "init")
+	runModelTestGit(t, root, "checkout", "-b", "feat/test")
+
+	s, err := store.New(root)
+	if err != nil {
+		t.Fatalf("store.New failed: %v", err)
+	}
+	sess := store.Session{
+		ID:      "2026-01-15T140000Z",
+		Author:  "Alice",
+		Started: time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC),
+		Branch:  "feat/test",
+		Status:  "active",
+	}
+	if err := s.WriteSession(sess, "start work"); err != nil {
+		t.Fatalf("WriteSession failed: %v", err)
+	}
+	if err := s.AppendEvent(sess.ID, "Note", "implement feature"); err != nil {
+		t.Fatalf("AppendEvent failed: %v", err)
+	}
+
+	todoStore, err := todo.NewStore(root)
+	if err != nil {
+		t.Fatalf("todo.NewStore failed: %v", err)
+	}
+	if _, err := todoStore.Add(todo.AddInput{Text: "follow up from preview", SessionID: sess.ID, Branch: sess.Branch}); err != nil {
+		t.Fatalf("todo.Add (relevant) failed: %v", err)
+	}
+	if _, err := todoStore.Add(todo.AddInput{Text: "unrelated to this session", SessionID: "other-session", Branch: "feat/other"}); err != nil {
+		t.Fatalf("todo.Add (unrelated) failed: %v", err)
+	}
+
+	rec, err := s.GetSession(sess.ID)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+
+	p := NewCommandPalette()
+	m := Model{
+		Store:         s,
+		Root:          root,
+		ActiveSession: &rec,
+		Palette:       &p,
+		Config:        internalconfig.Default(),
+	}
+
+	_, cmd := m.Update(CommandExecutedMsg{Input: "/handoff"})
+	if cmd == nil {
+		t.Fatal("expected command from /handoff dispatch")
+	}
+	msg := cmd()
+	gen, ok := msg.(HandoffGeneratedMsg)
+	if !ok {
+		t.Fatalf("expected HandoffGeneratedMsg, got %T", msg)
+	}
+	if gen.Error != nil {
+		t.Fatalf("handoff generation failed: %v", gen.Error)
+	}
+	if !hasHandoffTodoListSection(gen.Content) {
+		t.Errorf("expected ## Todos section in handoff preview, got:\n%s", gen.Content)
+	}
+	if !handoffTodosSectionContains(gen.Content, "follow up from preview") {
+		t.Errorf("expected relevant open todo in preview, got:\n%s", gen.Content)
+	}
+	if handoffTodosSectionContains(gen.Content, "unrelated to this session") {
+		t.Errorf("unrelated todo should not appear in preview, got:\n%s", gen.Content)
+	}
+}
+
+// handoffTodosSectionContains reports whether the `## Todo List` section of a
+// generated handoff contains the given substring. It restricts the search to
+// the rendered todos section so unrelated matches in the raw diff block (e.g.
+// source code comments that mention the test text) cannot cause false
+// positives.
+func handoffTodosSectionContains(content, needle string) bool {
+	var inSection bool
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(line, "## ") {
+			inSection = line == "## Todo List"
+			continue
+		}
+		if inSection && strings.Contains(line, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasHandoffTodoListSection reports whether the handoff body contains a markdown
+// `## Todo List` heading at the start of a line. It deliberately ignores the same
+// string appearing inside a raw diff block (e.g. as a code comment in the
+// diff body), so the test only reacts to the rendered section.
+func hasHandoffTodoListSection(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(line, "## Todo List") {
+			return true
+		}
+	}
+	return false
+}
+
+func TestModelHandoffCommandOmitsTodosWhenNone(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git binary not available: %v", err)
+	}
+	root := t.TempDir()
+	runModelTestGit(t, root, "init")
+	runModelTestGit(t, root, "checkout", "-b", "feat/test")
+
+	s, err := store.New(root)
+	if err != nil {
+		t.Fatalf("store.New failed: %v", err)
+	}
+	sess := store.Session{
+		ID:      "2026-01-15T140000Z",
+		Author:  "Alice",
+		Started: time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC),
+		Branch:  "feat/test",
+		Status:  "active",
+	}
+	if err := s.WriteSession(sess, "start work"); err != nil {
+		t.Fatalf("WriteSession failed: %v", err)
+	}
+	if err := s.AppendEvent(sess.ID, "Note", "no todos here"); err != nil {
+		t.Fatalf("AppendEvent failed: %v", err)
+	}
+
+	rec, err := s.GetSession(sess.ID)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+
+	p := NewCommandPalette()
+	m := Model{
+		Store:         s,
+		Root:          root,
+		ActiveSession: &rec,
+		Palette:       &p,
+		Config:        internalconfig.Default(),
+	}
+
+	_, cmd := m.Update(CommandExecutedMsg{Input: "/handoff"})
+	if cmd == nil {
+		t.Fatal("expected command from /handoff dispatch")
+	}
+	msg := cmd()
+	gen, ok := msg.(HandoffGeneratedMsg)
+	if !ok {
+		t.Fatalf("expected HandoffGeneratedMsg, got %T", msg)
+	}
+	if gen.Error != nil {
+		t.Fatalf("handoff generation failed: %v", gen.Error)
+	}
+	if hasHandoffTodoListSection(gen.Content) {
+		t.Errorf("expected no Todos section when no todos exist, got:\n%s", gen.Content)
 	}
 }
 

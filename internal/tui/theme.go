@@ -190,7 +190,19 @@ var TodoDoneCheckboxStyle = lipgloss.NewStyle().
 	Bold(true)
 
 var TodoCompletedTextStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#6B7280"))
+	Foreground(lipgloss.Color("#848B9A"))
+
+var TodoListHeadingStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(lipgloss.Color("#23FF6C"))
+
+var TodoListSubheadingStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(lipgloss.Color("#E5E7EB"))
+
+var ChangesHeadingStyle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(lipgloss.Color("#FF2DA1"))
 
 var TodoEmptyTitleStyle = lipgloss.NewStyle().
 	Bold(true).

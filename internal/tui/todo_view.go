@@ -476,6 +476,40 @@ func (m Model) loadTodoItemsCmd(selection int, selectedID, message string) tea.C
 	}
 }
 
+// loadHandoffTodos returns all todos relevant to the given session/branch for
+// inclusion in a handoff artifact. A missing todo file is treated as "no
+// todos" rather than an error so the handoff preview never fails solely
+// because the todo log has not been initialised yet.
+func loadHandoffTodos(root, sessionID, branch string) ([]todo.Item, error) {
+	store, err := todo.NewStore(root)
+	if err != nil {
+		return nil, err
+	}
+	items, err := store.List(todo.Filter{
+		IncludeOpen:     true,
+		IncludeDone:     true,
+		SessionID:       sessionID,
+		Branch:          branch,
+		MatchSessionAny: sessionID == "",
+		MatchBranchAny:  branch == "",
+	})
+	if err != nil {
+		return nil, err
+	}
+	ordered := make([]todo.Item, 0, len(items))
+	for _, item := range items {
+		if item.Status == todo.StatusDone {
+			ordered = append(ordered, item)
+		}
+	}
+	for _, item := range items {
+		if item.Status == todo.StatusOpen {
+			ordered = append(ordered, item)
+		}
+	}
+	return ordered, nil
+}
+
 func (m *Model) applyTodoLoaded(msg TodoLoadedMsg) {
 	if msg.Error != nil {
 		m.ErrorMessage = msg.Error.Error()

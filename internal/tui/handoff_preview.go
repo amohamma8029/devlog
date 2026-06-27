@@ -283,7 +283,7 @@ func renderHandoffBody(m Model) string {
 		return previewMarkdown
 	}
 
-	return rendered
+	return styleTodoListRendered(rendered)
 }
 
 func handoffBodyLines(m Model) []string {
@@ -295,19 +295,19 @@ func handoffBodyLines(m Model) []string {
 }
 
 func prepareHandoffPreviewMarkdown(content string) string {
-	return formatHandoffMarkdown(content, nil, handoffMarkdownOptions{
+	return transformTodoListSection(formatHandoffMarkdown(content, nil, handoffMarkdownOptions{
 		DiffLineLimit:               internalconfig.DefaultHandoffPreviewLineLimit,
 		IncludeCollapsedPlaceholder: true,
 		ShowDisclosureArrows:        true,
-	})
+	}))
 }
 
 func prepareHandoffPreviewMarkdownForModel(m Model) string {
-	return formatHandoffMarkdown(m.HandoffContent, m.HandoffCollapsedDiffs, handoffMarkdownOptions{
+	return transformTodoListSection(formatHandoffMarkdown(m.HandoffContent, m.HandoffCollapsedDiffs, handoffMarkdownOptions{
 		DiffLineLimit:               m.Config.TUI.HandoffPreview.DiffLineLimit,
 		IncludeCollapsedPlaceholder: true,
 		ShowDisclosureArrows:        true,
-	})
+	}))
 }
 
 func handoffMarkdownForSave(m Model) string {
@@ -379,6 +379,112 @@ func formatHandoffMarkdown(content string, collapsed map[string]bool, opts hando
 	}
 
 	return strings.Join(out, "\n")
+}
+
+// transformTodoListSection turns semantic task-list markdown into Unicode
+// checkbox paragraphs for preview rendering. It intentionally avoids markdown
+// list syntax so Glamour does not add bullet glyphs before the checkboxes. Each
+// checkbox row is emitted as its own short paragraph so Glamour keeps rows
+// vertical.
+func transformTodoListSection(content string) string {
+	lines := strings.Split(content, "\n")
+	var out []string
+	inSection := false
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "## ") {
+			inSection = line == "## Todo List"
+			out = append(out, line)
+			continue
+		}
+		if !inSection {
+			out = append(out, line)
+			continue
+		}
+		if strings.TrimSpace(line) == "" {
+			if len(out) == 0 || out[len(out)-1] != "" {
+				out = append(out, "")
+			}
+			continue
+		}
+
+		if strings.HasPrefix(line, "**Completed**") {
+			out = append(out, line)
+			continue
+		}
+		if strings.HasPrefix(line, "**Open**") {
+			out = append(out, line)
+			continue
+		}
+		if strings.HasPrefix(line, "- [x] ") || strings.HasPrefix(line, "- [X] ") {
+			out = append(out, "\u2611 "+line[len("- [x] "):], "")
+			continue
+		}
+		if strings.HasPrefix(line, "- [ ] ") {
+			out = append(out, "\u2610 "+strings.TrimPrefix(line, "- [ ] "), "")
+			continue
+		}
+
+		out = append(out, line)
+	}
+
+	return strings.Join(out, "\n")
+}
+
+// styleTodoListRendered applies Lipgloss styling to the already-rendered
+// Glamour output. It only styles actual section heading lines, then indents and
+// styles rows while inside the Todo List section.
+func styleTodoListRendered(rendered string) string {
+	lines := strings.Split(rendered, "\n")
+	inTodoList := false
+	for i, line := range lines {
+		stripped := xansi.Strip(line)
+		if heading, ok := renderedHeadingName(stripped); ok {
+			switch heading {
+			case "Todo List":
+				lines[i] = TodoListHeadingStyle.Render(strings.TrimSpace(stripped))
+				inTodoList = true
+				continue
+			case "Changes":
+				lines[i] = ChangesHeadingStyle.Render(strings.TrimSpace(stripped))
+				inTodoList = false
+				continue
+			default:
+				inTodoList = false
+			}
+		}
+		if !inTodoList {
+			continue
+		}
+
+		trimmed := strings.TrimSpace(stripped)
+		if trimmed == "Completed" || trimmed == "Open" {
+			lines[i] = "  " + TodoListSubheadingStyle.Render(trimmed)
+			continue
+		}
+		if strings.HasPrefix(trimmed, "\u2611 ") {
+			text := strings.TrimSpace(strings.TrimPrefix(trimmed, "\u2611"))
+			lines[i] = "    " + TodoDoneCheckboxStyle.Render("\u2611") + " " + TodoCompletedTextStyle.Render(text)
+			continue
+		}
+		if strings.HasPrefix(trimmed, "\u2610 ") {
+			text := strings.TrimSpace(strings.TrimPrefix(trimmed, "\u2610"))
+			lines[i] = "    " + TodoOpenCheckboxStyle.Render("\u2610") + " " + text
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func renderedHeadingName(stripped string) (string, bool) {
+	trimmed := strings.TrimSpace(stripped)
+	if !strings.HasPrefix(trimmed, "▌ ") {
+		return "", false
+	}
+	heading := strings.TrimSpace(strings.TrimPrefix(trimmed, "▌ "))
+	if heading == "" {
+		return "", false
+	}
+	return heading, true
 }
 
 func normalizeLegacyDiffFences(content string) string {
