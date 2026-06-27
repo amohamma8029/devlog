@@ -354,10 +354,10 @@ func (m Model) handleCursorTick() (tea.Model, tea.Cmd) {
 		if m.Palette != nil {
 			m.Palette.CursorVisible = !m.Palette.CursorVisible
 		}
-	return m, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
-		return CursorTickMsg{}
-	})
-}
+		return m, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+			return CursorTickMsg{}
+		})
+	}
 	return m, nil
 }
 
