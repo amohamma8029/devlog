@@ -516,3 +516,54 @@ func writeTestFile(t *testing.T, dir, path, content string) {
 		t.Fatalf("write file failed: %v", err)
 	}
 }
+
+func TestDiffSinceWithContextReturnsUntrackedFileDiff(t *testing.T) {
+	requireGit(t)
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	runGitIn(t, dir, "init")
+	runGitIn(t, dir, "checkout", "-b", "feat/test")
+	writeTestFile(t, dir, ".devlog/sessions/2026-01-15T140000Z.md", "---\nid: 2026-01-15T140000Z\n---\n\n## Note - 2026-01-15 14:00 UTC\nhello")
+	commitWithDate(t, dir, "2026-01-15 14:05:00 +0000", "initial commit")
+
+	writeTestFile(t, dir, "untracked.txt", "new content")
+
+	diff, err := DiffSinceWithContext(time.Date(2026, 1, 15, 14, 00, 0, 0, time.UTC), 3)
+	if err != nil {
+		t.Fatalf("DiffSinceWithContext failed: %v", err)
+	}
+	if diff == "" {
+		t.Fatal("expected diff output for untracked file, got empty string")
+	}
+	if !strings.Contains(diff, "untracked.txt") {
+		t.Fatalf("expected diff to mention untracked.txt, got: %s", diff)
+	}
+}
+
+func TestDiffSinceWithContextReturnsErrorWhenCachedDiffFails(t *testing.T) {
+	requireGit(t)
+
+	dir := t.TempDir()
+	t.Chdir(dir)
+	runGitIn(t, dir, "init")
+	runGitIn(t, dir, "checkout", "-b", "feat/test")
+	writeTestFile(t, dir, ".devlog/sessions/2026-01-15T140000Z.md", "---\nid: 2026-01-15T140000Z\n---\n\n## Note - 2026-01-15 14:00 UTC\nhello")
+	commitWithDate(t, dir, "2026-01-15 14:05:00 +0000", "initial commit")
+
+	writeTestFile(t, dir, "untracked.txt", "new content")
+
+	t.Setenv("GIT_EXTERNAL_DIFF", "nonexistent-program-xyz")
+
+	// Use a since time after the only commit so the main diff is empty (no file
+	// changes between commit and HEAD), and only the untracked diff invokes the
+	// external diff. This exercises the specific code path where git diff
+	// --cached failure was previously swallowed.
+	diff, err := DiffSinceWithContext(time.Date(2026, 1, 15, 14, 10, 0, 0, time.UTC), 3)
+	if err == nil {
+		t.Fatalf("expected error from git diff --cached failure, got diff=%q", diff)
+	}
+	if !strings.Contains(err.Error(), "git diff --cached") {
+		t.Fatalf("expected error to mention git diff --cached, got: %v", err)
+	}
+}
