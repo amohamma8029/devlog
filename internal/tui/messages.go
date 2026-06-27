@@ -32,6 +32,12 @@ type TodoLoadedMsg struct {
 	Message    string
 }
 
+type TodoPrunePromptMsg struct {
+	Items          []todo.Item
+	CompletedCount int
+	Error          error
+}
+
 type ActiveSessionRefreshTickMsg struct{}
 
 type ActiveSessionRefreshResultMsg struct {
