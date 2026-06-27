@@ -155,7 +155,10 @@ func diffUntrackedFiles(contextLines int) (string, error) {
 	diffCmd.Env = append(os.Environ(), "GIT_INDEX_FILE="+indexFile)
 	diffCmd.Stdout = &diffOut
 	diffCmd.Stderr = &diffErr
-	_ = diffCmd.Run()
+	if err := diffCmd.Run(); err != nil {
+		_ = os.Remove(indexFile)
+		return "", fmt.Errorf("DiffSince: git diff --cached: %w\nstderr: %s", err, diffErr.String())
+	}
 
 	_ = os.Remove(indexFile)
 	return strings.TrimSpace(diffOut.String()), nil
