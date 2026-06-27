@@ -29,20 +29,36 @@ func renderTodoView(m Model) string {
 	if contentWidth < 1 {
 		contentWidth = 1
 	}
-	maxRows := todoOverlayBodyRows(m.Height)
-
-	lines := buildTodoContentLines(m, contentWidth)
-	if len(lines) > maxRows {
-		start := clampTodoScrollOffset(m.TodoScrollOffset, len(lines), maxRows)
-		end := start + maxRows
-		if end > len(lines) {
-			end = len(lines)
-		}
-		lines = lines[start:end]
-	}
-	lines = append(lines, renderTodoSupplementalLines(m, contentWidth)...)
+	lines := renderTodoLines(m, contentWidth, todoOverlayBodyRows(m.Height))
 
 	return TodoPanelStyle.Width(cardWidth - 2).Render(strings.Join(lines, "\n"))
+}
+
+func renderTodoLines(m Model, contentWidth, maxRows int) []string {
+	openCount, doneCount := todoCounts(m.TodoItems)
+	header := renderTodoHeaderLines(m, contentWidth, openCount, doneCount)
+	body := buildTodoBodyLines(m, contentWidth)
+	supplemental := renderTodoSupplementalLines(m, contentWidth)
+	bodyRows := todoScrollableBodyRows(maxRows, len(header), len(supplemental))
+	if len(body) > bodyRows {
+		start := clampTodoScrollOffset(m.TodoScrollOffset, len(body), bodyRows)
+		end := start + bodyRows
+		if end > len(body) {
+			end = len(body)
+		}
+		body = body[start:end]
+	}
+	lines := append(header, body...)
+	lines = append(lines, supplemental...)
+	return lines
+}
+
+func todoScrollableBodyRows(maxRows, headerRows, supplementalRows int) int {
+	bodyRows := maxRows - headerRows - supplementalRows
+	if bodyRows < 3 {
+		return 3
+	}
+	return bodyRows
 }
 
 func renderTodoSupplementalLines(m Model, width int) []string {
@@ -52,6 +68,9 @@ func renderTodoSupplementalLines(m Model, width int) []string {
 	}
 	if m.TodoDeleteConfirm {
 		lines = append(lines, "", renderTodoDeletePrompt(width))
+	}
+	if m.TodoPruneConfirm {
+		lines = append(lines, "", renderTodoPrunePrompt(width, m.TodoPruneCount))
 	}
 	if m.Palette != nil && m.Palette.Open {
 		m.Palette.SetWidth(width)
@@ -93,39 +112,43 @@ func renderTodoDeletePrompt(width int) string {
 	return WarningPromptStyle.Width(contentWidth).Render(content)
 }
 
+func renderTodoPrunePrompt(width, count int) string {
+	contentWidth := todoPromptContentWidth(width, WarningPromptStyle.GetHorizontalFrameSize())
+	content := clampPreviewLine("Prune "+completedTodoCount(count)+"? Open todos will be kept. y/n", contentWidth)
+	return WarningPromptStyle.Width(contentWidth).Render(content)
+}
+
 func renderTodoContent(m Model, height int) string {
 	cardWidth := todoOverlayWidth(m.Width)
 	contentWidth := cardWidth - TodoPanelStyle.GetHorizontalFrameSize()
 	if contentWidth < 1 {
 		contentWidth = 1
 	}
-	lines := buildTodoContentLines(m, contentWidth)
 	maxRows := height
 	if maxRows < 1 {
 		maxRows = 1
 	}
-	if len(lines) > maxRows {
-		start := clampTodoScrollOffset(m.TodoScrollOffset, len(lines), maxRows)
-		end := start + maxRows
-		if end > len(lines) {
-			end = len(lines)
-		}
-		lines = lines[start:end]
-	}
+	lines := renderTodoLines(m, contentWidth, maxRows)
 	return TodoPanelStyle.Width(cardWidth - 2).Render(strings.Join(lines, "\n"))
 }
 
 func buildTodoContentLines(m Model, width int) []string {
 	openCount, doneCount := todoCounts(m.TodoItems)
 	lines := renderTodoHeaderLines(m, width, openCount, doneCount)
+	return append(lines, buildTodoBodyLines(m, width)...)
+}
+
+func buildTodoBodyLines(m Model, width int) []string {
 	if !m.TodoLoaded {
-		return append(lines, "", fitTodoLine(HintStyle.Render("Loading todos..."), width))
+		return []string{"", fitTodoLine(HintStyle.Render("Loading todos..."), width)}
 	}
 	if len(m.TodoItems) == 0 {
-		lines = append(lines, "")
-		return append(lines, renderTodoEmptyState(width)...)
+		return append([]string{""}, renderTodoEmptyState(width)...)
 	}
 
+	openCount, doneCount := todoCounts(m.TodoItems)
+	numberWidth := len(strconv.Itoa(len(m.TodoItems)))
+	var lines []string
 	openStarted := false
 	doneStarted := false
 	for idx, item := range m.TodoItems {
@@ -141,7 +164,7 @@ func buildTodoContentLines(m Model, width int) []string {
 			doneStarted = true
 		}
 
-		lines = append(lines, renderTodoRow(item, idx, idx == m.TodoSelected, width))
+		lines = append(lines, renderTodoRow(item, idx, idx == m.TodoSelected, width, numberWidth))
 	}
 
 	return lines
@@ -166,12 +189,12 @@ func renderTodoSectionHeader(label string, count, width int) string {
 	return fitTodoLine(title+" "+countText, width)
 }
 
-func renderTodoRow(item todo.Item, idx int, selected bool, width int) string {
+func renderTodoRow(item todo.Item, idx int, selected bool, width, numberWidth int) string {
 	rail := " "
 	if selected {
 		rail = TodoAccentStyle.Render(">")
 	}
-	number := TodoNumberStyle.Render(strconv.Itoa(idx + 1))
+	number := TodoNumberStyle.Render(fmt.Sprintf("%*d", numberWidth, idx+1))
 	checkbox := todoCheckbox(item)
 	text := oneLineTodoText(item.Text)
 	if item.Status == todo.StatusDone {
@@ -252,6 +275,13 @@ func todoCounts(items []todo.Item) (openCount, doneCount int) {
 	return openCount, doneCount
 }
 
+func completedTodoCount(count int) string {
+	if count == 1 {
+		return "1 completed todo"
+	}
+	return fmt.Sprintf("%d completed todos", count)
+}
+
 func todoPromptContentWidth(width, frame int) int {
 	if width <= 0 {
 		width = 80
@@ -278,6 +308,14 @@ func todoOverlayWidth(termWidth int) int {
 		}
 	}
 	return width
+}
+
+func todoOverlayContentWidth(termWidth int) int {
+	contentWidth := todoOverlayWidth(termWidth) - TodoPanelStyle.GetHorizontalFrameSize()
+	if contentWidth < 1 {
+		return 1
+	}
+	return contentWidth
 }
 
 func todoOverlayBodyRows(termHeight int) int {
@@ -371,8 +409,23 @@ func (m Model) handleTodoCommand(args string) (tea.Model, tea.Cmd) {
 		}
 		m.TodoSelected = idx
 		m.TodoDeleteConfirm = true
+		m.TodoPruneConfirm = false
 		ensureTodoSelectionVisible(&m)
 		return m, nil
+
+	case "prune":
+		if rest != "" {
+			m.ErrorMessage = "Usage: /todo prune"
+			return m, nil
+		}
+		m.TodoOpen = true
+		m.TodoLoaded = false
+		m.TodoPromptOpen = false
+		m.TodoDeleteConfirm = false
+		m.TodoPruneConfirm = false
+		m.TodoPruneCount = 0
+		m.HandoffMsg = ""
+		return m, m.todoPrunePromptCmd()
 
 	default:
 		m.ErrorMessage = "Unknown todo command: " + command
@@ -384,6 +437,7 @@ func (m Model) openTodoView() (tea.Model, tea.Cmd) {
 	m.TodoOpen = true
 	m.TodoPromptOpen = false
 	m.TodoDeleteConfirm = false
+	m.TodoPruneConfirm = false
 	m.TodoLoaded = false
 	return m, m.loadTodoItemsCmd(m.TodoSelected, "", "")
 }
@@ -397,9 +451,16 @@ func (m Model) closeTodoView() (tea.Model, tea.Cmd) {
 		m.TodoDeleteConfirm = false
 		return m, nil
 	}
+	if m.TodoPruneConfirm {
+		m.TodoPruneConfirm = false
+		m.TodoPruneCount = 0
+		return m, nil
+	}
 	m.TodoOpen = false
 	m.clearTodoPrompt()
 	m.TodoDeleteConfirm = false
+	m.TodoPruneConfirm = false
+	m.TodoPruneCount = 0
 	return m, nil
 }
 
@@ -439,6 +500,28 @@ func (m *Model) applyTodoLoaded(msg TodoLoadedMsg) {
 	}
 }
 
+func (m *Model) applyTodoPrunePrompt(msg TodoPrunePromptMsg) {
+	if msg.Error != nil {
+		m.ErrorMessage = msg.Error.Error()
+		return
+	}
+
+	m.TodoItems = orderedTodoViewItems(msg.Items)
+	m.TodoLoaded = true
+	m.TodoPromptOpen = false
+	m.TodoDeleteConfirm = false
+	m.TodoPruneConfirm = false
+	m.TodoPruneCount = 0
+	clampTodoSelection(m)
+	ensureTodoSelectionVisible(m)
+	if msg.CompletedCount == 0 {
+		m.HandoffMsg = "No completed todos to prune."
+		return
+	}
+	m.TodoPruneConfirm = true
+	m.TodoPruneCount = msg.CompletedCount
+}
+
 func (m Model) todoKeyHandler(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "up":
@@ -474,6 +557,7 @@ func (m Model) todoKeyHandler(key string) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.TodoDeleteConfirm = true
+		m.TodoPruneConfirm = false
 		return m, nil
 
 	case "/":
@@ -521,12 +605,27 @@ func (m Model) todoDeleteConfirmKeyHandler(key string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) todoPruneConfirmKeyHandler(key string) (tea.Model, tea.Cmd) {
+	switch key {
+	case "y":
+		return m.pruneCompletedTodos()
+	case "n", "esc":
+		m.TodoPruneConfirm = false
+		m.TodoPruneCount = 0
+		m.HandoffMsg = "Prune cancelled."
+		return m, nil
+	}
+	return m, nil
+}
+
 func (m Model) openTodoPrompt(mode string) (tea.Model, tea.Cmd) {
 	m.TodoPromptOpen = true
 	m.TodoPromptMode = mode
 	m.TodoInput = ""
 	m.TodoEditingID = ""
 	m.TodoDeleteConfirm = false
+	m.TodoPruneConfirm = false
+	m.TodoPruneCount = 0
 	if mode == todoPromptEdit {
 		item, ok := m.selectedTodoItem()
 		if !ok {
@@ -618,6 +717,17 @@ func (m Model) deleteSelectedTodo() (tea.Model, tea.Cmd) {
 	})
 }
 
+func (m Model) pruneCompletedTodos() (tea.Model, tea.Cmd) {
+	selection := m.TodoSelected
+	selectedID := ""
+	if item, ok := m.selectedTodoItem(); ok && item.Status == todo.StatusOpen {
+		selectedID = item.ID
+	}
+	m.TodoPruneConfirm = false
+	m.TodoPruneCount = 0
+	return m, m.todoPruneCmd(selection, selectedID)
+}
+
 func (m Model) todoMutationCmd(selection int, selectedID, message string, mutate func(*todo.Store) (string, error)) tea.Cmd {
 	root := m.Root
 	return func() tea.Msg {
@@ -635,6 +745,54 @@ func (m Model) todoMutationCmd(selection int, selectedID, message string, mutate
 		items, err := store.List(todo.AllFilter())
 		return TodoLoadedMsg{Items: items, Error: err, Selection: selection, SelectedID: selectedID, Message: message}
 	}
+}
+
+func (m Model) todoPrunePromptCmd() tea.Cmd {
+	root := m.Root
+	return func() tea.Msg {
+		store, err := todo.NewStore(root)
+		if err != nil {
+			return TodoPrunePromptMsg{Error: err}
+		}
+		items, err := store.List(todo.AllFilter())
+		if err != nil {
+			return TodoPrunePromptMsg{Error: err}
+		}
+		return TodoPrunePromptMsg{Items: items, CompletedCount: countCompletedTodos(items)}
+	}
+}
+
+func (m Model) todoPruneCmd(selection int, selectedID string) tea.Cmd {
+	root := m.Root
+	return func() tea.Msg {
+		store, err := todo.NewStore(root)
+		if err != nil {
+			return CommandErrorMsg{Error: err}
+		}
+		removed, err := store.PruneCompleted()
+		if err != nil {
+			return CommandErrorMsg{Error: err}
+		}
+		items, err := store.List(todo.AllFilter())
+		return TodoLoadedMsg{Items: items, Error: err, Selection: selection, SelectedID: selectedID, Message: todoPruneMessage(removed)}
+	}
+}
+
+func countCompletedTodos(items []todo.Item) int {
+	count := 0
+	for _, item := range items {
+		if item.Status == todo.StatusDone {
+			count++
+		}
+	}
+	return count
+}
+
+func todoPruneMessage(removed int) string {
+	if removed == 0 {
+		return "No completed todos to prune."
+	}
+	return "Pruned " + completedTodoCount(removed) + "."
 }
 
 func (m Model) selectedTodoItem() (todo.Item, bool) {
@@ -753,7 +911,7 @@ func ensureTodoSelectionVisible(m *Model) {
 }
 
 func todoLineIndexes(m Model) ([]string, []int) {
-	lines := buildTodoContentLines(m, max(20, m.Width-4))
+	lines := buildTodoBodyLines(m, todoOverlayContentWidth(m.Width))
 	var indexes []int
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(xansi.Strip(line))
@@ -765,7 +923,12 @@ func todoLineIndexes(m Model) ([]string, []int) {
 }
 
 func todoVisibleLineCount(m Model) int {
-	return todoOverlayBodyRows(m.Height)
+	contentWidth := todoOverlayContentWidth(m.Width)
+	maxRows := todoOverlayBodyRows(m.Height)
+	openCount, doneCount := todoCounts(m.TodoItems)
+	headerRows := len(renderTodoHeaderLines(m, contentWidth, openCount, doneCount))
+	supplementRows := len(renderTodoSupplementalLines(m, contentWidth))
+	return todoScrollableBodyRows(maxRows, headerRows, supplementRows)
 }
 
 func clampTodoScrollOffset(offset, lineCount, visible int) int {

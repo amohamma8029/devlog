@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -148,6 +149,62 @@ func TestRenderTodoViewUsesCappedOverlayAndStyledCheckboxes(t *testing.T) {
 	firstLines := strings.Join(strings.Split(stripped, "\n")[:3], "\n")
 	if strings.Contains(firstLines, "a add") {
 		t.Fatalf("todo header should not include shortcut row, got:\n%s", firstLines)
+	}
+}
+
+func TestRenderTodoViewAlignsDoubleDigitRows(t *testing.T) {
+	m, todoStore, _ := newTodoViewTestModel(t)
+	m.Height = 40
+	for i := 1; i <= 10; i++ {
+		addTodoViewTestItem(t, todoStore, "todo "+strconv.Itoa(i))
+	}
+	m = applyTodoViewCommand(t, m, m.loadTodoItemsCmd(0, "", ""))
+
+	var row9, row10 string
+	for _, line := range strings.Split(xansi.Strip(renderTodoView(m)), "\n") {
+		if strings.Contains(line, "todo 9") {
+			row9 = line
+		}
+		if strings.Contains(line, "todo 10") {
+			row10 = line
+		}
+	}
+	if row9 == "" || row10 == "" {
+		t.Fatalf("expected rows 9 and 10 to render, row9=%q row10=%q", row9, row10)
+	}
+
+	checkbox9 := strings.Index(row9, "[ ]")
+	checkbox10 := strings.Index(row10, "[ ]")
+	text9 := strings.Index(row9, "todo 9")
+	text10 := strings.Index(row10, "todo 10")
+	if checkbox9 < 0 || checkbox10 < 0 || text9 < 0 || text10 < 0 {
+		t.Fatalf("expected checkbox and text columns, row9=%q row10=%q", row9, row10)
+	}
+	if checkbox9 != checkbox10 || text9 != text10 {
+		t.Fatalf("double-digit rows should align, row9=%q row10=%q", row9, row10)
+	}
+}
+
+func TestRenderTodoViewKeepsHeaderPinnedWhenListScrolls(t *testing.T) {
+	m, todoStore, _ := newTodoViewTestModel(t)
+	m.Height = 18
+	for i := 1; i <= 20; i++ {
+		addTodoViewTestItem(t, todoStore, "todo "+strconv.Itoa(i))
+	}
+	m = applyTodoViewCommand(t, m, m.loadTodoItemsCmd(0, "", ""))
+	m.TodoSelected = len(m.TodoItems) - 1
+	ensureTodoSelectionVisible(&m)
+	if m.TodoScrollOffset == 0 {
+		t.Fatal("expected selecting the last todo to scroll the list body")
+	}
+
+	view := xansi.Strip(renderTodoView(m))
+	firstLines := strings.Join(strings.Split(view, "\n")[:3], "\n")
+	if !strings.Contains(firstLines, "Todo List") || !strings.Contains(firstLines, "selected 20/20") {
+		t.Fatalf("todo header should remain pinned while rows scroll, got:\n%s", view)
+	}
+	if !strings.Contains(view, "todo 20") {
+		t.Fatalf("selected scrolled todo should remain visible, got:\n%s", view)
 	}
 }
 
@@ -324,6 +381,112 @@ func TestTodoViewPaletteCommandsUseRenderedNumbers(t *testing.T) {
 		if item.ID == second.ID && item.Status != todo.StatusDone {
 			t.Fatalf("/todo done 1 should complete rendered first open item, got %+v", item)
 		}
+	}
+}
+
+func TestTodoViewPruneNoCompletedTodos(t *testing.T) {
+	m, todoStore, _ := newTodoViewTestModel(t)
+	addTodoViewTestItem(t, todoStore, "open todo")
+	m = applyTodoViewCommand(t, m, m.loadTodoItemsCmd(0, "", ""))
+
+	updatedModel, cmd := m.Update(CommandExecutedMsg{Input: "/todo prune"})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model after prune command, got %T", updatedModel)
+	}
+	updated = applyTodoViewCommand(t, updated, cmd)
+
+	if updated.TodoPruneConfirm {
+		t.Fatal("prune should not prompt when no completed todos exist")
+	}
+	if !strings.Contains(updated.HandoffMsg, "No completed todos to prune.") {
+		t.Fatalf("HandoffMsg = %q, want no completed message", updated.HandoffMsg)
+	}
+	items, err := todoStore.Load()
+	if err != nil {
+		t.Fatalf("todo load failed: %v", err)
+	}
+	if len(items) != 1 || items[0].Status != todo.StatusOpen {
+		t.Fatalf("prune with no completed todos should keep open todo, got %+v", items)
+	}
+}
+
+func TestTodoViewPruneCancelKeepsCompletedTodos(t *testing.T) {
+	m, todoStore, _ := newTodoViewTestModel(t)
+	addTodoViewTestItem(t, todoStore, "open todo")
+	done := addTodoViewTestItem(t, todoStore, "done todo")
+	if err := todoStore.Complete(done.ID); err != nil {
+		t.Fatalf("complete failed: %v", err)
+	}
+	m = applyTodoViewCommand(t, m, m.loadTodoItemsCmd(0, "", ""))
+
+	updatedModel, cmd := m.Update(CommandExecutedMsg{Input: "/todo prune"})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model after prune command, got %T", updatedModel)
+	}
+	updated = applyTodoViewCommand(t, updated, cmd)
+	if !updated.TodoPruneConfirm || updated.TodoPruneCount != 1 {
+		t.Fatalf("prune confirm=%v count=%d, want true/1", updated.TodoPruneConfirm, updated.TodoPruneCount)
+	}
+	if got := xansi.Strip(renderTodoView(updated)); !strings.Contains(got, "Prune 1 completed todo? Open todos will be kept. y/n") {
+		t.Fatalf("prune confirmation should render count, got:\n%s", got)
+	}
+
+	updated, cmd = pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if cmd != nil || updated.TodoPruneConfirm {
+		t.Fatalf("n should cancel prune without command, confirm=%v cmd nil=%v", updated.TodoPruneConfirm, cmd == nil)
+	}
+	if !strings.Contains(updated.HandoffMsg, "Prune cancelled.") {
+		t.Fatalf("HandoffMsg = %q, want prune cancelled", updated.HandoffMsg)
+	}
+	items, err := todoStore.Load()
+	if err != nil {
+		t.Fatalf("todo load failed: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("cancelled prune should keep both todos, got %+v", items)
+	}
+}
+
+func TestTodoViewPruneConfirmRemovesCompletedTodos(t *testing.T) {
+	m, todoStore, _ := newTodoViewTestModel(t)
+	open := addTodoViewTestItem(t, todoStore, "open todo")
+	firstDone := addTodoViewTestItem(t, todoStore, "first done")
+	secondDone := addTodoViewTestItem(t, todoStore, "second done")
+	if err := todoStore.Complete(firstDone.ID); err != nil {
+		t.Fatalf("complete first failed: %v", err)
+	}
+	if err := todoStore.Complete(secondDone.ID); err != nil {
+		t.Fatalf("complete second failed: %v", err)
+	}
+	m = applyTodoViewCommand(t, m, m.loadTodoItemsCmd(0, "", ""))
+
+	updatedModel, cmd := m.Update(CommandExecutedMsg{Input: "/todo prune"})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model after prune command, got %T", updatedModel)
+	}
+	updated = applyTodoViewCommand(t, updated, cmd)
+	if !updated.TodoPruneConfirm || updated.TodoPruneCount != 2 {
+		t.Fatalf("prune confirm=%v count=%d, want true/2", updated.TodoPruneConfirm, updated.TodoPruneCount)
+	}
+
+	updated, cmd = pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	updated = applyTodoViewCommand(t, updated, cmd)
+	items, err := todoStore.Load()
+	if err != nil {
+		t.Fatalf("todo load failed: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != open.ID || items[0].Status != todo.StatusOpen {
+		t.Fatalf("confirmed prune should keep only open todo, got %+v", items)
+	}
+	if !strings.Contains(updated.HandoffMsg, "Pruned 2 completed todos.") {
+		t.Fatalf("HandoffMsg = %q, want pruned count", updated.HandoffMsg)
+	}
+	view := xansi.Strip(renderTodoView(updated))
+	if !strings.Contains(view, "open todo") || strings.Contains(view, "first done") || strings.Contains(view, "second done") {
+		t.Fatalf("todo view should reload after prune, got:\n%s", view)
 	}
 }
 

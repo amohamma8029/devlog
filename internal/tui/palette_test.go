@@ -392,6 +392,17 @@ func TestVisiblePaletteCommandsNoMatch(t *testing.T) {
 	}
 }
 
+func TestVisiblePaletteCommandsDoesNotSuggestTodoPrune(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.Input = "/todo p"
+	p.SessionClosed = false
+	visible := visiblePaletteCommands(p)
+	if len(visible) != 0 {
+		t.Fatalf("filter /todo p should not suggest typed subcommands, got %+v", visible)
+	}
+}
+
 func TestMultiLineShiftLeftSelectsText(t *testing.T) {
 	p := NewCommandPalette()
 	p.Open = true

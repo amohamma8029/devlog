@@ -79,6 +79,8 @@ type Model struct {
 	TodoInput                  string
 	TodoEditingID              string
 	TodoDeleteConfirm          bool
+	TodoPruneConfirm           bool
+	TodoPruneCount             int
 }
 
 type SearchState struct {
@@ -173,6 +175,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case TodoLoadedMsg:
 		m.applyTodoLoaded(msg)
+		return m, nil
+
+	case TodoPrunePromptMsg:
+		m.applyTodoPrunePrompt(msg)
 		return m, nil
 
 	case ActiveSessionRefreshTickMsg:
@@ -549,6 +555,10 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if m.TodoOpen && m.TodoDeleteConfirm {
 		return m.todoDeleteConfirmKeyHandler(key)
+	}
+
+	if m.TodoOpen && m.TodoPruneConfirm {
+		return m.todoPruneConfirmKeyHandler(key)
 	}
 
 	if m.TodoOpen {
