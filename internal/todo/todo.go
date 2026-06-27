@@ -96,10 +96,10 @@ func (f Filter) Matches(it Item) bool {
 	if !f.IncludeDone && it.Status == StatusDone {
 		return false
 	}
-	if !f.MatchSessionAny && f.SessionID != "" && it.SessionID != f.SessionID {
+	if !f.MatchSessionAny && f.SessionID != "" && it.SessionID != "" && it.SessionID != f.SessionID {
 		return false
 	}
-	if !f.MatchBranchAny && f.Branch != "" && it.Branch != f.Branch {
+	if !f.MatchBranchAny && f.Branch != "" && it.Branch != "" && it.Branch != f.Branch {
 		return false
 	}
 	return true

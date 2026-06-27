@@ -188,6 +188,42 @@ func (s *Store) PruneCompleted() (int, error) {
 	return removed, nil
 }
 
+// ClearSessionAttribution blanks SessionID and Branch on all open todos
+// attributed to the given session, making them repo-wide. Closed (done) todos
+// for that session are left unchanged.
+func (s *Store) ClearSessionAttribution(sessionID string) (int, error) {
+	if strings.TrimSpace(sessionID) == "" {
+		return 0, fmt.Errorf("todo.Store.ClearSessionAttribution: sessionID is empty")
+	}
+
+	items, err := s.Load()
+	if err != nil {
+		return 0, err
+	}
+
+	changed := 0
+	for i := range items {
+		if items[i].Status != StatusOpen {
+			continue
+		}
+		if items[i].SessionID != sessionID {
+			continue
+		}
+		items[i].SessionID = ""
+		items[i].Branch = ""
+		items[i].UpdatedAt = s.now()
+		changed++
+	}
+	if changed == 0 {
+		return 0, nil
+	}
+
+	if err := s.writeFile(items); err != nil {
+		return 0, err
+	}
+	return changed, nil
+}
+
 // List returns todos that match the given filter, ordered by CreatedAt
 // ascending and then by ID.
 func (s *Store) List(filter Filter) ([]Item, error) {

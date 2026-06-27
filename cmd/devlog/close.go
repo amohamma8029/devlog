@@ -6,6 +6,7 @@ import (
 	internalgit "github.com/amo/devlog/internal/git"
 	"github.com/amo/devlog/internal/session"
 	"github.com/amo/devlog/internal/store"
+	"github.com/amo/devlog/internal/todo"
 	"github.com/spf13/cobra"
 )
 
@@ -33,11 +34,17 @@ func newCloseCommand() *cobra.Command {
 
 			title := sessionTitle(s, active.ID)
 
-			if err := session.CloseActiveSession(s); err != nil {
-				return err
-			}
+		sessionID := active.ID
 
-			_, err = fmt.Fprint(cmd.OutOrStdout(), renderCLISessionConfirmation("Closed session", "", false, title, active.ID, active.Branch, true))
+		if err := session.CloseActiveSession(s); err != nil {
+			return err
+		}
+
+		if ts, err := todo.NewStore(root); err == nil {
+			ts.ClearSessionAttribution(sessionID)
+		}
+
+		_, err = fmt.Fprint(cmd.OutOrStdout(), renderCLISessionConfirmation("Closed session", "", false, title, sessionID, active.Branch, true))
 			return err
 		},
 	}
