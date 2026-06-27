@@ -1,6 +1,7 @@
 package git
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -476,8 +477,11 @@ func TestDiffSinceRenameSecretToSafePath(t *testing.T) {
 
 func runGitIn(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(out))
@@ -487,9 +491,12 @@ func runGitIn(t *testing.T, dir string, args ...string) {
 func commitWithDate(t *testing.T, dir, date, message string) {
 	t.Helper()
 	runGitIn(t, dir, "add", ".")
-	cmd := exec.Command("git", "commit", "-m", message)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", "commit", "-m", message)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
+		"GIT_TERMINAL_PROMPT=0",
 		"GIT_COMMITTER_DATE="+date,
 		"GIT_AUTHOR_DATE="+date,
 	)
