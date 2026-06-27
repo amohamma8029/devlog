@@ -69,6 +69,11 @@ type HandoffCopiedMsg struct {
 type MultiLineNoteMsg struct {
 	Body      string
 	IsBlocker bool
+	IsTodo    bool
+}
+
+type TodoCopiedMsg struct {
+	Error error
 }
 
 type pasteMsg struct {
@@ -78,3 +83,5 @@ type pasteMsg struct {
 type ClipboardActionMsg struct {
 	Action string
 }
+
+type ClearNotificationsMsg struct{}

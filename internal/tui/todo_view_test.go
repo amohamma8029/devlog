@@ -259,16 +259,14 @@ func TestTodoViewAddPromptMutatesStoreWithAttribution(t *testing.T) {
 
 	updated, cmd := pressTodoViewKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	if cmd == nil {
-		t.Fatal("a should start cursor tick for add prompt")
+		t.Fatal("a should start cursor tick for multi-line add prompt")
 	}
-	if !updated.TodoPromptOpen || updated.TodoPromptMode != todoPromptAdd {
-		t.Fatalf("add prompt state open=%v mode=%q", updated.TodoPromptOpen, updated.TodoPromptMode)
+	if !updated.TodoMultiLineOpen {
+		t.Fatal("a should open multi-line composer for todo add")
 	}
 
-	for _, r := range "ship tui todos" {
-		updated, _ = pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
-	}
-	updated, cmd = pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyEnter})
+	um, cmd := updated.handleTodoMultiLineSubmit("ship tui todos")
+	updated = um.(Model)
 	updated = applyTodoViewCommand(t, updated, cmd)
 
 	items, err := todoStore.Load()
@@ -361,20 +359,22 @@ func TestTodoViewMutationsRefreshHandoffPreviewTodoSection(t *testing.T) {
 
 func TestTodoViewEditToggleAndDeleteFlowsMutateStore(t *testing.T) {
 	m, todoStore, _ := newTodoViewTestModel(t)
-	item := addTodoViewTestItem(t, todoStore, "original text")
+	_ = addTodoViewTestItem(t, todoStore, "original text")
 	m = applyTodoViewCommand(t, m, m.loadTodoItemsCmd(0, "", ""))
 
-	updated, _ := pressTodoViewKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
-	if !updated.TodoPromptOpen || updated.TodoEditingID != item.ID {
-		t.Fatalf("edit prompt open=%v editingID=%q, want %q", updated.TodoPromptOpen, updated.TodoEditingID, item.ID)
+	updated, cmd := pressTodoViewKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	if cmd == nil {
+		t.Fatal("e should start cursor tick for multi-line edit prompt")
 	}
-	for len(updated.TodoInput) > 0 {
-		updated, _ = pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyBackspace})
+	if !updated.TodoMultiLineOpen || !updated.TodoMultiLineIsEdit {
+		t.Fatalf("edit prompt multi-line open=%v isEdit=%v", updated.TodoMultiLineOpen, updated.TodoMultiLineIsEdit)
 	}
-	for _, r := range "updated text" {
-		updated, _ = pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	if len(updated.Palette.MultiLineLines) != 1 || updated.Palette.MultiLineLines[0] != "original text" {
+		t.Fatalf("composer should be pre-filled with original text, got: %v", updated.Palette.MultiLineLines)
 	}
-	updated, cmd := pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyEnter})
+
+	um, cmd := updated.handleTodoMultiLineSubmit("updated text")
+	updated = um.(Model)
 	updated = applyTodoViewCommand(t, updated, cmd)
 
 	items, err := todoStore.Load()
