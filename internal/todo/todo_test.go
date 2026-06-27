@@ -183,6 +183,49 @@ func TestFilterRespectsIncludeFlags(t *testing.T) {
 	}
 }
 
+func TestFilterIncludesRepoWideTodos(t *testing.T) {
+	repoWide := validOpen()
+	repoWide.SessionID = ""
+	repoWide.Branch = ""
+
+	if !DefaultFilter("sess-1", "feat/a").Matches(repoWide) {
+		t.Fatal("repo-wide todo (empty SessionID/Branch) should match scoped default filter")
+	}
+
+	sessionFilter := Filter{IncludeOpen: true, SessionID: "sess-1", Branch: "feat/a"}
+	if !sessionFilter.Matches(repoWide) {
+		t.Fatal("repo-wide todo should match filter with specific session and branch")
+	}
+
+	repoSessionOnly := validOpen()
+	repoSessionOnly.SessionID = ""
+	repoSessionOnly.Branch = "feat/a"
+	if !sessionFilter.Matches(repoSessionOnly) {
+		t.Fatal("repo-session todo (empty SessionID) should match scoped filter")
+	}
+
+	repoBranchOnly := validOpen()
+	repoBranchOnly.SessionID = "sess-1"
+	repoBranchOnly.Branch = ""
+	if !sessionFilter.Matches(repoBranchOnly) {
+		t.Fatal("repo-branch todo (empty Branch) should match scoped filter")
+	}
+
+	scoped := validOpen()
+	scoped.SessionID = "sess-1"
+	scoped.Branch = "feat/a"
+	if !sessionFilter.Matches(scoped) {
+		t.Fatal("fully scoped todo should still match")
+	}
+
+	wrongSession := validOpen()
+	wrongSession.SessionID = "sess-2"
+	wrongSession.Branch = "feat/a"
+	if sessionFilter.Matches(wrongSession) {
+		t.Fatal("wrong session non-repo todo should not match")
+	}
+}
+
 func validOpen() Item {
 	return Item{
 		ID:        "opaque-alpha",

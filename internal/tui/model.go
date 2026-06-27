@@ -1001,6 +1001,7 @@ func (m Model) handleCommand(msg CommandExecutedMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		sessionID := m.ActiveSession.ID
+		root := m.Root
 		return m, tea.Sequence(
 			func() tea.Msg {
 				err := m.Store.CloseSession(sessionID)
@@ -1010,6 +1011,14 @@ func (m Model) handleCommand(msg CommandExecutedMsg) (tea.Model, tea.Cmd) {
 				return ActiveSessionLoadedMsg{}
 			},
 			m.SessionList.Init(),
+			func() tea.Msg {
+				ts, err := todo.NewStore(root)
+				if err != nil {
+					return nil
+				}
+				ts.ClearSessionAttribution(sessionID)
+				return nil
+			},
 		)
 
 	case "/handoff":

@@ -538,3 +538,108 @@ func TestStoreRejectsFileAsDirectory(t *testing.T) {
 		t.Fatalf("expected not a directory error, got: %v", err)
 	}
 }
+
+func TestClearSessionAttributionBlanksOnlyOpenTodosForSession(t *testing.T) {
+	created := time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC)
+	store := newTestStoreAt(t, created)
+	withTestIDs(store, "opaque-alpha", "opaque-beta", "opaque-gamma")
+
+	a, err := store.Add(AddInput{Text: "open A", SessionID: "sess-1", Branch: "feat/a"})
+	if err != nil {
+		t.Fatalf("Add A failed: %v", err)
+	}
+	b, err := store.Add(AddInput{Text: "open B", SessionID: "sess-1", Branch: "feat/a"})
+	if err != nil {
+		t.Fatalf("Add B failed: %v", err)
+	}
+	if err := store.Complete(a.ID); err != nil {
+		t.Fatalf("Complete A failed: %v", err)
+	}
+
+	updated := created.Add(time.Minute)
+	store.now = func() time.Time { return updated }
+	changed, err := store.ClearSessionAttribution("sess-1")
+	if err != nil {
+		t.Fatalf("ClearSessionAttribution failed: %v", err)
+	}
+	if changed != 1 {
+		t.Fatalf("expected 1 changed item, got %d", changed)
+	}
+
+	items, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	for _, item := range items {
+		if item.ID == b.ID {
+			if item.SessionID != "" || item.Branch != "" {
+				t.Errorf("open todo B should have blanked attribution, got SessionID=%q Branch=%q", item.SessionID, item.Branch)
+			}
+			if !item.UpdatedAt.Equal(updated) {
+				t.Errorf("open todo B UpdatedAt = %v, want %v", item.UpdatedAt, updated)
+			}
+		}
+		if item.ID == a.ID {
+			if item.SessionID != "sess-1" || item.Branch != "feat/a" {
+				t.Errorf("done todo A should keep original attribution, got SessionID=%q Branch=%q", item.SessionID, item.Branch)
+			}
+		}
+	}
+}
+
+func TestClearSessionAttributionLeavesOtherSessionsUntouched(t *testing.T) {
+	store := newTestStoreAt(t, time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC))
+	withTestIDs(store, "opaque-alpha", "opaque-beta")
+
+	if _, err := store.Add(AddInput{Text: "sess-1 open", SessionID: "sess-1", Branch: "feat/a"}); err != nil {
+		t.Fatalf("Add sess-1 failed: %v", err)
+	}
+	if _, err := store.Add(AddInput{Text: "sess-2 open", SessionID: "sess-2", Branch: "feat/b"}); err != nil {
+		t.Fatalf("Add sess-2 failed: %v", err)
+	}
+
+	changed, err := store.ClearSessionAttribution("sess-1")
+	if err != nil {
+		t.Fatalf("ClearSessionAttribution failed: %v", err)
+	}
+	if changed != 1 {
+		t.Fatalf("expected 1 changed item, got %d", changed)
+	}
+
+	items, err := store.Load()
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+	for _, item := range items {
+		if item.SessionID == "sess-2" {
+			if item.Branch != "feat/b" {
+				t.Errorf("sess-2 todo should keep Branch=feat/b, got %q", item.Branch)
+			}
+		}
+	}
+}
+
+func TestClearSessionAttributionNoopWhenNoMatch(t *testing.T) {
+	store := newTestStoreAt(t, time.Date(2026, 1, 15, 14, 30, 22, 0, time.UTC))
+	withTestIDs(store, "opaque-alpha")
+	if _, err := store.Add(AddInput{Text: "open", SessionID: "sess-1", Branch: "feat/a"}); err != nil {
+		t.Fatalf("Add failed: %v", err)
+	}
+
+	changed, err := store.ClearSessionAttribution("sess-nonexistent")
+	if err != nil {
+		t.Fatalf("ClearSessionAttribution failed: %v", err)
+	}
+	if changed != 0 {
+		t.Fatalf("expected 0 changed items, got %d", changed)
+	}
+}
+
+func TestClearSessionAttributionRejectsEmptySessionID(t *testing.T) {
+	store := newTestStore(t, t.TempDir())
+	_, err := store.ClearSessionAttribution("   ")
+	if err == nil || !strings.Contains(err.Error(), "sessionID is empty") {
+		t.Fatalf("expected empty sessionID error, got: %v", err)
+	}
+}
