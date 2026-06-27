@@ -34,17 +34,17 @@ func newCloseCommand() *cobra.Command {
 
 			title := sessionTitle(s, active.ID)
 
-		sessionID := active.ID
+			sessionID := active.ID
 
-		if err := session.CloseActiveSession(s); err != nil {
-			return err
-		}
+			if err := session.CloseActiveSession(s); err != nil {
+				return err
+			}
 
-		if ts, err := todo.NewStore(root); err == nil {
-			ts.ClearSessionAttribution(sessionID)
-		}
+			if ts, err := todo.NewStore(root); err == nil {
+				ts.ClearSessionAttribution(sessionID)
+			}
 
-		_, err = fmt.Fprint(cmd.OutOrStdout(), renderCLISessionConfirmation("Closed session", "", false, title, sessionID, active.Branch, true))
+			_, err = fmt.Fprint(cmd.OutOrStdout(), renderCLISessionConfirmation("Closed session", "", false, title, sessionID, active.Branch, true))
 			return err
 		},
 	}
