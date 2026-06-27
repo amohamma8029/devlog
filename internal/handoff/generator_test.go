@@ -3,6 +3,9 @@ package handoff
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/amo/devlog/internal/todo"
 )
 
 // ── Session content fixtures ─────────────────────────────────────────────────
@@ -682,4 +685,143 @@ func firstLine(s string) string {
 		return s
 	}
 	return s[:idx]
+}
+
+// ── Todo List section ────────────────────────────────────────────────────────
+
+func sampleTodos() []todo.Item {
+	now := time.Date(2026, 1, 15, 15, 0, 0, 0, time.UTC)
+	return []todo.Item{
+		{ID: "01JABCDEF", Text: "add handoff todo section", Status: todo.StatusOpen, CreatedAt: now, UpdatedAt: now, SessionID: "2026-01-15T143022Z", Branch: "feat/auth"},
+		{ID: "01JABCDEG", Text: "remove stale entries", Status: todo.StatusDone, CreatedAt: now.Add(time.Minute), UpdatedAt: now.Add(time.Minute), Completed: ptrTime(now.Add(2 * time.Minute)), SessionID: "2026-01-15T143022Z", Branch: "feat/auth"},
+	}
+}
+
+func ptrTime(t time.Time) *time.Time { return &t }
+
+func TestGenerateOmitsTodoListSectionByDefault(t *testing.T) {
+	out, err := Generate(sessionNormal, "")
+	if err != nil {
+		t.Fatalf("Generate failed: %v", err)
+	}
+	if strings.Contains(out, "## Todo List") {
+		t.Errorf("expected no Todo List section when option is empty, got:\n%s", out)
+	}
+}
+
+func TestGenerateWithTodosRendersSemanticMarkdownAndHidesIDs(t *testing.T) {
+	out, err := GenerateWithOptions(sessionNormal, "", GenerateOptions{Todos: sampleTodos()})
+	if err != nil {
+		t.Fatalf("GenerateWithOptions failed: %v", err)
+	}
+
+	if !strings.Contains(out, "## Todo List") {
+		t.Fatalf("expected Todo List section, got:\n%s", out)
+	}
+	if !strings.Contains(out, "**Completed**") {
+		t.Errorf("expected Completed subheading, got:\n%s", out)
+	}
+	if !strings.Contains(out, "**Open**") {
+		t.Errorf("expected Open subheading, got:\n%s", out)
+	}
+	if !strings.Contains(out, "- [ ] add handoff todo section") {
+		t.Errorf("expected open todo as task-list item, got:\n%s", out)
+	}
+	if !strings.Contains(out, "- [x] remove stale entries") {
+		t.Errorf("expected completed todo as task-list item, got:\n%s", out)
+	}
+	// Completed should appear before Open.
+	completedIdx := strings.Index(out, "**Completed**")
+	openIdx := strings.Index(out, "**Open**")
+	if completedIdx >= 0 && openIdx >= 0 && completedIdx > openIdx {
+		t.Errorf("completed items should appear before open items, got completed=%d open=%d", completedIdx, openIdx)
+	}
+	for _, id := range []string{"01JABCDEF", "01JABCDEG"} {
+		if strings.Contains(out, id) {
+			t.Errorf("expected internal todo id %q to be hidden from handoff output, got:\n%s", id, out)
+		}
+	}
+}
+
+func TestGenerateTodoListSectionPlacedBetweenSummaryAndChanges(t *testing.T) {
+	out, err := GenerateWithOptions(sessionNormal, diffSimple, GenerateOptions{Todos: sampleTodos()})
+	if err != nil {
+		t.Fatalf("GenerateWithOptions failed: %v", err)
+	}
+
+	summaryIdx := strings.Index(out, "## Summary")
+	todoListIdx := strings.Index(out, "## Todo List")
+	changesIdx := strings.Index(out, "## Changes")
+	if summaryIdx < 0 || todoListIdx < 0 || changesIdx < 0 {
+		t.Fatalf("expected all three sections, got:\n%s", out)
+	}
+	if !(summaryIdx < todoListIdx && todoListIdx < changesIdx) {
+		t.Errorf("Todo List section should sit between Summary and Changes, got summary=%d todolist=%d changes=%d", summaryIdx, todoListIdx, changesIdx)
+	}
+}
+
+func TestGenerateWithEmptyTodosOmitsSection(t *testing.T) {
+	out, err := GenerateWithOptions(sessionNormal, "", GenerateOptions{Todos: nil})
+	if err != nil {
+		t.Fatalf("GenerateWithOptions failed: %v", err)
+	}
+	if strings.Contains(out, "## Todo List") {
+		t.Errorf("expected no Todo List section when Todos slice is nil, got:\n%s", out)
+	}
+
+	out, err = GenerateWithOptions(sessionNormal, "", GenerateOptions{Todos: []todo.Item{}})
+	if err != nil {
+		t.Fatalf("GenerateWithOptions empty failed: %v", err)
+	}
+	if strings.Contains(out, "## Todo List") {
+		t.Errorf("expected no Todo List section when Todos slice is empty, got:\n%s", out)
+	}
+}
+
+func TestGenerateTodoListSectionRendersEmptyBody(t *testing.T) {
+	items := []todo.Item{
+		{ID: "01JEMPTY", Text: "  ", Status: todo.StatusOpen, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()},
+	}
+	out, err := GenerateWithOptions(sessionNormal, "", GenerateOptions{Todos: items})
+	if err != nil {
+		t.Fatalf("GenerateWithOptions failed: %v", err)
+	}
+	if !strings.Contains(out, "- [ ] (empty)") {
+		t.Errorf("expected `(empty)` placeholder for blank todo text, got:\n%s", out)
+	}
+}
+
+func TestGenerateTodoListShowsOnlyCompletedSubheadingWhenNoOpen(t *testing.T) {
+	now := time.Now().UTC()
+	completed := time.Now().UTC()
+	items := []todo.Item{
+		{ID: "01JDONE", Text: "finished task", Status: todo.StatusDone, CreatedAt: now, UpdatedAt: now, Completed: &completed},
+	}
+	out, err := GenerateWithOptions(sessionNormal, "", GenerateOptions{Todos: items})
+	if err != nil {
+		t.Fatalf("GenerateWithOptions failed: %v", err)
+	}
+	if !strings.Contains(out, "**Completed**") {
+		t.Errorf("expected Completed subheading, got:\n%s", out)
+	}
+	if strings.Contains(out, "**Open**") {
+		t.Errorf("expected no Open subheading when no open todos, got:\n%s", out)
+	}
+}
+
+func TestGenerateTodoListShowsOnlyOpenSubheadingWhenNoCompleted(t *testing.T) {
+	now := time.Now().UTC()
+	items := []todo.Item{
+		{ID: "01JOPEN", Text: "pending task", Status: todo.StatusOpen, CreatedAt: now, UpdatedAt: now},
+	}
+	out, err := GenerateWithOptions(sessionNormal, "", GenerateOptions{Todos: items})
+	if err != nil {
+		t.Fatalf("GenerateWithOptions failed: %v", err)
+	}
+	if !strings.Contains(out, "**Open**") {
+		t.Errorf("expected Open subheading, got:\n%s", out)
+	}
+	if strings.Contains(out, "**Completed**") {
+		t.Errorf("expected no Completed subheading when no completed todos, got:\n%s", out)
+	}
 }

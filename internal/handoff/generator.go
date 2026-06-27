@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/amo/devlog/internal/store"
+	"github.com/amo/devlog/internal/todo"
 	"gopkg.in/yaml.v3"
 )
 
@@ -13,6 +14,11 @@ import (
 type GenerateOptions struct {
 	ExcludeRawDiff bool
 	DiffLineLimit  int
+	// Todos optionally projects todos relevant to the session. When the slice
+	// is non-empty, a `## Todo List` section is emitted between the existing
+	// summary and changes sections with completed items listed first. Internal
+	// todo IDs are never rendered.
+	Todos []todo.Item
 }
 
 // Generate produces a narrative handoff summary from raw session file content and a git diff string.
@@ -43,6 +49,9 @@ func GenerateWithOptions(sessionContent, diff string, opts GenerateOptions) (str
 	}
 	buf.WriteString("## Summary\n")
 	buf.WriteString(formatSummary(events))
+	if todos := formatTodosSection(opts.Todos); todos != "" {
+		buf.WriteString(todos)
+	}
 	buf.WriteString(formatProseChanges(diffInfo))
 	if !opts.ExcludeRawDiff {
 		buf.WriteString(formatRawDiff(diffInfo, opts.DiffLineLimit))
@@ -156,6 +165,50 @@ func joinProse(bodies []string) string {
 		result += "."
 	}
 	return result
+}
+
+// ── Todos section ────────────────────────────────────────────────────────────
+
+// formatTodosSection renders an optional `## Todo List` section listing
+// completed and open todos in semantic markdown. Completed items appear first
+// under a `**Completed**` subheading, then open items under `**Open**`. It
+// returns an empty string when no todos are provided so callers can guard
+// emission with a single `if`. Internal todo IDs are never rendered; this
+// keeps projected state human-friendly for handoff readers.
+func formatTodosSection(items []todo.Item) string {
+	if len(items) == 0 {
+		return ""
+	}
+
+	var completed, open []string
+	for _, item := range items {
+		text := strings.TrimSpace(item.Text)
+		if text == "" {
+			text = "(empty)"
+		}
+		if item.Status == todo.StatusDone {
+			completed = append(completed, text)
+		} else {
+			open = append(open, text)
+		}
+	}
+
+	var buf strings.Builder
+	buf.WriteString("## Todo List\n")
+	if len(completed) > 0 {
+		buf.WriteString("\n**Completed**\n\n")
+		for _, text := range completed {
+			fmt.Fprintf(&buf, "- [x] %s\n", text)
+		}
+	}
+	if len(open) > 0 {
+		buf.WriteString("\n**Open**\n\n")
+		for _, text := range open {
+			fmt.Fprintf(&buf, "- [ ] %s\n", text)
+		}
+	}
+	buf.WriteByte('\n')
+	return buf.String()
 }
 
 // ── Diff parsing ─────────────────────────────────────────────────────────────

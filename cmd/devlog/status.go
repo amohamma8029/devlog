@@ -9,6 +9,7 @@ import (
 	internalgit "github.com/amo/devlog/internal/git"
 	"github.com/amo/devlog/internal/session"
 	"github.com/amo/devlog/internal/store"
+	"github.com/amo/devlog/internal/todo"
 	"github.com/spf13/cobra"
 )
 
@@ -55,7 +56,12 @@ func newStatusCommand() *cobra.Command {
 				return err
 			}
 
-			_, err = fmt.Fprint(cmd.OutOrStdout(), renderStatus(active, events, number, time.Now().UTC(), formatter))
+			todos, err := loadStatusTodos(root, active.ID, active.Branch)
+			if err != nil {
+				return err
+			}
+
+			_, err = fmt.Fprint(cmd.OutOrStdout(), renderStatus(active, events, number, time.Now().UTC(), formatter, todos))
 			return err
 		},
 	}
@@ -65,7 +71,7 @@ func newStatusCommand() *cobra.Command {
 	return cmd
 }
 
-func renderStatus(active *store.SessionRecord, events []store.SessionEvent, number int, now time.Time, formatter internalconfig.DisplayTimeFormatter) string {
+func renderStatus(active *store.SessionRecord, events []store.SessionEvent, number int, now time.Time, formatter internalconfig.DisplayTimeFormatter, todos []todo.Item) string {
 	var b strings.Builder
 
 	b.WriteString(cliSessionTitleWithID(statusSessionTitle(events, active.ID), active.ID))
@@ -90,7 +96,73 @@ func renderStatus(active *store.SessionRecord, events []store.SessionEvent, numb
 	b.WriteByte('\n')
 	writeStatusBlockers(&b, events, formatter)
 
+	b.WriteString("\n")
+	b.WriteString(cliBlockerTitle("Todo List"))
+	b.WriteByte('\n')
+	writeStatusTodos(&b, todos)
+
 	return b.String()
+}
+
+// loadStatusTodos returns all todos relevant to the active session/branch,
+// ordered completed-first. A missing todo file is treated as "no todos" rather
+// than an error so the status command never fails solely because the todo log
+// has not been initialised yet.
+func loadStatusTodos(root, sessionID, branch string) ([]todo.Item, error) {
+	store, err := todo.NewStore(root)
+	if err != nil {
+		return nil, err
+	}
+	items, err := store.List(todo.Filter{
+		IncludeOpen:     true,
+		IncludeDone:     true,
+		SessionID:       sessionID,
+		Branch:          branch,
+		MatchSessionAny: sessionID == "",
+		MatchBranchAny:  branch == "",
+	})
+	if err != nil {
+		return nil, err
+	}
+	return orderByCompletedFirst(items), nil
+}
+
+func orderByCompletedFirst(items []todo.Item) []todo.Item {
+	ordered := make([]todo.Item, 0, len(items))
+	for _, item := range items {
+		if item.Status == todo.StatusDone {
+			ordered = append(ordered, item)
+		}
+	}
+	for _, item := range items {
+		if item.Status == todo.StatusOpen {
+			ordered = append(ordered, item)
+		}
+	}
+	return ordered
+}
+
+func writeStatusTodos(b *strings.Builder, items []todo.Item) {
+	if len(items) == 0 {
+		b.WriteString("  None\n")
+		return
+	}
+	completedStarted := false
+	openStarted := false
+	for _, item := range items {
+		if item.Status == todo.StatusDone && !completedStarted {
+			b.WriteString("  " + cliLabelStyle.Render("Completed") + "\n")
+			completedStarted = true
+		}
+		if item.Status == todo.StatusOpen && !openStarted {
+			if completedStarted {
+				b.WriteByte('\n')
+			}
+			b.WriteString("  " + cliLabelStyle.Render("Open") + "\n")
+			openStarted = true
+		}
+		b.WriteString("  " + cliBulletLine(cliValueStyle.Render(oneLineTodoText(item.Text))) + "\n")
+	}
 }
 
 func formatStatusAuthor(author, email string) string {

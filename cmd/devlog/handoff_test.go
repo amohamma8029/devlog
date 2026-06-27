@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/amo/devlog/internal/store"
+	"github.com/amo/devlog/internal/todo"
 )
 
 func TestHandoffCommandWritesToDefaultPath(t *testing.T) {
@@ -347,4 +348,108 @@ func executeHandoffCommand(args ...string) (string, error) {
 
 	err := cmd.Execute()
 	return out.String(), err
+}
+
+func TestHandoffCommandIncludesRelevantTodos(t *testing.T) {
+	requireCmdTestGit(t)
+
+	root := initCmdTestRepo(t)
+	t.Chdir(root)
+	sess := writeCmdTestSession(t, root)
+	appendCmdTestEvent(t, root, sess.ID, "Note", "finished feature")
+
+	todoStore := newCmdTestTodoStore(t, root)
+	if _, err := todoStore.Add(todo.AddInput{
+		Text:      "follow up from handoff",
+		SessionID: sess.ID,
+		Branch:    sess.Branch,
+	}); err != nil {
+		t.Fatalf("todo.Add failed: %v", err)
+	}
+	if _, err := todoStore.Add(todo.AddInput{
+		Text:      "unrelated to this session",
+		SessionID: "other-session",
+		Branch:    "feat/other",
+	}); err != nil {
+		t.Fatalf("todo.Add (unrelated) failed: %v", err)
+	}
+
+	if _, err := executeHandoffCommand(); err != nil {
+		t.Fatalf("handoff command failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, ".devlog", "handoffs", sess.ID+".md"))
+	if err != nil {
+		t.Fatalf("read output file failed: %v", err)
+	}
+	content := string(data)
+	assertContains(t, content, "## Todo List")
+	assertContains(t, content, "- [ ] follow up from handoff")
+	assertNotContains(t, content, "unrelated to this session")
+	assertNotContains(t, content, "id:")
+}
+
+func TestHandoffCommandOmitsTodosSectionWhenNone(t *testing.T) {
+	requireCmdTestGit(t)
+
+	root := initCmdTestRepo(t)
+	t.Chdir(root)
+	sess := writeCmdTestSession(t, root)
+	appendCmdTestEvent(t, root, sess.ID, "Note", "no todos to mention")
+
+	if _, err := executeHandoffCommand(); err != nil {
+		t.Fatalf("handoff command failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, ".devlog", "handoffs", sess.ID+".md"))
+	if err != nil {
+		t.Fatalf("read output file failed: %v", err)
+	}
+	assertNotContains(t, string(data), "## Todo List")
+}
+
+func TestHandoffCommandScopesTodosToExplicitSessionID(t *testing.T) {
+	requireCmdTestGit(t)
+
+	root := initCmdTestRepo(t)
+	t.Chdir(root)
+	sess := writeCmdTestSession(t, root)
+	appendCmdTestEvent(t, root, sess.ID, "Note", "session-specific handoff")
+
+	otherSess := store.Session{
+		ID:      "2026-01-15T150000Z",
+		Author:  "Test Author",
+		Started: time.Date(2026, 1, 15, 15, 0, 0, 0, time.UTC),
+		Branch:  "feat/test",
+		Status:  "active",
+	}
+	sstore, err := store.New(root)
+	if err != nil {
+		t.Fatalf("store.New failed: %v", err)
+	}
+	if err := sstore.WriteSession(otherSess, "other start"); err != nil {
+		t.Fatalf("WriteSession failed: %v", err)
+	}
+	appendCmdTestEvent(t, root, otherSess.ID, "Note", "other note")
+
+	todoStore := newCmdTestTodoStore(t, root)
+	if _, err := todoStore.Add(todo.AddInput{Text: "for primary session", SessionID: sess.ID, Branch: sess.Branch}); err != nil {
+		t.Fatalf("todo.Add (primary) failed: %v", err)
+	}
+	if _, err := todoStore.Add(todo.AddInput{Text: "for other session", SessionID: otherSess.ID, Branch: otherSess.Branch}); err != nil {
+		t.Fatalf("todo.Add (other) failed: %v", err)
+	}
+
+	if _, err := executeHandoffCommand(otherSess.ID); err != nil {
+		t.Fatalf("handoff with other session id failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, ".devlog", "handoffs", otherSess.ID+".md"))
+	if err != nil {
+		t.Fatalf("read output file failed: %v", err)
+	}
+	content := string(data)
+	assertContains(t, content, "## Todo List")
+	assertContains(t, content, "- [ ] for other session")
+	assertNotContains(t, content, "for primary session")
 }

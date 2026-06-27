@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/amo/devlog/internal/store"
+	"github.com/amo/devlog/internal/todo"
 )
 
 func TestStatusCommandShowsActiveSessionEventsAndBlockers(t *testing.T) {
@@ -250,4 +251,90 @@ func assertNotContains(t *testing.T, got, want string) {
 	if strings.Contains(got, want) {
 		t.Fatalf("expected output not to contain %q, got:\n%s", want, got)
 	}
+}
+
+func TestStatusCommandRendersRelevantTodos(t *testing.T) {
+	requireCmdTestGit(t)
+	setConfigTestHome(t)
+
+	root := initCmdTestRepo(t)
+	t.Chdir(root)
+	sess := writeCmdTestSession(t, root)
+	appendCmdTestEvent(t, root, sess.ID, "Note", "wrote status tests")
+
+	todoStore := newCmdTestTodoStore(t, root)
+	if _, err := todoStore.Add(todo.AddInput{Text: "follow up from status", SessionID: sess.ID, Branch: sess.Branch}); err != nil {
+		t.Fatalf("todo.Add failed: %v", err)
+	}
+	if _, err := todoStore.Add(todo.AddInput{Text: "unrelated to this session", SessionID: "other-session", Branch: "feat/other"}); err != nil {
+		t.Fatalf("todo.Add (unrelated) failed: %v", err)
+	}
+
+	out, err := executeStatusCommand()
+	if err != nil {
+		t.Fatalf("status command failed: %v", err)
+	}
+
+	assertContains(t, out, "Todo List")
+	assertContains(t, out, "Open")
+	assertContains(t, out, "follow up from status")
+	assertNotContains(t, out, "unrelated to this session")
+	// Internal todo IDs must not leak into status output.
+	if strings.Contains(out, "id:") {
+		t.Errorf("status output should not expose todo ids, got:\n%s", out)
+	}
+}
+
+func TestStatusCommandRendersCompletedBeforeOpen(t *testing.T) {
+	requireCmdTestGit(t)
+	setConfigTestHome(t)
+
+	root := initCmdTestRepo(t)
+	t.Chdir(root)
+	sess := writeCmdTestSession(t, root)
+
+	todoStore := newCmdTestTodoStore(t, root)
+	openItem, err := todoStore.Add(todo.AddInput{Text: "open task", SessionID: sess.ID, Branch: sess.Branch})
+	if err != nil {
+		t.Fatalf("todo.Add (open) failed: %v", err)
+	}
+	doneItem, err := todoStore.Add(todo.AddInput{Text: "done task", SessionID: sess.ID, Branch: sess.Branch})
+	if err != nil {
+		t.Fatalf("todo.Add (done) failed: %v", err)
+	}
+	if err := todoStore.Complete(doneItem.ID); err != nil {
+		t.Fatalf("todo.Complete failed: %v", err)
+	}
+
+	out, err := executeStatusCommand()
+	if err != nil {
+		t.Fatalf("status command failed: %v", err)
+	}
+
+	completedIdx := strings.Index(out, "Completed")
+	openIdx := strings.Index(out, "Open")
+	if completedIdx < 0 || openIdx < 0 {
+		t.Fatalf("expected both Completed and Open subheadings, got:\n%s", out)
+	}
+	if completedIdx > openIdx {
+		t.Errorf("completed should appear before open, got completed=%d open=%d", completedIdx, openIdx)
+	}
+	_ = openItem
+}
+
+func TestStatusCommandRendersEmptyTodosState(t *testing.T) {
+	requireCmdTestGit(t)
+	setConfigTestHome(t)
+
+	root := initCmdTestRepo(t)
+	t.Chdir(root)
+	writeCmdTestSession(t, root)
+
+	out, err := executeStatusCommand()
+	if err != nil {
+		t.Fatalf("status command failed: %v", err)
+	}
+
+	assertContains(t, out, "Todo List")
+	assertContains(t, out, "None")
 }

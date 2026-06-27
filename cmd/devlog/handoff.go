@@ -10,6 +10,7 @@ import (
 	"github.com/amo/devlog/internal/handoff"
 	"github.com/amo/devlog/internal/session"
 	"github.com/amo/devlog/internal/store"
+	"github.com/amo/devlog/internal/todo"
 	"github.com/spf13/cobra"
 )
 
@@ -65,7 +66,12 @@ func newHandoffCommand() *cobra.Command {
 				return err
 			}
 
-			handoffText, err := handoff.GenerateWithOptions(sessionContent, diff, handoff.GenerateOptions{ExcludeRawDiff: noDiff})
+			todos, err := loadHandoffTodos(root, rec.ID, rec.Branch)
+			if err != nil {
+				return err
+			}
+
+			handoffText, err := handoff.GenerateWithOptions(sessionContent, diff, handoff.GenerateOptions{ExcludeRawDiff: noDiff, Todos: todos})
 			if err != nil {
 				return fmt.Errorf("handoff: generate: %w", err)
 			}
@@ -135,6 +141,29 @@ func isValidFilename(name string) bool {
 		return false
 	}
 	return true
+}
+
+// loadHandoffTodos returns all todos relevant to the given session/branch,
+// ordered completed-first. A missing todo file is treated as "no todos" rather
+// than an error so the handoff command never fails solely because the todo log
+// has not been initialised yet.
+func loadHandoffTodos(root, sessionID, branch string) ([]todo.Item, error) {
+	store, err := todo.NewStore(root)
+	if err != nil {
+		return nil, err
+	}
+	items, err := store.List(todo.Filter{
+		IncludeOpen:     true,
+		IncludeDone:     true,
+		SessionID:       sessionID,
+		Branch:          branch,
+		MatchSessionAny: sessionID == "",
+		MatchBranchAny:  branch == "",
+	})
+	if err != nil {
+		return nil, err
+	}
+	return orderByCompletedFirst(items), nil
 }
 
 func readSessionContent(root, sessionID string) (string, error) {
