@@ -2,6 +2,7 @@ package tui
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	internalconfig "github.com/amo/devlog/internal/config"
 	"github.com/amo/devlog/internal/store"
+	"github.com/amo/devlog/internal/todo"
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
 )
@@ -41,6 +43,71 @@ func closeTestSession(t *testing.T, s *store.Store, id string) {
 	t.Helper()
 	if err := s.CloseSession(id); err != nil {
 		t.Fatalf("CloseSession failed: %v", err)
+	}
+}
+
+func runSessionListTestGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+	}
+}
+
+func TestSessionListHandoffIncludesRelevantTodos(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skipf("git binary not available: %v", err)
+	}
+	root := t.TempDir()
+	runSessionListTestGit(t, root, "init")
+	runSessionListTestGit(t, root, "checkout", "-b", "feat/test")
+
+	s, err := store.New(root)
+	if err != nil {
+		t.Fatalf("store.New failed: %v", err)
+	}
+	sess := store.Session{
+		ID:      "2026-01-15T140000Z",
+		Author:  "Alice",
+		Started: time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC),
+		Branch:  "feat/test",
+		Status:  "active",
+	}
+	if err := s.WriteSession(sess, "start work"); err != nil {
+		t.Fatalf("WriteSession failed: %v", err)
+	}
+	if err := s.AppendEvent(sess.ID, "Note", "implement feature"); err != nil {
+		t.Fatalf("AppendEvent failed: %v", err)
+	}
+
+	todoStore, err := todo.NewStore(root)
+	if err != nil {
+		t.Fatalf("todo.NewStore failed: %v", err)
+	}
+	if _, err := todoStore.Add(todo.AddInput{Text: "follow up from list", SessionID: sess.ID, Branch: sess.Branch}); err != nil {
+		t.Fatalf("todo.Add failed: %v", err)
+	}
+
+	m := NewSessionListModel(s, root, 80, 24)
+	_, cmd := m.generateHandoff()
+	if cmd == nil {
+		t.Fatal("expected command from generateHandoff")
+	}
+	msg := cmd()
+	gen, ok := msg.(HandoffGeneratedMsg)
+	if !ok {
+		t.Fatalf("expected HandoffGeneratedMsg, got %T", msg)
+	}
+	if gen.Error != nil {
+		t.Fatalf("handoff generation failed: %v", gen.Error)
+	}
+	if !hasHandoffTodoListSection(gen.Content) {
+		t.Errorf("expected ## Todos section in list handoff, got:\n%s", gen.Content)
+	}
+	if !handoffTodosSectionContains(gen.Content, "follow up from list") {
+		t.Errorf("expected relevant open todo in list handoff, got:\n%s", gen.Content)
 	}
 }
 

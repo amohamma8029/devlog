@@ -1018,6 +1018,7 @@ func (m Model) handleCommand(msg CommandExecutedMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		sessionID := m.ActiveSession.ID
+		branch := m.ActiveSession.Branch
 		started := m.ActiveSession.Started.UTC()
 		return m, func() tea.Msg {
 			content, err := m.Store.ReadSessionContent(sessionID)
@@ -1028,7 +1029,11 @@ func (m Model) handleCommand(msg CommandExecutedMsg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return CommandErrorMsg{Error: err}
 			}
-			handoffText, err := handoff.Generate(content, diff)
+			todos, err := loadHandoffTodos(m.Root, sessionID, branch)
+			if err != nil {
+				return CommandErrorMsg{Error: err}
+			}
+			handoffText, err := handoff.GenerateWithOptions(content, diff, handoff.GenerateOptions{Todos: todos})
 			if err != nil {
 				return CommandErrorMsg{Error: err}
 			}

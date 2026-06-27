@@ -913,3 +913,121 @@ func TestRenderSearchPromptSingleMatch(t *testing.T) {
 func stringsHasPrefix(s, prefix string) bool {
 	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
 }
+
+// ── Todo List section rendering ──────────────────────────────────────────────
+
+func TestTransformTodoListSectionInjectsCheckboxMarkers(t *testing.T) {
+	input := "## Todo List\n\n**Completed**\n\n- [x] removed stale entries\n- [x] wired up CLI\n\n**Open**\n\n- [ ] follow up from handoff\n- [ ] add drag support\n"
+	result := transformTodoListSection(input)
+
+	if !strings.Contains(result, "**Completed**") {
+		t.Errorf("expected Completed subheading preserved, got:\n%s", result)
+	}
+	if !strings.Contains(result, "**Open**") {
+		t.Errorf("expected Open subheading preserved, got:\n%s", result)
+	}
+	if !strings.Contains(result, "\u2611 removed stale entries") {
+		t.Errorf("expected completed item with checkbox marker, got:\n%s", result)
+	}
+	if !strings.Contains(result, "\u2610 follow up from handoff") {
+		t.Errorf("expected open item with checkbox marker, got:\n%s", result)
+	}
+	if strings.Contains(result, "- \u2611") || strings.Contains(result, "- \u2610") {
+		t.Errorf("preview transform should not emit markdown bullets for todo items, got:\n%s", result)
+	}
+}
+
+func TestTransformTodoListSectionSkipsNonTodoSections(t *testing.T) {
+	input := "## Summary\n\nProgress: some note.\n\n## Todo List\n\n**Open**\n\n- [ ] my todo\n\n## Changes\n\nNo code changes.\n"
+	result := transformTodoListSection(input)
+
+	if !strings.Contains(result, "## Summary") {
+		t.Errorf("expected Summary section preserved, got:\n%s", result)
+	}
+	if !strings.Contains(result, "## Changes") {
+		t.Errorf("expected Changes section preserved, got:\n%s", result)
+	}
+	if !strings.Contains(result, "☐") {
+		t.Errorf("expected checkbox marker in Todo List section, got:\n%s", result)
+	}
+}
+
+func TestStyleTodoListRenderedStylesHeadingAndCheckboxes(t *testing.T) {
+	input := "▌ Todo List\n\nCompleted\n\n☑ removed stale entries\n\nOpen\n\n☐ follow up from handoff\n\n▌ Changes\n"
+	result := styleTodoListRendered(input)
+
+	if !strings.Contains(result, TodoListHeadingStyle.Render("▌ Todo List")) {
+		t.Errorf("expected styled Todo List heading, got:\n%s", result)
+	}
+	if !strings.Contains(result, ChangesHeadingStyle.Render("▌ Changes")) {
+		t.Errorf("expected styled Changes heading, got:\n%s", result)
+	}
+	if !strings.Contains(result, "  "+TodoListSubheadingStyle.Render("Completed")) {
+		t.Errorf("expected indented styled Completed subheading, got:\n%s", result)
+	}
+	if !strings.Contains(result, "  "+TodoListSubheadingStyle.Render("Open")) {
+		t.Errorf("expected indented styled Open subheading, got:\n%s", result)
+	}
+	if !strings.Contains(result, TodoDoneCheckboxStyle.Render("☑")) {
+		t.Errorf("expected styled completed checkbox, got:\n%s", result)
+	}
+	if !strings.Contains(result, TodoOpenCheckboxStyle.Render("☐")) {
+		t.Errorf("expected styled open checkbox, got:\n%s", result)
+	}
+	stripped := xansi.Strip(result)
+	for _, want := range []string{"▌ Todo List", "  Completed", "    ☑ removed stale entries", "  Open", "    ☐ follow up from handoff", "▌ Changes"} {
+		if !strings.Contains(stripped, want) {
+			t.Errorf("expected stripped output to contain %q, got:\n%s", want, stripped)
+		}
+	}
+}
+
+func TestStyleTodoListRenderedDoesNotLeakToNonHeadingText(t *testing.T) {
+	input := "▌ Summary\n\nThis Todo List phrase is body text.\n\n▌ Todo List\n\nOpen\n\n☐ real todo\n"
+	result := styleTodoListRendered(input)
+	for _, line := range strings.Split(result, "\n") {
+		if strings.Contains(xansi.Strip(line), "This Todo List phrase") && strings.Contains(line, "\x1b[") {
+			t.Fatalf("body text containing Todo List should not be recolored, got line %q in:\n%s", line, result)
+		}
+	}
+}
+
+func TestRenderHandoffBodyTodoListUsesCheckboxRowsWithoutBullets(t *testing.T) {
+	m := testModel()
+	m.Width = 80
+	m.HandoffContent = "# Handoff: feat/test -- session (Alice) [active]\n\n## Summary\nProgress: done.\n\n## Todo List\n\n**Completed**\n\n- [x] removed stale entries\n- [x] wired up CLI\n\n**Open**\n\n- [ ] follow up from handoff\n- [ ] add drag support\n\n## Changes\nNo code changes.\n"
+
+	rendered := renderHandoffBody(m)
+	stripped := xansi.Strip(rendered)
+	if strings.Contains(stripped, "• ☑") || strings.Contains(stripped, "• ☐") {
+		t.Fatalf("todo preview should not include list bullets before checkboxes, got:\n%s", stripped)
+	}
+	lines := strings.Split(stripped, "\n")
+	checkboxLines := 0
+	for _, line := range lines {
+		if strings.Contains(line, "☑") || strings.Contains(line, "☐") {
+			checkboxLines++
+			if strings.Count(line, "☑")+strings.Count(line, "☐") != 1 {
+				t.Fatalf("each todo row should contain one checkbox, got line %q in:\n%s", line, stripped)
+			}
+		}
+	}
+	if checkboxLines != 4 {
+		t.Fatalf("expected 4 vertical checkbox rows, got %d in:\n%s", checkboxLines, stripped)
+	}
+	if !strings.Contains(stripped, "  Completed") || !strings.Contains(stripped, "  Open") {
+		t.Fatalf("todo subheadings should be indented, got:\n%s", stripped)
+	}
+	if !strings.Contains(stripped, "    ☑ removed stale entries") || !strings.Contains(stripped, "    ☐ follow up from handoff") {
+		t.Fatalf("todo rows should be indented, got:\n%s", stripped)
+	}
+}
+
+func TestTransformTodoListSectionPassesThroughWhenNoTodoSection(t *testing.T) {
+	input := "## Summary\n\nProgress: some note.\n\n## Changes\n\nNo code changes.\n"
+	result := transformTodoListSection(input)
+
+	if result != input {
+		t.Errorf("expected pass-through when no Todo List section, got:\n%s", result)
+	}
+}

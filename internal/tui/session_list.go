@@ -551,6 +551,7 @@ func (m SessionListModel) generateHandoff() (tea.Model, tea.Cmd) {
 			return HandoffGeneratedMsg{Error: fmt.Errorf("No active session to generate handoff from")}
 		}
 		sessionID := active.ID
+		branch := active.Branch
 		started := active.Started.UTC()
 		content, err := m.store.ReadSessionContent(sessionID)
 		if err != nil {
@@ -560,7 +561,11 @@ func (m SessionListModel) generateHandoff() (tea.Model, tea.Cmd) {
 		if err != nil {
 			return HandoffGeneratedMsg{Error: err}
 		}
-		handoffText, err := handoff.Generate(content, diff)
+		todos, err := loadHandoffTodos(m.root, sessionID, branch)
+		if err != nil {
+			return HandoffGeneratedMsg{Error: err}
+		}
+		handoffText, err := handoff.GenerateWithOptions(content, diff, handoff.GenerateOptions{Todos: todos})
 		if err != nil {
 			return HandoffGeneratedMsg{Error: err}
 		}
