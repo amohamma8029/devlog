@@ -49,6 +49,24 @@ var (
 	cliBlockerTextStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#FF3333"))
 
+	cliTodoListHeadingStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("#23FF6C"))
+
+	cliTodoListSubheadingStyle = lipgloss.NewStyle().
+					Bold(true).
+					Foreground(lipgloss.Color("#E5E7EB"))
+
+	cliTodoOpenCheckboxStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#9CA3AF"))
+
+	cliTodoDoneCheckboxStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#22C55E")).
+					Bold(true)
+
+	cliTodoCompletedTextStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#848B9A"))
+
 	cliErrorStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#FF3333"))

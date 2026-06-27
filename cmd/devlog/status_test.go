@@ -7,6 +7,7 @@ import (
 
 	"github.com/amo/devlog/internal/store"
 	"github.com/amo/devlog/internal/todo"
+	xansi "github.com/charmbracelet/x/ansi"
 )
 
 func TestStatusCommandShowsActiveSessionEventsAndBlockers(t *testing.T) {
@@ -276,8 +277,14 @@ func TestStatusCommandRendersRelevantTodos(t *testing.T) {
 	}
 
 	assertContains(t, out, "Todo List")
+	assertContains(t, out, cliTodoListHeadingStyle.Render("Todo List"))
 	assertContains(t, out, "Open")
+	assertContains(t, out, cliTodoListSubheadingStyle.Render("Open"))
+	assertContains(t, out, cliTodoOpenCheckboxStyle.Render("[ ]"))
 	assertContains(t, out, "follow up from status")
+	stripped := xansi.Strip(out)
+	assertContains(t, stripped, "    [ ] follow up from status")
+	assertNotContains(t, stripped, "• follow up from status")
 	assertNotContains(t, out, "unrelated to this session")
 	// Internal todo IDs must not leak into status output.
 	if strings.Contains(out, "id:") {
@@ -294,7 +301,7 @@ func TestStatusCommandRendersCompletedBeforeOpen(t *testing.T) {
 	sess := writeCmdTestSession(t, root)
 
 	todoStore := newCmdTestTodoStore(t, root)
-	openItem, err := todoStore.Add(todo.AddInput{Text: "open task", SessionID: sess.ID, Branch: sess.Branch})
+	_, err := todoStore.Add(todo.AddInput{Text: "open task", SessionID: sess.ID, Branch: sess.Branch})
 	if err != nil {
 		t.Fatalf("todo.Add (open) failed: %v", err)
 	}
@@ -311,15 +318,27 @@ func TestStatusCommandRendersCompletedBeforeOpen(t *testing.T) {
 		t.Fatalf("status command failed: %v", err)
 	}
 
-	completedIdx := strings.Index(out, "Completed")
-	openIdx := strings.Index(out, "Open")
+	stripped := xansi.Strip(out)
+	completedIdx := strings.Index(stripped, "Completed")
+	openIdx := strings.Index(stripped, "Open")
 	if completedIdx < 0 || openIdx < 0 {
 		t.Fatalf("expected both Completed and Open subheadings, got:\n%s", out)
 	}
 	if completedIdx > openIdx {
 		t.Errorf("completed should appear before open, got completed=%d open=%d", completedIdx, openIdx)
 	}
-	_ = openItem
+	doneIdx := strings.Index(stripped, "[x] done task")
+	openTaskIdx := strings.Index(stripped, "[ ] open task")
+	if doneIdx < 0 || openTaskIdx < 0 {
+		t.Fatalf("expected checkbox-formatted todo rows, got:\n%s", stripped)
+	}
+	if doneIdx > openTaskIdx {
+		t.Errorf("completed row should appear before open row, got done=%d open=%d", doneIdx, openTaskIdx)
+	}
+	assertContains(t, out, cliTodoListSubheadingStyle.Render("Completed"))
+	assertContains(t, out, cliTodoDoneCheckboxStyle.Render("[x]"))
+	assertContains(t, out, cliTodoCompletedTextStyle.Render("done task"))
+	assertContains(t, out, cliTodoOpenCheckboxStyle.Render("[ ]"))
 }
 
 func TestStatusCommandRendersEmptyTodosState(t *testing.T) {

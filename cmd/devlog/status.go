@@ -97,7 +97,7 @@ func renderStatus(active *store.SessionRecord, events []store.SessionEvent, numb
 	writeStatusBlockers(&b, events, formatter)
 
 	b.WriteString("\n")
-	b.WriteString(cliBlockerTitle("Todo List"))
+	b.WriteString(cliTodoListHeadingStyle.Render("Todo List"))
 	b.WriteByte('\n')
 	writeStatusTodos(&b, todos)
 
@@ -151,18 +151,34 @@ func writeStatusTodos(b *strings.Builder, items []todo.Item) {
 	openStarted := false
 	for _, item := range items {
 		if item.Status == todo.StatusDone && !completedStarted {
-			b.WriteString("  " + cliLabelStyle.Render("Completed") + "\n")
+			b.WriteString("  " + cliTodoListSubheadingStyle.Render("Completed") + "\n")
 			completedStarted = true
 		}
 		if item.Status == todo.StatusOpen && !openStarted {
 			if completedStarted {
 				b.WriteByte('\n')
 			}
-			b.WriteString("  " + cliLabelStyle.Render("Open") + "\n")
+			b.WriteString("  " + cliTodoListSubheadingStyle.Render("Open") + "\n")
 			openStarted = true
 		}
-		b.WriteString("  " + cliBulletLine(cliValueStyle.Render(oneLineTodoText(item.Text))) + "\n")
+		writeStatusTodoRow(b, item)
 	}
+}
+
+func writeStatusTodoRow(b *strings.Builder, item todo.Item) {
+	b.WriteString("    ")
+	text := oneLineTodoText(item.Text)
+	if item.Status == todo.StatusDone {
+		b.WriteString(cliTodoDoneCheckboxStyle.Render("[x]"))
+		b.WriteByte(' ')
+		b.WriteString(cliTodoCompletedTextStyle.Render(text))
+		b.WriteByte('\n')
+		return
+	}
+	b.WriteString(cliTodoOpenCheckboxStyle.Render("[ ]"))
+	b.WriteByte(' ')
+	b.WriteString(text)
+	b.WriteByte('\n')
 }
 
 func formatStatusAuthor(author, email string) string {
