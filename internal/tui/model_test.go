@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"context"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -60,8 +62,11 @@ func newGitModelTestStore(t *testing.T) (*store.Store, string) {
 func runModelTestGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
 
-	cmd := exec.Command("git", args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, strings.TrimSpace(string(output)))
