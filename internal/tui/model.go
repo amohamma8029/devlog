@@ -79,6 +79,8 @@ type Model struct {
 	TodoPromptMode             string
 	TodoInput                  string
 	TodoEditingID              string
+	TodoMultiLineOpen          bool
+	TodoMultiLineIsEdit        bool
 	TodoDeleteConfirm          bool
 	TodoPruneConfirm           bool
 	TodoPruneCount             int
@@ -176,6 +178,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case TodoLoadedMsg:
 		m.applyTodoLoaded(msg)
+		if m.HandoffMsg != "" {
+			return m, notificationCmd()
+		}
 		return m, nil
 
 	case TodoPrunePromptMsg:
@@ -271,6 +276,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case TodoCopiedMsg:
+		if msg.Error != nil {
+			m.ErrorMessage = msg.Error.Error()
+		} else {
+			m.HandoffMsg = "Copied todo list"
+		}
+		return m, notificationCmd()
+
+	case ClearNotificationsMsg:
+		m.HandoffMsg = ""
+		return m, nil
+
 	case CursorTickMsg:
 		return m.handleCursorTick()
 
@@ -337,18 +354,10 @@ func (m Model) handleCursorTick() (tea.Model, tea.Cmd) {
 		if m.Palette != nil {
 			m.Palette.CursorVisible = !m.Palette.CursorVisible
 		}
-		return m, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
-			return CursorTickMsg{}
-		})
-	}
-	if m.TodoOpen && m.TodoPromptOpen {
-		if m.Palette != nil {
-			m.Palette.CursorVisible = !m.Palette.CursorVisible
-		}
-		return m, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
-			return CursorTickMsg{}
-		})
-	}
+	return m, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+		return CursorTickMsg{}
+	})
+}
 	return m, nil
 }
 
@@ -419,6 +428,12 @@ func (m *Model) refreshHandoffBodyCache() {
 func activeSessionRefreshTickCmd() tea.Cmd {
 	return tea.Tick(activeRefreshInterval, func(t time.Time) tea.Msg {
 		return ActiveSessionRefreshTickMsg{}
+	})
+}
+
+func notificationCmd() tea.Cmd {
+	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+		return ClearNotificationsMsg{}
 	})
 }
 
@@ -497,6 +512,10 @@ func (m Model) handlePaletteKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.HandoffMsg = ""
 	if wasOpen && !p.Open && cmd == nil {
 		m.EditingEvent = -1
+		if m.TodoMultiLineOpen {
+			m.TodoMultiLineOpen = false
+			m.TodoMultiLineIsEdit = false
+		}
 	}
 	if cmd != nil {
 		return m, cmd
@@ -549,10 +568,6 @@ func (m Model) handleViewKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	if key == "ctrl+c" {
 		return m, tea.Quit
-	}
-
-	if m.TodoOpen && m.TodoPromptOpen {
-		return m.todoPromptKeyHandler(msg)
 	}
 
 	if m.TodoOpen && m.TodoDeleteConfirm {
@@ -1245,6 +1260,9 @@ func (m Model) handleMultiLineSubmit(msg MultiLineNoteMsg) (tea.Model, tea.Cmd) 
 	body := msg.Body
 	if body == "" {
 		return m, nil
+	}
+	if msg.IsTodo {
+		return m.handleTodoMultiLineSubmit(body)
 	}
 	if m.ActiveSession == nil {
 		m.ErrorMessage = "No session displayed"
