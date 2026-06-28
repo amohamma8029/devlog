@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/amo/devlog/internal/handoff"
 	"github.com/amo/devlog/internal/todo"
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"
@@ -532,6 +533,122 @@ func (m *Model) applyTodoLoaded(msg TodoLoadedMsg) {
 	if msg.Message != "" {
 		m.HandoffMsg = msg.Message
 	}
+	m.refreshHandoffTodosFromItems(msg.Items)
+}
+
+func (m *Model) refreshHandoffTodosFromItems(items []todo.Item) {
+	if m.CurrentView != HandoffPreview || m.HandoffContent == "" {
+		return
+	}
+
+	sessionID, branch := "", ""
+	if m.ActiveSession != nil {
+		sessionID = m.ActiveSession.ID
+		branch = m.ActiveSession.Branch
+	}
+
+	section := handoff.FormatTodosSection(relevantHandoffTodos(items, sessionID, branch))
+	nextContent := replaceHandoffTodoListSection(m.HandoffContent, section)
+	if nextContent == m.HandoffContent {
+		return
+	}
+
+	m.HandoffContent = nextContent
+	m.refreshHandoffBodyCache()
+	resetSearchSelection(&m.Search)
+	clampHandoffModelScroll(m)
+}
+
+func relevantHandoffTodos(items []todo.Item, sessionID, branch string) []todo.Item {
+	filter := todo.Filter{
+		IncludeOpen:     true,
+		IncludeDone:     true,
+		SessionID:       sessionID,
+		Branch:          branch,
+		MatchSessionAny: sessionID == "",
+		MatchBranchAny:  branch == "",
+	}
+	ordered := make([]todo.Item, 0, len(items))
+	for _, item := range items {
+		if item.Status == todo.StatusDone && filter.Matches(item) {
+			ordered = append(ordered, item)
+		}
+	}
+	for _, item := range items {
+		if item.Status != todo.StatusDone && filter.Matches(item) {
+			ordered = append(ordered, item)
+		}
+	}
+	return ordered
+}
+
+func replaceHandoffTodoListSection(content, section string) string {
+	lines := strings.Split(content, "\n")
+	start := handoffSectionLine(lines, "## Todo List")
+	if start >= 0 {
+		end := nextHandoffSectionLine(lines, start+1)
+		return replaceLineRange(lines, start, end, sectionLines(section))
+	}
+	if strings.TrimSpace(section) == "" {
+		return content
+	}
+
+	insertAt := handoffSectionLine(lines, "## Changes")
+	if insertAt < 0 {
+		insertAt = len(lines)
+	}
+	return replaceLineRange(lines, insertAt, insertAt, sectionLines(section))
+}
+
+func handoffSectionLine(lines []string, heading string) int {
+	for i, line := range lines {
+		if line == heading {
+			return i
+		}
+	}
+	return -1
+}
+
+func nextHandoffSectionLine(lines []string, start int) int {
+	for i := start; i < len(lines); i++ {
+		if strings.HasPrefix(lines[i], "## ") {
+			return i
+		}
+	}
+	return len(lines)
+}
+
+func sectionLines(section string) []string {
+	if strings.TrimSpace(section) == "" {
+		return nil
+	}
+	return strings.Split(section, "\n")
+}
+
+func replaceLineRange(lines []string, start, end int, replacement []string) string {
+	if start < 0 {
+		start = 0
+	}
+	if end < start {
+		end = start
+	}
+	if end > len(lines) {
+		end = len(lines)
+	}
+
+	result := make([]string, 0, len(lines)-(end-start)+len(replacement)+2)
+	result = append(result, lines[:start]...)
+	if len(replacement) > 0 {
+		if len(result) > 0 && strings.TrimSpace(result[len(result)-1]) != "" {
+			result = append(result, "")
+		}
+		result = append(result, replacement...)
+		if end < len(lines) && strings.TrimSpace(lines[end]) != "" && strings.TrimSpace(result[len(result)-1]) != "" {
+			result = append(result, "")
+		}
+	}
+	result = append(result, lines[end:]...)
+	return strings.Join(result, "\n")
 }
 
 func (m *Model) applyTodoPrunePrompt(msg TodoPrunePromptMsg) {

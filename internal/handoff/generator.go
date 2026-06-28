@@ -49,7 +49,7 @@ func GenerateWithOptions(sessionContent, diff string, opts GenerateOptions) (str
 	}
 	buf.WriteString("## Summary\n")
 	buf.WriteString(formatSummary(events))
-	if todos := formatTodosSection(opts.Todos); todos != "" {
+	if todos := FormatTodosSection(opts.Todos); todos != "" {
 		buf.WriteString(todos)
 	}
 	buf.WriteString(formatProseChanges(diffInfo))
@@ -169,13 +169,13 @@ func joinProse(bodies []string) string {
 
 // ── Todos section ────────────────────────────────────────────────────────────
 
-// formatTodosSection renders an optional `## Todo List` section listing
+// FormatTodosSection renders an optional `## Todo List` section listing
 // completed and open todos in semantic markdown. Completed items appear first
 // under a `**Completed**` subheading, then open items under `**Open**`. It
 // returns an empty string when no todos are provided so callers can guard
 // emission with a single `if`. Internal todo IDs are never rendered; this
 // keeps projected state human-friendly for handoff readers.
-func formatTodosSection(items []todo.Item) string {
+func FormatTodosSection(items []todo.Item) string {
 	if len(items) == 0 {
 		return ""
 	}
