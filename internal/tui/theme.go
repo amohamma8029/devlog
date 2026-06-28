@@ -36,6 +36,10 @@ var ComposerBlockerTokenStyle = MenuSelectedStyle.
 	Background(lipgloss.Color("#AA0000")).
 	Foreground(lipgloss.Color("#FFFFFF"))
 
+var ComposerTodoTokenStyle = MenuSelectedStyle.
+	Background(lipgloss.Color("#15803D")).
+	Foreground(lipgloss.Color("#FFFFFF"))
+
 var ComposerBodyStyle = lipgloss.NewStyle().
 	Foreground(lipgloss.Color("#FFFFFF"))
 
