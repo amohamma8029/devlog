@@ -36,6 +36,15 @@ func addTodoViewTestItem(t *testing.T, store *todo.Store, text string) todo.Item
 	return item
 }
 
+func addAttributedTodoViewTestItem(t *testing.T, store *todo.Store, text, sessionID, branch string) todo.Item {
+	t.Helper()
+	item, err := store.Add(todo.AddInput{Text: text, SessionID: sessionID, Branch: branch})
+	if err != nil {
+		t.Fatalf("todo add failed: %v", err)
+	}
+	return item
+}
+
 func applyTodoViewCommand(t *testing.T, m Model, cmd tea.Cmd) Model {
 	t.Helper()
 	if cmd == nil {
@@ -274,6 +283,79 @@ func TestTodoViewAddPromptMutatesStoreWithAttribution(t *testing.T) {
 	}
 	if updated.TodoSelected != 0 || !strings.Contains(xansi.Strip(updated.View()), "ship tui todos") {
 		t.Fatalf("updated view should select and render new todo, selected=%d view=\n%s", updated.TodoSelected, updated.View())
+	}
+}
+
+func TestTodoViewAddInsertsHandoffPreviewTodoSection(t *testing.T) {
+	m, _, _ := newTodoViewTestModel(t)
+	m.CurrentView = HandoffPreview
+	m.ActiveSession = &store.SessionRecord{Session: store.Session{ID: "2026-01-15T143022Z", Branch: "feat/todo", Status: "active"}}
+	m.TodoLoaded = true
+	m.TodoSelected = -1
+	m.HandoffContent = "# Handoff\n\n## Summary\nNo entries recorded.\n\n## Changes\nNo code changes during this session.\n\n"
+	m.refreshHandoffBodyCache()
+
+	updated, _ := pressTodoViewKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	for _, r := range "new preview todo" {
+		updated, _ = pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	updated, cmd := pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyEnter})
+	updated = applyTodoViewCommand(t, updated, cmd)
+
+	if !hasHandoffTodoListSection(updated.HandoffContent) {
+		t.Fatalf("handoff preview content should gain Todo List section, got:\n%s", updated.HandoffContent)
+	}
+	if !handoffTodosSectionContains(updated.HandoffContent, "new preview todo") {
+		t.Fatalf("handoff preview content should include added todo, got:\n%s", updated.HandoffContent)
+	}
+	if stripped := xansi.Strip(renderHandoffPreview(updated)); !strings.Contains(stripped, "new preview todo") {
+		t.Fatalf("cached preview body should include added todo, got:\n%s", stripped)
+	}
+	if !strings.Contains(updated.HandoffContent, "## Changes") {
+		t.Fatalf("refresh should preserve Changes section, got:\n%s", updated.HandoffContent)
+	}
+}
+
+func TestTodoViewMutationsRefreshHandoffPreviewTodoSection(t *testing.T) {
+	m, todoStore, _ := newTodoViewTestModel(t)
+	m.CurrentView = HandoffPreview
+	m.ActiveSession = &store.SessionRecord{Session: store.Session{ID: "2026-01-15T143022Z", Branch: "feat/todo", Status: "active"}}
+	item := addAttributedTodoViewTestItem(t, todoStore, "original todo", m.ActiveSession.ID, m.ActiveSession.Branch)
+	m.HandoffContent = "# Handoff\n\n## Summary\nProgress: work done.\n\n## Todo List\n\n**Open**\n\n- [ ] original todo\n\n## Changes\nNo code changes during this session.\n\n"
+	m.refreshHandoffBodyCache()
+	m = applyTodoViewCommand(t, m, m.loadTodoItemsCmd(0, item.ID, ""))
+
+	updated, _ := pressTodoViewKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+	for len(updated.TodoInput) > 0 {
+		updated, _ = pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyBackspace})
+	}
+	for _, r := range "updated todo" {
+		updated, _ = pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	updated, cmd := pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyEnter})
+	updated = applyTodoViewCommand(t, updated, cmd)
+
+	if handoffTodosSectionContains(updated.HandoffContent, "original todo") || !handoffTodosSectionContains(updated.HandoffContent, "updated todo") {
+		t.Fatalf("handoff preview should replace edited todo, got:\n%s", updated.HandoffContent)
+	}
+	if stripped := xansi.Strip(renderHandoffPreview(updated)); !strings.Contains(stripped, "updated todo") || strings.Contains(stripped, "original todo") {
+		t.Fatalf("cached preview body should reflect edited todo, got:\n%s", stripped)
+	}
+
+	updated, cmd = pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyEnter})
+	updated = applyTodoViewCommand(t, updated, cmd)
+	if !strings.Contains(updated.HandoffContent, "**Completed**") || !strings.Contains(updated.HandoffContent, "- [x] updated todo") {
+		t.Fatalf("handoff preview should reflect completed todo, got:\n%s", updated.HandoffContent)
+	}
+
+	updated, _ = pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	updated, cmd = pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	updated = applyTodoViewCommand(t, updated, cmd)
+	if hasHandoffTodoListSection(updated.HandoffContent) {
+		t.Fatalf("handoff preview should remove Todo List section after deleting last relevant todo, got:\n%s", updated.HandoffContent)
+	}
+	if !strings.Contains(updated.HandoffContent, "## Changes") {
+		t.Fatalf("refresh should preserve Changes section after delete, got:\n%s", updated.HandoffContent)
 	}
 }
 
