@@ -237,7 +237,7 @@ func renderTodoRow(item todo.Item, idx int, selected bool, width, numberWidth in
 		b.WriteString(styled)
 	}
 	result := b.String()
-	if selected {
+	if selected && len(textLines) == 1 {
 		return TodoSelectedRowStyle.Width(width).Render(result)
 	}
 	return result

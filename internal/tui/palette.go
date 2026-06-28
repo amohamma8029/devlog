@@ -168,6 +168,33 @@ func (p *CommandPalette) insertMultiLineBreak() {
 	p.MultiLineCursorCol = 0
 }
 
+func (p *CommandPalette) autoWrapCurrentLine() {
+	if p.width <= 0 {
+		return
+	}
+	token := "/note"
+	if p.MultiLineIsBlocker {
+		token = "/block"
+	}
+	if p.MultiLineIsTodo {
+		token = "Todo"
+	}
+	wrapAt := p.width - 4 - xansi.StringWidth(token) - 2
+	if wrapAt < 20 {
+		wrapAt = 20
+	}
+	line := p.MultiLineLines[p.MultiLineCursorRow]
+	if len(line) <= wrapAt {
+		return
+	}
+	rest := line[wrapAt:]
+	p.MultiLineLines[p.MultiLineCursorRow] = line[:wrapAt]
+	p.MultiLineLines = append(p.MultiLineLines[:p.MultiLineCursorRow+1],
+		append([]string{rest}, p.MultiLineLines[p.MultiLineCursorRow+1:]...)...)
+	p.MultiLineCursorRow++
+	p.MultiLineCursorCol = 0
+}
+
 func visiblePaletteCommands(p CommandPalette) []CommandEntry {
 	var filtered []CommandEntry
 	for _, cmd := range PaletteCommands {
@@ -777,6 +804,7 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 				line := p.MultiLineLines[p.MultiLineCursorRow]
 				p.MultiLineLines[p.MultiLineCursorRow] = line[:p.MultiLineCursorCol] + text + line[p.MultiLineCursorCol:]
 				p.MultiLineCursorCol += len(text)
+				p.autoWrapCurrentLine()
 			}
 		}
 		return nil, p
@@ -856,6 +884,7 @@ func (p CommandPalette) viewMultiLine() string {
 	}
 	if p.MultiLineIsTodo {
 		token = "Todo"
+		tokenStyle = ComposerTodoTokenStyle
 	}
 	tokenWidth := xansi.StringWidth(token) + 1 + MenuSelectedStyle.GetHorizontalFrameSize()
 	indent := strings.Repeat(" ", tokenWidth)

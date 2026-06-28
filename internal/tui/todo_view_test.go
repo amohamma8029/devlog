@@ -293,11 +293,8 @@ func TestTodoViewAddInsertsHandoffPreviewTodoSection(t *testing.T) {
 	m.HandoffContent = "# Handoff\n\n## Summary\nNo entries recorded.\n\n## Changes\nNo code changes during this session.\n\n"
 	m.refreshHandoffBodyCache()
 
-	updated, _ := pressTodoViewKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
-	for _, r := range "new preview todo" {
-		updated, _ = pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
-	}
-	updated, cmd := pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyEnter})
+	um, cmd := m.handleTodoMultiLineSubmit("new preview todo")
+	updated := um.(Model)
 	updated = applyTodoViewCommand(t, updated, cmd)
 
 	if !hasHandoffTodoListSection(updated.HandoffContent) {
@@ -323,14 +320,10 @@ func TestTodoViewMutationsRefreshHandoffPreviewTodoSection(t *testing.T) {
 	m.refreshHandoffBodyCache()
 	m = applyTodoViewCommand(t, m, m.loadTodoItemsCmd(0, item.ID, ""))
 
-	updated, _ := pressTodoViewKey(t, m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
-	for len(updated.TodoInput) > 0 {
-		updated, _ = pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyBackspace})
-	}
-	for _, r := range "updated todo" {
-		updated, _ = pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
-	}
-	updated, cmd := pressTodoViewKey(t, updated, tea.KeyMsg{Type: tea.KeyEnter})
+	m.TodoSelected = 0
+	m.TodoMultiLineIsEdit = true
+	um, cmd := m.handleTodoMultiLineSubmit("updated todo")
+	updated := um.(Model)
 	updated = applyTodoViewCommand(t, updated, cmd)
 
 	if handoffTodosSectionContains(updated.HandoffContent, "original todo") || !handoffTodosSectionContains(updated.HandoffContent, "updated todo") {

@@ -198,17 +198,34 @@ func FormatTodosSection(items []todo.Item) string {
 	if len(completed) > 0 {
 		buf.WriteString("\n**Completed**\n\n")
 		for _, text := range completed {
-			fmt.Fprintf(&buf, "- [x] %s\n", text)
+			writeTodoLine(&buf, true, text)
 		}
 	}
 	if len(open) > 0 {
 		buf.WriteString("\n**Open**\n\n")
 		for _, text := range open {
-			fmt.Fprintf(&buf, "- [ ] %s\n", text)
+			writeTodoLine(&buf, false, text)
 		}
 	}
 	buf.WriteByte('\n')
 	return buf.String()
+}
+
+func writeTodoLine(buf *strings.Builder, done bool, text string) {
+	marker := "- [ ] "
+	if done {
+		marker = "- [x] "
+	}
+	lines := strings.Split(text, "\n")
+	buf.WriteString(marker)
+	buf.WriteString(lines[0])
+	buf.WriteByte('\n')
+	indent := strings.Repeat(" ", len(marker))
+	for _, line := range lines[1:] {
+		buf.WriteString(indent)
+		buf.WriteString(line)
+		buf.WriteByte('\n')
+	}
 }
 
 // ── Diff parsing ─────────────────────────────────────────────────────────────
