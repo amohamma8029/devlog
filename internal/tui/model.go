@@ -47,6 +47,7 @@ type Model struct {
 	NoSessionMsg               string
 	HandoffContent             string
 	HandoffCollapsedDiffs      map[string]bool
+	HandoffSelectedDiff        string
 	Title                      string
 	SavePromptOpen             bool
 	SaveInput                  string
@@ -245,6 +246,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.activeSessionScrollOffset = m.ScrollOffset
 			m.HandoffContent = msg.Content
 			m.HandoffCollapsedDiffs = nil
+			m.HandoffSelectedDiff = ""
 			m.ScrollOffset = 0
 			m.refreshHandoffBodyCache()
 			m.setView(HandoffPreview)

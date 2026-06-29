@@ -72,6 +72,7 @@ func renderHandoffPreview(m Model) string {
 	bodyLines := handoffBodyLines(m)
 
 	scrollOffset := clampHandoffScrollOffset(m.ScrollOffset, len(bodyLines), contentLines)
+	bodyLines = applyHandoffDiffCursorStyle(bodyLines, m.HandoffSelectedDiff)
 
 	end := scrollOffset + contentLines
 	if end > len(bodyLines) {
@@ -308,6 +309,66 @@ func prepareHandoffPreviewMarkdownForModel(m Model) string {
 		IncludeCollapsedPlaceholder: true,
 		ShowDisclosureArrows:        true,
 	}))
+}
+
+func applyHandoffDiffCursorStyle(bodyLines []string, selected string) []string {
+	if selected == "" || len(bodyLines) == 0 {
+		return bodyLines
+	}
+	start, end := selectedDiffLineRange(bodyLines, selected)
+	if start < 0 {
+		return bodyLines
+	}
+	styled := make([]string, len(bodyLines))
+	for i, line := range bodyLines {
+		if i >= start && i < end && strings.Contains(line, glamourDiffBgSGR) {
+			styled[i] = strings.ReplaceAll(line, glamourDiffBgSGR, handoffSelectedBgOpen)
+			continue
+		}
+		styled[i] = line
+	}
+	return styled
+}
+
+const (
+	glamourDiffBgSGR       = "\x1b[48;5;235m"
+	handoffSelectedBgOpen  = "\x1b[48;5;236m"
+)
+
+func selectedDiffLineRange(bodyLines []string, selected string) (int, int) {
+	start := -1
+	end := len(bodyLines)
+	for i, line := range bodyLines {
+		path := extractDiffPathFromRenderedLine(line)
+		if path == "" {
+			continue
+		}
+		if start >= 0 {
+			end = i
+			return start, end
+		}
+		if path == selected {
+			start = i
+		}
+	}
+	if start < 0 {
+		return -1, -1
+	}
+	return start, end
+}
+
+func extractDiffPathFromRenderedLine(line string) string {
+	stripped := strings.TrimSpace(xansi.Strip(line))
+	if strings.HasPrefix(stripped, "•") {
+		stripped = strings.TrimSpace(strings.TrimPrefix(stripped, "•"))
+	} else if strings.HasPrefix(stripped, "#### ") {
+		stripped = handoffDiffPathFromHeading(stripped)
+	} else if strings.HasPrefix(stripped, handoffDiffExpandedMarker+" ") || strings.HasPrefix(stripped, handoffDiffCollapsedMarker+" ") {
+		// H4 headings render without a bullet prefix; the disclosure arrow is the marker.
+	} else {
+		return ""
+	}
+	return trimHandoffDiffDisclosureMarker(stripped)
 }
 
 func handoffMarkdownForSave(m Model) string {
@@ -685,6 +746,156 @@ func toggleHandoffDiff(m *Model, path string) {
 	m.HandoffCollapsedDiffs[path] = true
 }
 
+func handoffDiffPathLineIndex(m Model, path string) int {
+	bodyLines := handoffBodyLines(m)
+	headingLine := handoffDiffHeadingLineIndex(bodyLines, path)
+	if headingLine >= 0 {
+		return headingLine
+	}
+	for i, line := range bodyLines {
+		if handoffDiffPathFromRenderedLine(line, handoffDiffPaths(m.HandoffContent)) == path {
+			return i
+		}
+	}
+	return -1
+}
+
+func handoffDiffHeadingLineIndex(bodyLines []string, path string) int {
+	if path == "" {
+		return -1
+	}
+	for i, line := range bodyLines {
+		stripped := strings.TrimSpace(xansi.Strip(line))
+		if !strings.HasPrefix(stripped, "▌ ") && !strings.HasPrefix(strings.TrimSpace(stripped), "#### ") && !strings.HasPrefix(strings.TrimSpace(stripped), handoffDiffExpandedMarker+" ") && !strings.HasPrefix(strings.TrimSpace(stripped), handoffDiffCollapsedMarker+" ") {
+			continue
+		}
+		if handoffDiffPathFromRenderedLine(line, []string{path}) == path {
+			return i
+		}
+	}
+	return -1
+}
+
+func (m *Model) syncHandoffDiffCursor() {
+	paths := handoffDiffPaths(m.HandoffContent)
+	if len(paths) == 0 {
+		m.HandoffSelectedDiff = ""
+		return
+	}
+
+	bodyLines := handoffBodyLines(*m)
+	contentLines := handoffPreviewContentLines(*m)
+	scrollOffset := clampHandoffScrollOffset(m.ScrollOffset, len(bodyLines), contentLines)
+	visible := bodyLines[scrollOffset:]
+	if len(visible) > contentLines {
+		visible = visible[:contentLines]
+	}
+
+	// Scan forward for the first visible heading.
+	for _, line := range visible {
+		if path := handoffDiffPathFromRenderedLine(line, paths); path != "" {
+			m.HandoffSelectedDiff = path
+			return
+		}
+	}
+
+	// No heading visible — scan backward from the scroll offset to find the
+	// nearest preceding heading. This covers the case where the user has
+	// scrolled past a heading into its diff body.
+	for i := scrollOffset - 1; i >= 0; i-- {
+		if path := handoffDiffPathFromRenderedLine(bodyLines[i], paths); path != "" {
+			m.HandoffSelectedDiff = path
+			return
+		}
+	}
+
+	// No heading visible forward or backward. If the cursor was empty, keep
+	// it empty — the user hasn't scrolled into the diffs area yet. If it was
+	// set, keep it only if still valid.
+	if m.HandoffSelectedDiff != "" {
+		for _, p := range paths {
+			if p == m.HandoffSelectedDiff {
+				return
+			}
+		}
+	}
+	m.HandoffSelectedDiff = ""
+}
+
+func ensureHandoffDiffVisible(m *Model, path string) {
+	if path == "" {
+		return
+	}
+	bodyLines := handoffBodyLines(*m)
+	if len(bodyLines) == 0 {
+		return
+	}
+	contentLines := handoffPreviewContentLines(*m)
+	headingLine := handoffDiffHeadingLineIndex(bodyLines, path)
+	if headingLine < 0 {
+		return
+	}
+	if headingLine >= m.ScrollOffset && headingLine < m.ScrollOffset+contentLines {
+		return
+	}
+	if headingLine < m.ScrollOffset {
+		m.ScrollOffset = headingLine
+	} else {
+		m.ScrollOffset = headingLine - contentLines + 1
+		if m.ScrollOffset < 0 {
+			m.ScrollOffset = 0
+		}
+	}
+	clampHandoffModelScroll(m)
+}
+
+func moveHandoffDiffCursor(m *Model, delta int) {
+	paths := handoffDiffPaths(m.HandoffContent)
+	if len(paths) == 0 {
+		return
+	}
+	currentIdx := -1
+	if m.HandoffSelectedDiff != "" {
+		for i, p := range paths {
+			if p == m.HandoffSelectedDiff {
+				currentIdx = i
+				break
+			}
+		}
+	}
+	var nextIdx int
+	if currentIdx < 0 {
+		if delta >= 0 {
+			nextIdx = 0
+		} else {
+			nextIdx = len(paths) - 1
+		}
+	} else {
+		nextIdx = currentIdx + delta
+		if nextIdx < 0 {
+			nextIdx = len(paths) - 1
+		}
+		if nextIdx >= len(paths) {
+			nextIdx = 0
+		}
+	}
+	m.HandoffSelectedDiff = paths[nextIdx]
+	ensureHandoffDiffVisible(m, m.HandoffSelectedDiff)
+}
+
+func toggleHandoffSelectedDiff(m *Model) {
+	if m.HandoffSelectedDiff == "" {
+		return
+	}
+	if len(handoffDiffPaths(m.HandoffContent)) == 0 {
+		return
+	}
+	toggleHandoffDiff(m, m.HandoffSelectedDiff)
+	m.refreshHandoffBodyCache()
+	clampHandoffModelScroll(m)
+	ensureHandoffDiffVisible(m, m.HandoffSelectedDiff)
+}
+
 func handoffDiffPathAtScreenLine(m Model, screenY int) string {
 	paths := handoffDiffPaths(m.HandoffContent)
 	if len(paths) == 0 {
@@ -836,6 +1047,7 @@ func advanceHandoffSearchMatch(m *Model) {
 
 	match := matches[m.Search.MatchIndex]
 	m.ScrollOffset = clampHandoffScrollOffset(match.Line, len(bodyLines), handoffPreviewContentLines(*m))
+	m.syncHandoffDiffCursor()
 }
 
 func buildVisibleRuneMap(line string) (plainText string, runeIndices []int) {
@@ -1238,6 +1450,26 @@ func handleHandoffKey(m *Model, key string) (tea.Model, tea.Cmd) {
 		m.ShowHelp = true
 		return *m, nil
 
+	case "]":
+		moveHandoffDiffCursor(m, 1)
+		m.refreshHandoffBodyCache()
+		return *m, nil
+
+	case "[":
+		moveHandoffDiffCursor(m, -1)
+		m.refreshHandoffBodyCache()
+		return *m, nil
+
+	case "enter":
+		if m.Search.Open || m.SavePromptOpen || m.CollapsedDiffConfirmOpen {
+			return *m, nil
+		}
+		if m.HandoffSelectedDiff == "" {
+			return *m, nil
+		}
+		toggleHandoffSelectedDiff(m)
+		return *m, nil
+
 	case "/":
 		if !m.CollapsedDiffConfirmOpen && !m.SavePromptOpen {
 			m.Search.Open = true
@@ -1273,30 +1505,45 @@ func handleHandoffKey(m *Model, key string) (tea.Model, tea.Cmd) {
 		toggleAllHandoffDiffs(m)
 		m.refreshHandoffBodyCache()
 		clampHandoffModelScroll(m)
+		m.syncHandoffDiffCursor()
 		return *m, nil
 
 	case "down":
-		return m.handleLineScrollKey(scrollDirectionDown, time.Now())
+		updated, cmd := m.handleLineScrollKey(scrollDirectionDown, time.Now())
+		if next, ok := updated.(Model); ok {
+			next.syncHandoffDiffCursor()
+			return next, cmd
+		}
+		return updated, cmd
 
 	case "up":
-		return m.handleLineScrollKey(scrollDirectionUp, time.Now())
+		updated, cmd := m.handleLineScrollKey(scrollDirectionUp, time.Now())
+		if next, ok := updated.(Model); ok {
+			next.syncHandoffDiffCursor()
+			return next, cmd
+		}
+		return updated, cmd
 
 	case "pgdown":
 		m.ScrollOffset += handoffPreviewContentLines(*m)
 		clampHandoffModelScroll(m)
+		m.syncHandoffDiffCursor()
 		return *m, nil
 
 	case "pgup":
 		m.ScrollOffset -= handoffPreviewContentLines(*m)
 		clampHandoffModelScroll(m)
+		m.syncHandoffDiffCursor()
 		return *m, nil
 
 	case "home":
 		m.ScrollOffset = 0
+		m.syncHandoffDiffCursor()
 		return *m, nil
 
 	case "end":
 		m.ScrollOffset = handoffMaxScrollOffset(*m)
+		m.syncHandoffDiffCursor()
 		return *m, nil
 
 	case "t":
@@ -1461,11 +1708,13 @@ func handleHandoffMouse(m *Model, msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.ScrollOffset--
 		}
 		clampHandoffModelScroll(m)
+		m.syncHandoffDiffCursor()
 		return *m, nil
 
 	case MouseScrollDown:
 		m.ScrollOffset++
 		clampHandoffModelScroll(m)
+		m.syncHandoffDiffCursor()
 		return *m, nil
 
 	case MouseClick:
@@ -1485,6 +1734,7 @@ func handleHandoffMouse(m *Model, msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 		if path := handoffDiffPathAtScreenLine(*m, by); path != "" {
 			toggleHandoffDiff(m, path)
+			m.HandoffSelectedDiff = path
 			m.refreshHandoffBodyCache()
 			clampHandoffModelScroll(m)
 			return *m, nil
