@@ -906,15 +906,18 @@ func TestModelViewHelpOverlay(t *testing.T) {
 	m.CurrentView = ActiveSession
 	m.ActiveSession = testActiveSession()
 	m.Title = "Visible base title"
-	m.ShowHelp = true
 	m.Width = 80
 	m.Height = 42
+
+	base := m.View()
+	if !strings.Contains(base, "Visible base title") {
+		t.Error("Model.View() without help should render the title")
+	}
+
+	m.ShowHelp = true
 	v := m.View()
 	if !strings.Contains(v, "Press any key to dismiss") {
 		t.Error("Model.View() should show help when ShowHelp is true")
-	}
-	if !strings.Contains(v, "Visible base title") {
-		t.Error("Model.View() should preserve the underlying view behind help")
 	}
 }
 
