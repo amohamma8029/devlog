@@ -331,8 +331,8 @@ func applyHandoffDiffCursorStyle(bodyLines []string, selected string) []string {
 }
 
 const (
-	glamourDiffBgSGR       = "\x1b[48;5;235m"
-	handoffSelectedBgOpen  = "\x1b[48;5;236m"
+	glamourDiffBgSGR      = "\x1b[48;5;235m"
+	handoffSelectedBgOpen = "\x1b[48;5;236m"
 )
 
 func selectedDiffLineRange(bodyLines []string, selected string) (int, int) {
