@@ -1031,3 +1031,300 @@ func TestTransformTodoListSectionPassesThroughWhenNoTodoSection(t *testing.T) {
 		t.Errorf("expected pass-through when no Todo List section, got:\n%s", result)
 	}
 }
+
+// ── Diff cursor ──────────────────────────────────────────────────────────────
+
+func diffCursorTestContent() string {
+	return "# Handoff: feat/test -- session (Test) [active]\n\n" +
+		"## Summary\n\nWorked on the diff cursor feature. Encountered several edge\n" +
+		"cases around scrolling and cursor activation. Need to verify the\n" +
+		"tint is visible and not too intense.\n\n" +
+		"## Changes\n\n" +
+		"#### src/a.go\n\n```diff\n+a1\n+a2\n+a3\n+a4\n```\n\n" +
+		"#### src/b.go\n\n```diff\n+b1\n+b2\n+b3\n+b4\n```\n\n" +
+		"#### src/c.go\n\n```diff\n+c1\n+c2\n+c3\n+c4\n```"
+}
+
+func newDiffCursorModel(t *testing.T) Model {
+	t.Helper()
+	m := NewModel(nil, "/tmp/root")
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = diffCursorTestContent()
+	m.Width = 80
+	m.Height = 6
+	m.refreshHandoffBodyCache()
+	return m
+}
+
+func TestDiffCursorInitialSelectionIsEmpty(t *testing.T) {
+	m := newDiffCursorModel(t)
+	if m.HandoffSelectedDiff != "" {
+		t.Fatalf("HandoffSelectedDiff = %q, want empty at preview start", m.HandoffSelectedDiff)
+	}
+}
+
+func TestDiffCursorSyncFollowsScrolling(t *testing.T) {
+	m := newDiffCursorModel(t)
+	m.Width = 80
+	m.Height = 8
+	m.refreshHandoffBodyCache()
+	bodyLines := handoffBodyLines(m)
+	contentLines := handoffPreviewContentLines(m)
+	headingIdx := func(path string) int {
+		return handoffDiffHeadingLineIndex(bodyLines, path)
+	}
+
+	// At scroll=0 the cursor should be empty — no diff heading is visible.
+	m.ScrollOffset = 0
+	m.syncHandoffDiffCursor()
+	if m.HandoffSelectedDiff != "" {
+		t.Fatalf("cursor at scroll=0 = %q, want empty", m.HandoffSelectedDiff)
+	}
+
+	// Scrolling to make the first diff heading visible should activate.
+	m.ScrollOffset = headingIdx("src/a.go")
+	m.syncHandoffDiffCursor()
+	if m.HandoffSelectedDiff != "src/a.go" {
+		t.Fatalf("cursor at a heading = %q, want src/a.go", m.HandoffSelectedDiff)
+	}
+
+	m.ScrollOffset = headingIdx("src/b.go")
+	m.syncHandoffDiffCursor()
+	if m.HandoffSelectedDiff != "src/b.go" {
+		t.Fatalf("cursor at b heading = %q, want src/b.go", m.HandoffSelectedDiff)
+	}
+
+	// Scrolling past the b heading into its body (but before c) should keep b.
+	m.ScrollOffset = headingIdx("src/b.go") + 3
+	m.syncHandoffDiffCursor()
+	if m.HandoffSelectedDiff != "src/b.go" {
+		t.Fatalf("cursor in b body = %q, want src/b.go", m.HandoffSelectedDiff)
+	}
+
+	// End key: scrolled to the bottom, last diff heading is above viewport.
+	m.ScrollOffset = len(bodyLines) - contentLines
+	if m.ScrollOffset < 0 {
+		m.ScrollOffset = 0
+	}
+	m.syncHandoffDiffCursor()
+	if m.HandoffSelectedDiff != "src/c.go" {
+		t.Fatalf("cursor at end = %q, want src/c.go", m.HandoffSelectedDiff)
+	}
+}
+
+func TestDiffCursorJumpNextAndPrevious(t *testing.T) {
+	m := newDiffCursorModel(t)
+	m.CurrentView = HandoffPreview
+	m.HandoffSelectedDiff = "src/a.go"
+
+	result, _ := handleHandoffKey(&m, "]")
+	updated := result.(Model)
+	if updated.HandoffSelectedDiff != "src/b.go" {
+		t.Fatalf("after ']' selected = %q, want src/b.go", updated.HandoffSelectedDiff)
+	}
+
+	result, _ = handleHandoffKey(&updated, "]")
+	updated = result.(Model)
+	if updated.HandoffSelectedDiff != "src/c.go" {
+		t.Fatalf("after second ']' selected = %q, want src/c.go", updated.HandoffSelectedDiff)
+	}
+
+	result, _ = handleHandoffKey(&updated, "]")
+	updated = result.(Model)
+	if updated.HandoffSelectedDiff != "src/a.go" {
+		t.Fatalf("']' at end should wrap to first, got %q", updated.HandoffSelectedDiff)
+	}
+
+	result, _ = handleHandoffKey(&updated, "[")
+	updated = result.(Model)
+	if updated.HandoffSelectedDiff != "src/c.go" {
+		t.Fatalf("'[' at start should wrap to last, got %q", updated.HandoffSelectedDiff)
+	}
+
+	result, _ = handleHandoffKey(&updated, "[")
+	updated = result.(Model)
+	if updated.HandoffSelectedDiff != "src/b.go" {
+		t.Fatalf("after '[' selected = %q, want src/b.go", updated.HandoffSelectedDiff)
+	}
+
+	result, _ = handleHandoffKey(&updated, "[")
+	updated = result.(Model)
+	if updated.HandoffSelectedDiff != "src/a.go" {
+		t.Fatalf("after second '[' selected = %q, want src/a.go", updated.HandoffSelectedDiff)
+	}
+}
+
+func TestDiffCursorEnterTogglesSelectedDiff(t *testing.T) {
+	m := newDiffCursorModel(t)
+	m.CurrentView = HandoffPreview
+	m.HandoffSelectedDiff = "src/b.go"
+
+	result, _ := handleHandoffKey(&m, "enter")
+	updated := result.(Model)
+	if !updated.HandoffCollapsedDiffs["src/b.go"] {
+		t.Fatalf("Enter should collapse src/b.go, got %#v", updated.HandoffCollapsedDiffs)
+	}
+
+	result, _ = handleHandoffKey(&updated, "enter")
+	updated = result.(Model)
+	if updated.HandoffCollapsedDiffs["src/b.go"] {
+		t.Fatalf("Enter should expand src/b.go back, got %#v", updated.HandoffCollapsedDiffs)
+	}
+}
+
+func TestDiffCursorEnterRespectsActivePrompts(t *testing.T) {
+	m := newDiffCursorModel(t)
+	m.CurrentView = HandoffPreview
+	m.HandoffSelectedDiff = "src/b.go"
+	m.Search.Open = true
+
+	result, _ := handleHandoffKey(&m, "enter")
+	updated := result.(Model)
+	if _, ok := updated.HandoffCollapsedDiffs["src/b.go"]; ok {
+		t.Fatalf("Enter during search should not toggle selected diff, got %#v", updated.HandoffCollapsedDiffs)
+	}
+
+	m.Search.Open = false
+	m.SavePromptOpen = true
+	result, _ = handleHandoffKey(&m, "enter")
+	updated = result.(Model)
+	if _, ok := updated.HandoffCollapsedDiffs["src/b.go"]; ok {
+		t.Fatalf("Enter during save prompt should not toggle selected diff, got %#v", updated.HandoffCollapsedDiffs)
+	}
+
+	m.SavePromptOpen = false
+	m.CollapsedDiffConfirmOpen = true
+	result, _ = handleHandoffKey(&m, "enter")
+	updated = result.(Model)
+	if _, ok := updated.HandoffCollapsedDiffs["src/b.go"]; ok {
+		t.Fatalf("Enter during collapsed-diff confirm should not toggle selected diff, got %#v", updated.HandoffCollapsedDiffs)
+	}
+}
+
+func TestDiffCursorJumpScrollsIntoView(t *testing.T) {
+	m := newDiffCursorModel(t)
+	m.CurrentView = HandoffPreview
+	m.ScrollOffset = 0
+	m.HandoffSelectedDiff = "src/a.go"
+
+	result, _ := handleHandoffKey(&m, "]")
+	updated := result.(Model)
+	if updated.HandoffSelectedDiff != "src/b.go" {
+		t.Fatalf("after ']' selected = %q, want src/b.go", updated.HandoffSelectedDiff)
+	}
+	if updated.ScrollOffset == 0 {
+		t.Fatalf("'['/'[' should scroll to keep selected heading visible, ScrollOffset still 0")
+	}
+}
+
+func TestDiffCursorScrollKeysInvokeSync(t *testing.T) {
+	m := newDiffCursorModel(t)
+	m.CurrentView = HandoffPreview
+	m.Width = 80
+	m.Height = 24
+	m.refreshHandoffBodyCache()
+	m.HandoffSelectedDiff = "src/a.go"
+
+	for i := 0; i < 30; i++ {
+		result, _ := handleHandoffKey(&m, "pgdown")
+		m = result.(Model)
+	}
+
+	if m.HandoffSelectedDiff == "src/a.go" {
+		t.Fatalf("paging down should advance cursor past src/a.go, got %q", m.HandoffSelectedDiff)
+	}
+}
+
+func TestDiffCursorResetsWhenHandoffContentChanges(t *testing.T) {
+	m := newDiffCursorModel(t)
+	m.HandoffSelectedDiff = "src/b.go"
+	m.HandoffContent = "## Changes\n\nNo code changes."
+
+	m.refreshHandoffBodyCache()
+	m.syncHandoffDiffCursor()
+
+	if m.HandoffSelectedDiff != "" {
+		t.Fatalf("cursor should reset when no diffs remain, got %q", m.HandoffSelectedDiff)
+	}
+}
+
+func TestDiffCursorStyleTintsSelectedDiffBody(t *testing.T) {
+	m := newDiffCursorModel(t)
+	m.Width = 120
+	m.Height = 40
+	m.refreshHandoffBodyCache()
+	m.HandoffSelectedDiff = "src/b.go"
+	m.refreshHandoffBodyCache()
+
+	bodyLines := handoffBodyLines(m)
+	start, end := selectedDiffLineRange(bodyLines, m.HandoffSelectedDiff)
+	if start < 0 {
+		t.Fatalf("expected to find a diff range for src/b.go, got none")
+	}
+	if end <= start {
+		t.Fatalf("expected end > start, got start=%d end=%d", start, end)
+	}
+
+	styled := applyHandoffDiffCursorStyle(bodyLines, m.HandoffSelectedDiff)
+
+	// Lines inside the selected range that have Glamour's code background
+	// should be tinted; heading/border/blank lines should not.
+	for i := start; i < end; i++ {
+		hasGlamourBg := strings.Contains(bodyLines[i], "\x1b[48;5;235m")
+		hasTint := hasBackgroundTint(styled[i])
+		if hasGlamourBg && !hasTint {
+			t.Fatalf("expected tint on diff body line %d (has Glamour bg), got %q", i, styled[i])
+		}
+		if !hasGlamourBg && hasTint {
+			stripped := strings.TrimSpace(xansi.Strip(bodyLines[i]))
+			t.Fatalf("expected no tint on non-body line %d (%q), got %q", i, stripped, styled[i])
+		}
+	}
+
+	// Lines outside the selected range should never be tinted.
+	for i := 0; i < len(styled); i++ {
+		if i >= start && i < end {
+			continue
+		}
+		if hasBackgroundTint(styled[i]) {
+			t.Fatalf("expected no background tint on line %d outside selected diff, got %q", i, styled[i])
+		}
+	}
+
+	// Glamour's original background should be fully replaced on tinted lines.
+	for i := start; i < end; i++ {
+		if hasBackgroundTint(styled[i]) && strings.Contains(styled[i], "\x1b[48;5;235m") {
+			t.Fatalf("expected Glamour background (48;5;235) to be replaced on line %d, got %q", i, styled[i])
+		}
+	}
+}
+
+func hasBackgroundTint(line string) bool {
+	return strings.Contains(line, "\x1b[48;5;236m")
+}
+
+func TestDiffCursorNoDiffsKeysAreNoop(t *testing.T) {
+	m := NewModel(nil, "/tmp/root")
+	m.CurrentView = HandoffPreview
+	m.HandoffContent = "## Changes\n\nNo code changes."
+	m.Width = 80
+	m.Height = 24
+	m.refreshHandoffBodyCache()
+	m.syncHandoffDiffCursor()
+
+	if m.HandoffSelectedDiff != "" {
+		t.Fatalf("expected empty cursor when no diffs, got %q", m.HandoffSelectedDiff)
+	}
+
+	result, _ := handleHandoffKey(&m, "]")
+	updated := result.(Model)
+	if updated.HandoffSelectedDiff != "" {
+		t.Fatalf("']' on no-diff preview should not set cursor, got %q", updated.HandoffSelectedDiff)
+	}
+
+	result, _ = handleHandoffKey(&updated, "enter")
+	updated = result.(Model)
+	if updated.HandoffCollapsedDiffs != nil {
+		t.Fatalf("Enter on no-diff preview should not collapse anything, got %#v", updated.HandoffCollapsedDiffs)
+	}
+}
