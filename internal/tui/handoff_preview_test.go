@@ -1235,6 +1235,28 @@ func TestDiffCursorScrollKeysInvokeSync(t *testing.T) {
 	}
 }
 
+func TestDiffCursorHomeClearsSelectionAtTop(t *testing.T) {
+	m := newDiffCursorModel(t)
+	m.CurrentView = HandoffPreview
+	m.Width = 80
+	m.Height = 8
+	m.refreshHandoffBodyCache()
+	m.ScrollOffset = handoffMaxScrollOffset(m)
+	m.syncHandoffDiffCursor()
+	if m.HandoffSelectedDiff == "" {
+		t.Fatal("expected cursor to select a diff before returning home")
+	}
+
+	result, _ := handleHandoffKey(&m, "home")
+	updated := result.(Model)
+	if updated.ScrollOffset != 0 {
+		t.Fatalf("home should return to top, got ScrollOffset=%d", updated.ScrollOffset)
+	}
+	if updated.HandoffSelectedDiff != "" {
+		t.Fatalf("home should clear selected diff at top, got %q", updated.HandoffSelectedDiff)
+	}
+}
+
 func TestDiffCursorResetsWhenHandoffContentChanges(t *testing.T) {
 	m := newDiffCursorModel(t)
 	m.HandoffSelectedDiff = "src/b.go"

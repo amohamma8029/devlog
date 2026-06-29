@@ -786,6 +786,10 @@ func (m *Model) syncHandoffDiffCursor() {
 	bodyLines := handoffBodyLines(*m)
 	contentLines := handoffPreviewContentLines(*m)
 	scrollOffset := clampHandoffScrollOffset(m.ScrollOffset, len(bodyLines), contentLines)
+	if scrollOffset == 0 {
+		m.HandoffSelectedDiff = ""
+		return
+	}
 	visible := bodyLines[scrollOffset:]
 	if len(visible) > contentLines {
 		visible = visible[:contentLines]
