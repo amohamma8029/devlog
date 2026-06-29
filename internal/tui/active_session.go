@@ -146,9 +146,9 @@ func renderFooter(m Model) string {
 		}
 	} else if m.CurrentView == HandoffPreview {
 		if m.Width < 80 {
-			text = "y/s/d  ·  ↑/↓ scroll  ·  ? help  ·  q back"
+			text = "y/s/d  ·  [/] jump  ·  ↑/↓ scroll  ·  ? help  ·  q back"
 		} else {
-			text = "y copy  ·  s save  ·  d diffs  ·  ↑/↓ line  ·  pgup/pgdn page  ·  home/end jump  ·  q back"
+			text = "y copy  ·  s save  ·  [/] jump  ·  d diffs  ·  ↑/↓ line  ·  pgup/pgdn page  ·  home/end jump  ·  q back"
 		}
 	} else if m.CurrentView == SessionList {
 		if m.Width < 80 {
@@ -533,6 +533,9 @@ func handoffPreviewEntries() []keyEntry {
 		{"pgup", "Scroll up one page"},
 		{"home", "Jump to top"},
 		{"end", "Jump to bottom"},
+		{"]", "Jump next diff"},
+		{"[", "Jump prev diff"},
+		{"Enter", "Toggle selected diff"},
 		{"d", "Toggle all diffs"},
 		{"t", "Open todo list"},
 		{"click", "Toggle file diff"},
@@ -546,6 +549,7 @@ func compactHandoffPreviewEntries() []keyEntry {
 		{"s", "Save handoff"},
 		{"/", "Search preview"},
 		{"Enter", "Next match"},
+		{"[/]", "Jump diff"},
 		{"d", "Toggle all diffs"},
 		{"t", "Open todo list"},
 		{"q", "Go back"},
