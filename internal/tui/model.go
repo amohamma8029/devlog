@@ -947,6 +947,9 @@ func (m Model) handleCommand(msg CommandExecutedMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch cmdStr {
+	case "/exit":
+		return m, tea.Quit
+
 	case "/note":
 		if args == "" {
 			m.ErrorMessage = "Usage: /note <text>"

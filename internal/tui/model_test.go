@@ -472,6 +472,47 @@ func TestModelUpdateQuitOnCtrlC(t *testing.T) {
 	}
 }
 
+func TestHandleCommandExitQuitsWithoutClosingSession(t *testing.T) {
+	s, root := newTestStore(t)
+	const sessionID = "2026-01-15T140000Z"
+	writeTestSession(t, s, sessionID, "feat/exit", "Alice", "Keep session open", time.Date(2026, 1, 15, 14, 0, 0, 0, time.UTC))
+
+	rec, err := s.GetSession(sessionID)
+	if err != nil {
+		t.Fatalf("GetSession failed: %v", err)
+	}
+
+	p := NewCommandPalette()
+	m := Model{
+		Store:         s,
+		Root:          root,
+		ActiveSession: &rec,
+		Palette:       &p,
+	}
+
+	updatedModel, cmd := m.Update(CommandExecutedMsg{Input: "/exit"})
+	updated, ok := updatedModel.(Model)
+	if !ok {
+		t.Fatalf("expected Model, got %T", updatedModel)
+	}
+	if cmd == nil {
+		t.Fatal("expected /exit to return quit command")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatal("/exit command should return tea.QuitMsg")
+	}
+	if updated.ActiveSession == nil || updated.ActiveSession.ID != sessionID || updated.ActiveSession.Closed {
+		t.Fatalf("/exit should not mutate active session, got %#v", updated.ActiveSession)
+	}
+	after, err := s.GetSession(sessionID)
+	if err != nil {
+		t.Fatalf("GetSession after /exit failed: %v", err)
+	}
+	if after.Closed {
+		t.Fatal("/exit should not close the session")
+	}
+}
+
 func TestModelUpdateNoQuitWhenPaletteOpen(t *testing.T) {
 	p := NewCommandPalette()
 	p.Open = true

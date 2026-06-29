@@ -298,6 +298,7 @@ func TestCommandPaletteEnterWithMenuSelectionExecutes(t *testing.T) {
 func TestCommandPaletteEnterWithMenuSelectionFillsInput(t *testing.T) {
 	p := NewCommandPalette()
 	p.Open = true
+	p.Input = "/n"
 	p.SelectedIndex = 0
 	msg := tea.KeyMsg{Type: tea.KeyEnter}
 	_, np := p.Update(msg)
@@ -346,8 +347,9 @@ func TestVisiblePaletteCommandsActiveSession(t *testing.T) {
 	p.Input = "/"
 	p.SessionClosed = false
 	visible := visiblePaletteCommands(p)
-	if len(visible) != len(PaletteCommands) {
-		t.Errorf("active session should show all commands, got %d, want %d", len(visible), len(PaletteCommands))
+	want := []string{"/exit", "/close", "/list", "/todo", "/handoff", "/block", "/note"}
+	if got := commandNames(visible); !sameStrings(got, want) {
+		t.Fatalf("active session commands = %v, want %v", got, want)
 	}
 }
 
@@ -357,8 +359,9 @@ func TestVisiblePaletteCommandsClosedSession(t *testing.T) {
 	p.Input = "/"
 	p.SessionClosed = true
 	visible := visiblePaletteCommands(p)
-	if len(visible) != 3 {
-		t.Errorf("closed session should show 3 commands, got %d", len(visible))
+	want := []string{"/exit", "/list", "/todo", "/handoff"}
+	if got := commandNames(visible); !sameStrings(got, want) {
+		t.Fatalf("closed session commands = %v, want %v", got, want)
 	}
 	for _, cmd := range visible {
 		if cmd.Command == "/note" || cmd.Command == "/block" || cmd.Command == "/close" {
@@ -379,6 +382,38 @@ func TestVisiblePaletteCommandsFilter(t *testing.T) {
 	if visible[0].Command != "/note" {
 		t.Errorf("filter /n should show /note, got %s", visible[0].Command)
 	}
+}
+
+func TestVisiblePaletteCommandsExitFilter(t *testing.T) {
+	p := NewCommandPalette()
+	p.Open = true
+	p.Input = "/e"
+	p.SessionClosed = true
+	visible := visiblePaletteCommands(p)
+	want := []string{"/exit"}
+	if got := commandNames(visible); !sameStrings(got, want) {
+		t.Fatalf("filter /e commands = %v, want %v", got, want)
+	}
+}
+
+func commandNames(entries []CommandEntry) []string {
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		names = append(names, entry.Command)
+	}
+	return names
+}
+
+func sameStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestVisiblePaletteCommandsNoMatch(t *testing.T) {

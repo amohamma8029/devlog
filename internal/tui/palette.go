@@ -16,12 +16,13 @@ type CommandEntry struct {
 }
 
 var PaletteCommands = []CommandEntry{
-	{Command: "/note", Description: "Add a note", NoArg: false},
-	{Command: "/block", Description: "Log a blocker", NoArg: false},
+	{Command: "/exit", Description: "Exit the TUI", NoArg: true},
 	{Command: "/close", Description: "Close the session", NoArg: true},
-	{Command: "/handoff", Description: "Generate handoff summary", NoArg: true},
 	{Command: "/list", Description: "Go to session list", NoArg: true},
 	{Command: "/todo", Description: "Open todo list", NoArg: true},
+	{Command: "/handoff", Description: "Generate handoff summary", NoArg: true},
+	{Command: "/block", Description: "Log a blocker", NoArg: false},
+	{Command: "/note", Description: "Add a note", NoArg: false},
 }
 
 type CommandPalette struct {
