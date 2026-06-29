@@ -512,12 +512,13 @@ func sessionListEntries() []keyEntry {
 
 func slashCommandEntries() []keyEntry {
 	return []keyEntry{
-		{"/note", "<text>  Add a note to the session"},
-		{"/block", "<text>  Log a blocker"},
+		{"/exit", "Exit the TUI"},
 		{"/close", "Close the active session"},
-		{"/handoff", "Generate handoff summary"},
 		{"/list", "Go to session list"},
 		{"/todo", "Open todo list"},
+		{"/handoff", "Generate handoff summary"},
+		{"/block", "<text>  Log a blocker"},
+		{"/note", "<text>  Add a note to the session"},
 	}
 }
 

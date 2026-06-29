@@ -336,6 +336,9 @@ func TestRenderHelpOverlay(t *testing.T) {
 	if !strings.Contains(v, "/close") {
 		t.Error("renderHelpOverlay should show /close command")
 	}
+	if !strings.Contains(v, "/exit") {
+		t.Error("renderHelpOverlay should show /exit command")
+	}
 	if !strings.Contains(v, "/handoff") {
 		t.Error("renderHelpOverlay should show /handoff command")
 	}
