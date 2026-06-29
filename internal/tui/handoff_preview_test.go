@@ -926,13 +926,13 @@ func TestTransformTodoListSectionInjectsCheckboxMarkers(t *testing.T) {
 	if !strings.Contains(result, "**Open**") {
 		t.Errorf("expected Open subheading preserved, got:\n%s", result)
 	}
-	if !strings.Contains(result, "\u2611 removed stale entries") {
-		t.Errorf("expected completed item with checkbox marker, got:\n%s", result)
+	if !strings.Contains(result, "DONE_CHKremoved stale entries") {
+		t.Errorf("expected completed item with DONE_CHK marker, got:\n%s", result)
 	}
-	if !strings.Contains(result, "\u2610 follow up from handoff") {
-		t.Errorf("expected open item with checkbox marker, got:\n%s", result)
+	if !strings.Contains(result, "OPEN_CHKfollow up from handoff") {
+		t.Errorf("expected open item with OPEN_CHK marker, got:\n%s", result)
 	}
-	if strings.Contains(result, "- \u2611") || strings.Contains(result, "- \u2610") {
+	if strings.Contains(result, "- DONE_CHK") || strings.Contains(result, "- OPEN_CHK") {
 		t.Errorf("preview transform should not emit markdown bullets for todo items, got:\n%s", result)
 	}
 }
@@ -947,8 +947,8 @@ func TestTransformTodoListSectionSkipsNonTodoSections(t *testing.T) {
 	if !strings.Contains(result, "## Changes") {
 		t.Errorf("expected Changes section preserved, got:\n%s", result)
 	}
-	if !strings.Contains(result, "☐") {
-		t.Errorf("expected checkbox marker in Todo List section, got:\n%s", result)
+	if !strings.Contains(result, "OPEN_CHK") {
+		t.Errorf("expected OPEN_CHK marker in Todo List section, got:\n%s", result)
 	}
 }
 

@@ -478,11 +478,13 @@ func transformTodoListSection(content string) string {
 			continue
 		}
 		if strings.HasPrefix(line, "- [x] ") || strings.HasPrefix(line, "- [X] ") {
-			out = append(out, "\u2611 "+line[len("- [x] "):], "")
+			addTodoItemSeparation(&out)
+			out = append(out, "DONE_CHK"+line[len("- [x] "):])
 			continue
 		}
 		if strings.HasPrefix(line, "- [ ] ") {
-			out = append(out, "\u2610 "+strings.TrimPrefix(line, "- [ ] "), "")
+			addTodoItemSeparation(&out)
+			out = append(out, "OPEN_CHK"+strings.TrimPrefix(line, "- [ ] "))
 			continue
 		}
 
@@ -492,12 +494,27 @@ func transformTodoListSection(content string) string {
 	return strings.Join(out, "\n")
 }
 
+func addTodoItemSeparation(out *[]string) {
+	for i := len(*out) - 1; i >= 0; i-- {
+		trimmed := strings.TrimSpace((*out)[i])
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "DONE_CHK") || strings.HasPrefix(trimmed, "OPEN_CHK") {
+			*out = append(*out, "")
+			return
+		}
+		return
+	}
+}
+
 // styleTodoListRendered applies Lipgloss styling to the already-rendered
 // Glamour output. It only styles actual section heading lines, then indents and
 // styles rows while inside the Todo List section.
 func styleTodoListRendered(rendered string) string {
 	lines := strings.Split(rendered, "\n")
 	inTodoList := false
+	lastWasDone := false
 	for i, line := range lines {
 		stripped := xansi.Strip(line)
 		if heading, ok := renderedHeadingName(stripped); ok {
@@ -505,13 +522,16 @@ func styleTodoListRendered(rendered string) string {
 			case "Todo List":
 				lines[i] = TodoListHeadingStyle.Render(strings.TrimSpace(stripped))
 				inTodoList = true
+				lastWasDone = false
 				continue
 			case "Changes":
 				lines[i] = ChangesHeadingStyle.Render(strings.TrimSpace(stripped))
 				inTodoList = false
+				lastWasDone = false
 				continue
 			default:
 				inTodoList = false
+				lastWasDone = false
 			}
 		}
 		if !inTodoList {
@@ -519,23 +539,36 @@ func styleTodoListRendered(rendered string) string {
 		}
 
 		trimmed := strings.TrimSpace(stripped)
+		if trimmed == "" {
+			lastWasDone = false
+			continue
+		}
 		if trimmed == "Completed" || trimmed == "Open" {
 			lines[i] = "  " + TodoListSubheadingStyle.Render(trimmed)
+			lastWasDone = false
 			continue
 		}
-		if strings.HasPrefix(trimmed, "\u2611 ") {
-			text := strings.TrimSpace(strings.TrimPrefix(trimmed, "\u2611"))
+		if strings.HasPrefix(trimmed, "DONE_CHK") {
+			text := strings.TrimSpace(strings.TrimPrefix(trimmed, "DONE_CHK"))
 			lines[i] = "    " + TodoDoneCheckboxStyle.Render("\u2611") + " " + TodoCompletedTextStyle.Render(text)
+			lastWasDone = true
 			continue
 		}
-		if strings.HasPrefix(trimmed, "\u2610 ") {
-			text := strings.TrimSpace(strings.TrimPrefix(trimmed, "\u2610"))
+		if strings.HasPrefix(trimmed, "OPEN_CHK") {
+			text := strings.TrimSpace(strings.TrimPrefix(trimmed, "OPEN_CHK"))
 			lines[i] = "    " + TodoOpenCheckboxStyle.Render("\u2610") + " " + text
+			lastWasDone = false
+			continue
+		}
+		if lastWasDone {
+			lines[i] = "      " + TodoCompletedTextStyle.Render(trimmed)
+		} else {
+			lines[i] = "      " + trimmed
 		}
 	}
+
 	return strings.Join(lines, "\n")
 }
-
 func renderedHeadingName(stripped string) (string, bool) {
 	trimmed := strings.TrimSpace(stripped)
 	if !strings.HasPrefix(trimmed, "▌ ") {

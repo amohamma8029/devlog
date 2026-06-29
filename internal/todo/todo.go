@@ -137,18 +137,34 @@ func todoCheckboxMarker(done bool) string {
 	return "- [ ] "
 }
 
+const markdownLineWidth = 72
+
 func FormatItemMarkdown(it Item) string {
 	marker := todoCheckboxMarker(it.Status == StatusDone)
-	lines := strings.Split(strings.TrimSpace(it.Text), "\n")
-	if len(lines) == 0 {
+	rawLines := strings.Split(strings.TrimSpace(it.Text), "\n")
+	if len(rawLines) == 0 {
 		return marker
 	}
+
+	var allLines []string
+	for _, line := range rawLines {
+		if len(line) <= markdownLineWidth {
+			allLines = append(allLines, line)
+		} else {
+			for len(line) > markdownLineWidth {
+				allLines = append(allLines, line[:markdownLineWidth])
+				line = line[markdownLineWidth:]
+			}
+			allLines = append(allLines, line)
+		}
+	}
+
+	indent := "  "
 	var b strings.Builder
 	b.WriteString(marker)
-	b.WriteString(lines[0])
+	b.WriteString(allLines[0])
 	b.WriteByte('\n')
-	indent := strings.Repeat(" ", len(marker))
-	for _, line := range lines[1:] {
+	for _, line := range allLines[1:] {
 		line = strings.TrimRight(line, " \t\r")
 		if line == "" {
 			b.WriteByte('\n')
