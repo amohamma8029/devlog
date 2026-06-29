@@ -905,7 +905,7 @@ func TestModelViewHelpOverlay(t *testing.T) {
 	m.Title = "Visible base title"
 	m.ShowHelp = true
 	m.Width = 80
-	m.Height = 40
+	m.Height = 42
 	v := m.View()
 	if !strings.Contains(v, "Press any key to dismiss") {
 		t.Error("Model.View() should show help when ShowHelp is true")
