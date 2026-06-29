@@ -76,6 +76,7 @@ func (p *CommandPalette) EnterMultiLine(isBlocker bool) {
 	p.MultiLineCursorRow = 0
 	p.MultiLineCursorCol = 0
 	p.MultiLineIsBlocker = isBlocker
+	p.MultiLineIsTodo = false
 	p.Input = ""
 	p.HasSelection = false
 }
@@ -168,33 +169,6 @@ func (p *CommandPalette) insertMultiLineBreak() {
 	p.MultiLineCursorCol = 0
 }
 
-func (p *CommandPalette) autoWrapCurrentLine() {
-	if p.width <= 0 {
-		return
-	}
-	token := "/note"
-	if p.MultiLineIsBlocker {
-		token = "/block"
-	}
-	if p.MultiLineIsTodo {
-		token = "Todo"
-	}
-	wrapAt := p.width - 4 - xansi.StringWidth(token) - 2
-	if wrapAt < 20 {
-		wrapAt = 20
-	}
-	line := p.MultiLineLines[p.MultiLineCursorRow]
-	if len(line) <= wrapAt {
-		return
-	}
-	rest := line[wrapAt:]
-	p.MultiLineLines[p.MultiLineCursorRow] = line[:wrapAt]
-	p.MultiLineLines = append(p.MultiLineLines[:p.MultiLineCursorRow+1],
-		append([]string{rest}, p.MultiLineLines[p.MultiLineCursorRow+1:]...)...)
-	p.MultiLineCursorRow++
-	p.MultiLineCursorCol = 0
-}
-
 func visiblePaletteCommands(p CommandPalette) []CommandEntry {
 	var filtered []CommandEntry
 	for _, cmd := range PaletteCommands {
@@ -214,6 +188,8 @@ func (p *CommandPalette) ClosePalette() {
 	p.HoverIndex = -1
 	p.MultiLine = false
 	p.MultiLineLines = nil
+	p.MultiLineIsBlocker = false
+	p.MultiLineIsTodo = false
 	p.HasSelection = false
 	p.InputHasSelection = false
 }
@@ -804,7 +780,6 @@ func (p *CommandPalette) handleMultiLineKey(msg tea.KeyMsg) (tea.Cmd, *CommandPa
 				line := p.MultiLineLines[p.MultiLineCursorRow]
 				p.MultiLineLines[p.MultiLineCursorRow] = line[:p.MultiLineCursorCol] + text + line[p.MultiLineCursorCol:]
 				p.MultiLineCursorCol += len(text)
-				p.autoWrapCurrentLine()
 			}
 		}
 		return nil, p
@@ -889,56 +864,118 @@ func (p CommandPalette) viewMultiLine() string {
 	tokenWidth := xansi.StringWidth(token) + 1 + MenuSelectedStyle.GetHorizontalFrameSize()
 	indent := strings.Repeat(" ", tokenWidth)
 
+	contentWidth := p.width - MenuBoxStyle.GetHorizontalFrameSize()
+	if contentWidth < 10 {
+		contentWidth = 10
+	}
+	wrapWidth := contentWidth - tokenWidth
+	if wrapWidth < 10 {
+		wrapWidth = 10
+	}
+
 	sRow, sCol, eRow, eCol := p.normalizedSelection()
 	hasSel := sRow >= 0
 
 	for i, line := range p.MultiLineLines {
-		if i == 0 {
-			b.WriteString(tokenStyle.Render(token))
-			b.WriteString(" ")
-		} else {
-			b.WriteString(MetadataStyle.Render(indent))
-		}
-
-		selFrom, selTo := -1, -1
-		if hasSel {
-			if i > sRow && i < eRow {
-				selFrom, selTo = 0, len(line)
-			} else if i == sRow && i == eRow {
-				selFrom, selTo = sCol, eCol
-			} else if i == sRow {
-				selFrom, selTo = sCol, len(line)
-			} else if i == eRow {
-				selFrom, selTo = 0, eCol
-			}
-		}
-
-		hasCursor := i == p.MultiLineCursorRow && p.CursorVisible
+		wrapped := wrapVisualLine(line, wrapWidth)
+		isCursorLine := i == p.MultiLineCursorRow && p.CursorVisible
 		cursorCol := p.MultiLineCursorCol
-
-		if !hasCursor && selFrom < 0 {
-			display := line
-			if display == "" {
-				display = " "
+		for wi, chunk := range wrapped {
+			if i > 0 || wi > 0 {
+				b.WriteByte('\n')
 			}
-			b.WriteString(ComposerBodyStyle.Render(display))
-		} else if !hasCursor {
-			if len(line) == 0 && selFrom == 0 && selTo == 0 {
-				b.WriteString(ComposerSelectionStyle.Render(" "))
+
+			isFirst := wi == 0
+			if i == 0 && isFirst {
+				b.WriteString(tokenStyle.Render(token))
+				b.WriteString(" ")
+			} else if isFirst {
+				b.WriteString(MetadataStyle.Render(indent))
 			} else {
-				b.WriteString(ComposerBodyStyle.Render(line[:selFrom]))
-				b.WriteString(ComposerSelectionStyle.Render(line[selFrom:selTo]))
-				b.WriteString(ComposerBodyStyle.Render(line[selTo:]))
+				b.WriteString(indent)
 			}
-		} else {
-			renderLineWithCursorAndSelection(&b, line, cursorCol, selFrom, selTo)
-		}
 
-		b.WriteByte('\n')
+			chunkStart := wi * wrapWidth
+			chunkCol := cursorCol - chunkStart
+			cursorInThisChunk := isCursorLine && chunkCol >= 0 && chunkCol < len(chunk)
+			if cursorInThisChunk && chunkCol > len(chunk) {
+				chunkCol = len(chunk)
+			}
+
+			localSelFrom, localSelTo := -1, -1
+			if hasSel {
+				if i > sRow && i < eRow {
+					localSelFrom, localSelTo = 0, len(chunk)
+				} else if i == sRow && i == eRow {
+					oFrom := sCol - chunkStart
+					oTo := eCol - chunkStart
+					if oTo > 0 && oFrom < len(chunk) {
+						if oFrom < 0 {
+							oFrom = 0
+						}
+						if oTo > len(chunk) {
+							oTo = len(chunk)
+						}
+						localSelFrom, localSelTo = oFrom, oTo
+					}
+				} else if i == sRow {
+					oFrom := sCol - chunkStart
+					if oFrom < len(chunk) {
+						if oFrom < 0 {
+							oFrom = 0
+						}
+						localSelFrom, localSelTo = oFrom, len(chunk)
+					}
+				} else if i == eRow {
+					oTo := eCol - chunkStart
+					if oTo > 0 {
+						if oTo > len(chunk) {
+							oTo = len(chunk)
+						}
+						localSelFrom, localSelTo = 0, oTo
+					}
+				}
+			}
+
+			if cursorInThisChunk {
+				renderLineWithCursorAndSelection(&b, chunk, chunkCol, localSelFrom, localSelTo)
+			} else if localSelFrom >= 0 && localSelFrom < localSelTo {
+				if len(chunk) == 0 && localSelFrom == 0 && localSelTo == 0 {
+					b.WriteString(ComposerSelectionStyle.Render(" "))
+				} else {
+					b.WriteString(ComposerBodyStyle.Render(chunk[:localSelFrom]))
+					b.WriteString(ComposerSelectionStyle.Render(chunk[localSelFrom:localSelTo]))
+					b.WriteString(ComposerBodyStyle.Render(chunk[localSelTo:]))
+				}
+			} else {
+				display := chunk
+				if display == "" {
+					display = " "
+				}
+				b.WriteString(ComposerBodyStyle.Render(display))
+			}
+		}
 	}
 
-	b.WriteString(HintStyle.Render(composerShortcutHint(p.width - MenuBoxStyle.GetHorizontalFrameSize())))
+	b.WriteByte('\n')
+	b.WriteString(HintStyle.Render(composerShortcutHint(contentWidth)))
 	return MenuBoxStyle.Render(b.String())
+}
+
+func wrapVisualLine(line string, width int) []string {
+	if width < 1 {
+		return []string{line}
+	}
+	runes := []rune(line)
+	var chunks []string
+	for len(runes) > width {
+		chunks = append(chunks, string(runes[:width]))
+		runes = runes[width:]
+	}
+	if len(runes) > 0 || len(chunks) == 0 {
+		chunks = append(chunks, string(runes))
+	}
+	return chunks
 }
 
 func renderLineWithCursorAndSelection(b *strings.Builder, line string, cursorCol int, selFrom, selTo int) {

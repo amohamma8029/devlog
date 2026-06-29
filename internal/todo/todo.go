@@ -129,3 +129,34 @@ func (it Item) Validate() error {
 	}
 	return nil
 }
+
+func todoCheckboxMarker(done bool) string {
+	if done {
+		return "- [x] "
+	}
+	return "- [ ] "
+}
+
+func FormatItemMarkdown(it Item) string {
+	marker := todoCheckboxMarker(it.Status == StatusDone)
+	lines := strings.Split(strings.TrimSpace(it.Text), "\n")
+	if len(lines) == 0 {
+		return marker
+	}
+	var b strings.Builder
+	b.WriteString(marker)
+	b.WriteString(lines[0])
+	b.WriteByte('\n')
+	indent := strings.Repeat(" ", len(marker))
+	for _, line := range lines[1:] {
+		line = strings.TrimRight(line, " \t\r")
+		if line == "" {
+			b.WriteByte('\n')
+			continue
+		}
+		b.WriteString(indent)
+		b.WriteString(line)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
