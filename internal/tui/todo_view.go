@@ -545,13 +545,13 @@ func formatTodoListMarkdown(items []todo.Item) string {
 	if len(doneItems) > 0 {
 		b.WriteString("\n**Completed**\n\n")
 		for _, item := range doneItems {
-			fmt.Fprintf(&b, "- [x] %s\n", item.Text)
+			b.WriteString(todo.FormatItemMarkdown(item))
 		}
 	}
 	if len(openItems) > 0 {
 		b.WriteString("\n**Open**\n\n")
 		for _, item := range openItems {
-			fmt.Fprintf(&b, "- [ ] %s\n", item.Text)
+			b.WriteString(todo.FormatItemMarkdown(item))
 		}
 	}
 	return b.String()

@@ -180,16 +180,15 @@ func FormatTodosSection(items []todo.Item) string {
 		return ""
 	}
 
-	var completed, open []string
+	var completed, open []todo.Item
 	for _, item := range items {
-		text := strings.TrimSpace(item.Text)
-		if text == "" {
-			text = "(empty)"
+		if strings.TrimSpace(item.Text) == "" {
+			item.Text = "(empty)"
 		}
 		if item.Status == todo.StatusDone {
-			completed = append(completed, text)
+			completed = append(completed, item)
 		} else {
-			open = append(open, text)
+			open = append(open, item)
 		}
 	}
 
@@ -197,35 +196,18 @@ func FormatTodosSection(items []todo.Item) string {
 	buf.WriteString("## Todo List\n")
 	if len(completed) > 0 {
 		buf.WriteString("\n**Completed**\n\n")
-		for _, text := range completed {
-			writeTodoLine(&buf, true, text)
+		for _, item := range completed {
+			buf.WriteString(todo.FormatItemMarkdown(item))
 		}
 	}
 	if len(open) > 0 {
 		buf.WriteString("\n**Open**\n\n")
-		for _, text := range open {
-			writeTodoLine(&buf, false, text)
+		for _, item := range open {
+			buf.WriteString(todo.FormatItemMarkdown(item))
 		}
 	}
 	buf.WriteByte('\n')
 	return buf.String()
-}
-
-func writeTodoLine(buf *strings.Builder, done bool, text string) {
-	marker := "- [ ] "
-	if done {
-		marker = "- [x] "
-	}
-	lines := strings.Split(text, "\n")
-	buf.WriteString(marker)
-	buf.WriteString(lines[0])
-	buf.WriteByte('\n')
-	indent := strings.Repeat(" ", len(marker))
-	for _, line := range lines[1:] {
-		buf.WriteString(indent)
-		buf.WriteString(line)
-		buf.WriteByte('\n')
-	}
 }
 
 // ── Diff parsing ─────────────────────────────────────────────────────────────
