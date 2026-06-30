@@ -498,11 +498,10 @@ func addTodoItemSeparation(out *[]string) {
 	for i := len(*out) - 1; i >= 0; i-- {
 		trimmed := strings.TrimSpace((*out)[i])
 		if trimmed == "" {
-			continue
-		}
-		if strings.HasPrefix(trimmed, "DONE_CHK") || strings.HasPrefix(trimmed, "OPEN_CHK") {
-			*out = append(*out, "")
 			return
+		}
+		if trimmed != "**Completed**" && trimmed != "**Open**" {
+			*out = append(*out, "")
 		}
 		return
 	}

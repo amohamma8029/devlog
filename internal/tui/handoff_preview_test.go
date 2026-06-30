@@ -937,6 +937,21 @@ func TestTransformTodoListSectionInjectsCheckboxMarkers(t *testing.T) {
 	}
 }
 
+func TestTransformTodoListSectionSeparatesMultilineItems(t *testing.T) {
+	input := "## Todo List\n\n**Completed**\n\n- [x] fix bug where todo list does not transfer over to new session when\n  you close one\n- [x] add entry composer type input to todo for\n  multi-line todo items/messages\n\n**Open**\n\n- [ ] verify preview rendering\n  after multiline wrapping\n- [ ] confirm saved markdown stays semantic\n"
+	result := transformTodoListSection(input)
+
+	if !strings.Contains(result, "  you close one\n\nDONE_CHKadd entry composer") {
+		t.Fatalf("expected completed multiline item to be separated from the next item, got:\n%s", result)
+	}
+	if !strings.Contains(result, "  after multiline wrapping\n\nOPEN_CHKconfirm saved markdown") {
+		t.Fatalf("expected open multiline item to be separated from the next item, got:\n%s", result)
+	}
+	if strings.Contains(result, "you close one\nDONE_CHK") || strings.Contains(result, "after multiline wrapping\nOPEN_CHK") {
+		t.Fatalf("multiline todo continuation should not run into the next marker, got:\n%s", result)
+	}
+}
+
 func TestTransformTodoListSectionSkipsNonTodoSections(t *testing.T) {
 	input := "## Summary\n\nProgress: some note.\n\n## Todo List\n\n**Open**\n\n- [ ] my todo\n\n## Changes\n\nNo code changes.\n"
 	result := transformTodoListSection(input)
@@ -1020,6 +1035,55 @@ func TestRenderHandoffBodyTodoListUsesCheckboxRowsWithoutBullets(t *testing.T) {
 	}
 	if !strings.Contains(stripped, "    ☑ removed stale entries") || !strings.Contains(stripped, "    ☐ follow up from handoff") {
 		t.Fatalf("todo rows should be indented, got:\n%s", stripped)
+	}
+}
+
+func TestRenderHandoffBodyTodoListKeepsMultilineItemsSeparate(t *testing.T) {
+	m := testModel()
+	m.Width = 56
+	m.HandoffContent = "# Handoff: feat/test -- session (Alice) [active]\n\n## Summary\nProgress: done.\n\n## Todo List\n\n**Completed**\n\n- [x] fix bug where todo list does not transfer over to new session when\n  you close one\n- [x] add entry composer type input to todo for\n  multi-line todo items/messages\n\n**Open**\n\n- [ ] verify preview rendering\n  after multiline wrapping\n- [ ] confirm saved markdown stays semantic\n\n## Changes\nNo code changes.\n"
+
+	rendered := renderHandoffBody(m)
+	stripped := xansi.Strip(rendered)
+	if strings.Contains(stripped, "DONE_CHK") || strings.Contains(stripped, "OPEN_CHK") {
+		t.Fatalf("todo preview should not leak internal checkbox markers, got:\n%s", stripped)
+	}
+	if strings.Contains(stripped, "you close one add entry") {
+		t.Fatalf("multiline completed todo should not merge with next item, got:\n%s", stripped)
+	}
+	if strings.Contains(stripped, "after multiline wrapping confirm saved") {
+		t.Fatalf("multiline open todo should not merge with next item, got:\n%s", stripped)
+	}
+
+	checkboxLines := 0
+	for _, line := range strings.Split(stripped, "\n") {
+		if strings.Contains(line, "☑") || strings.Contains(line, "☐") {
+			checkboxLines++
+			if strings.Count(line, "☑")+strings.Count(line, "☐") != 1 {
+				t.Fatalf("each todo row should contain one checkbox, got line %q in:\n%s", line, stripped)
+			}
+		}
+	}
+	if checkboxLines != 4 {
+		t.Fatalf("expected 4 checkbox rows, got %d in:\n%s", checkboxLines, stripped)
+	}
+}
+
+func TestRenderHandoffBodyTodoListDoesNotSplitWordsFromSourceWrapping(t *testing.T) {
+	m := testModel()
+	m.Width = 56
+	m.HandoffContent = "# Handoff: feat/test -- session (Alice) [active]\n\n## Summary\nProgress: done.\n\n## Todo List\n\n**Completed**\n\n- [x] fix bug where todo list does not transfer over to new session when you close one\n\n## Changes\nNo code changes.\n"
+
+	rendered := renderHandoffBody(m)
+	stripped := xansi.Strip(rendered)
+	if strings.Contains(stripped, "DONE_CHK") || strings.Contains(stripped, "OPEN_CHK") {
+		t.Fatalf("todo preview should not leak internal checkbox markers, got:\n%s", stripped)
+	}
+	if strings.Contains(stripped, "c lose") {
+		t.Fatalf("todo preview should not split the word close, got:\n%s", stripped)
+	}
+	if !strings.Contains(stripped, "close one") {
+		t.Fatalf("todo preview should preserve the word close in wrapped output, got:\n%s", stripped)
 	}
 }
 
