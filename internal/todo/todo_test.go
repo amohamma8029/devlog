@@ -226,6 +226,34 @@ func TestFilterIncludesRepoWideTodos(t *testing.T) {
 	}
 }
 
+func TestFormatItemMarkdownDoesNotHardWrapLongLine(t *testing.T) {
+	it := validOpen()
+	it.Text = "fix bug where todo list does not transfer over to new session when you close one"
+
+	got := FormatItemMarkdown(it)
+	want := "- [ ] fix bug where todo list does not transfer over to new session when you close one\n"
+	if got != want {
+		t.Fatalf("FormatItemMarkdown() = %q, want %q", got, want)
+	}
+	if strings.Contains(got, "c\n  lose") {
+		t.Fatalf("FormatItemMarkdown should not split words with fixed-width wrapping, got %q", got)
+	}
+}
+
+func TestFormatItemMarkdownIndentsUserMultilineText(t *testing.T) {
+	it := validOpen()
+	it.Status = StatusDone
+	completed := time.Date(2026, 1, 15, 15, 0, 0, 0, time.UTC)
+	it.Completed = &completed
+	it.Text = "first line\nsecond line\n\nthird line"
+
+	got := FormatItemMarkdown(it)
+	want := "- [x] first line\n  second line\n\n  third line\n"
+	if got != want {
+		t.Fatalf("FormatItemMarkdown() = %q, want %q", got, want)
+	}
+}
+
 func validOpen() Item {
 	return Item{
 		ID:        "opaque-alpha",
