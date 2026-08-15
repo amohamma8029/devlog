@@ -1,9 +1,9 @@
 package main
 
 import (
-	internalgit "github.com/amo/devlog/internal/git"
-	"github.com/amo/devlog/internal/store"
-	"github.com/amo/devlog/internal/tui"
+	internalgit "github.com/amohamma8029/devlog/internal/git"
+	"github.com/amohamma8029/devlog/internal/store"
+	"github.com/amohamma8029/devlog/internal/tui"
 	tea "github.com/charmbracelet/bubbletea"
 )
 

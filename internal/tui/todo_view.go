@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amo/devlog/internal/handoff"
-	"github.com/amo/devlog/internal/todo"
+	"github.com/amohamma8029/devlog/internal/handoff"
+	"github.com/amohamma8029/devlog/internal/todo"
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	xansi "github.com/charmbracelet/x/ansi"

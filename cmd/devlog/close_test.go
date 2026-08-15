@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amo/devlog/internal/store"
+	"github.com/amohamma8029/devlog/internal/store"
 )
 
 func TestCloseCommandClosesActiveSession(t *testing.T) {

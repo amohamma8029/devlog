@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 
-	internalgit "github.com/amo/devlog/internal/git"
-	"github.com/amo/devlog/internal/session"
-	"github.com/amo/devlog/internal/store"
+	internalgit "github.com/amohamma8029/devlog/internal/git"
+	"github.com/amohamma8029/devlog/internal/session"
+	"github.com/amohamma8029/devlog/internal/store"
 	"github.com/spf13/cobra"
 )
 

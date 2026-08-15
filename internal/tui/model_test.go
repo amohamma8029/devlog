@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	internalconfig "github.com/amo/devlog/internal/config"
-	"github.com/amo/devlog/internal/store"
-	"github.com/amo/devlog/internal/todo"
+	internalconfig "github.com/amohamma8029/devlog/internal/config"
+	"github.com/amohamma8029/devlog/internal/store"
+	"github.com/amohamma8029/devlog/internal/todo"
 	tea "github.com/charmbracelet/bubbletea"
 )
 

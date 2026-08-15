@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amo/devlog/internal/store"
-	"github.com/amo/devlog/internal/todo"
+	"github.com/amohamma8029/devlog/internal/store"
+	"github.com/amohamma8029/devlog/internal/todo"
 	xansi "github.com/charmbracelet/x/ansi"
 )
 

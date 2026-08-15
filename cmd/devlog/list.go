@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	internalconfig "github.com/amo/devlog/internal/config"
-	internalgit "github.com/amo/devlog/internal/git"
-	"github.com/amo/devlog/internal/store"
+	internalconfig "github.com/amohamma8029/devlog/internal/config"
+	internalgit "github.com/amohamma8029/devlog/internal/git"
+	"github.com/amohamma8029/devlog/internal/store"
 	"github.com/mattn/go-runewidth"
 	"github.com/spf13/cobra"
 )

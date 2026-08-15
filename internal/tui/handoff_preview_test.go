@@ -8,7 +8,7 @@ import (
 
 	xansi "github.com/charmbracelet/x/ansi"
 
-	internalconfig "github.com/amo/devlog/internal/config"
+	internalconfig "github.com/amohamma8029/devlog/internal/config"
 )
 
 func TestIsValidFilename(t *testing.T) {

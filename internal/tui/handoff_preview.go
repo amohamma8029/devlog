@@ -16,7 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	xansi "github.com/charmbracelet/x/ansi"
 
-	internalconfig "github.com/amo/devlog/internal/config"
+	internalconfig "github.com/amohamma8029/devlog/internal/config"
 )
 
 const (

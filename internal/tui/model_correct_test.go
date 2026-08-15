@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	internalconfig "github.com/amo/devlog/internal/config"
-	"github.com/amo/devlog/internal/store"
+	internalconfig "github.com/amohamma8029/devlog/internal/config"
+	"github.com/amohamma8029/devlog/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
