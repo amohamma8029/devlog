@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	internalconfig "github.com/amo/devlog/internal/config"
+	internalconfig "github.com/amohamma8029/devlog/internal/config"
 	"github.com/spf13/cobra"
 )
 

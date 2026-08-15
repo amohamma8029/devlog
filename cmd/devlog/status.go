@@ -5,11 +5,11 @@ import (
 	"strings"
 	"time"
 
-	internalconfig "github.com/amo/devlog/internal/config"
-	internalgit "github.com/amo/devlog/internal/git"
-	"github.com/amo/devlog/internal/session"
-	"github.com/amo/devlog/internal/store"
-	"github.com/amo/devlog/internal/todo"
+	internalconfig "github.com/amohamma8029/devlog/internal/config"
+	internalgit "github.com/amohamma8029/devlog/internal/git"
+	"github.com/amohamma8029/devlog/internal/session"
+	"github.com/amohamma8029/devlog/internal/store"
+	"github.com/amohamma8029/devlog/internal/todo"
 	"github.com/spf13/cobra"
 )
 

@@ -1,4 +1,4 @@
-module github.com/amo/devlog
+module github.com/amohamma8029/devlog
 
 go 1.26.2
 

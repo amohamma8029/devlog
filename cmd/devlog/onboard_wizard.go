@@ -10,7 +10,7 @@ import (
 	"time"
 	_ "time/tzdata"
 
-	"github.com/amo/devlog/internal/config"
+	"github.com/amohamma8029/devlog/internal/config"
 )
 
 var errWizardAborted = errors.New("wizard aborted")

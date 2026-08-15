@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amo/devlog/internal/todo"
+	"github.com/amohamma8029/devlog/internal/todo"
 )
 
 func TestRootCommandIncludesTodoCommand(t *testing.T) {

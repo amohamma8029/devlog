@@ -30,7 +30,45 @@ func TestRootCommandLaunchesTUIWithoutArgs(t *testing.T) {
 	}
 }
 
+func TestResolveVersionPrefersInjectedVersion(t *testing.T) {
+	got := resolveVersion("v1.2.3", "v0.1.0")
+	if got != "1.2.3" {
+		t.Fatalf("expected normalized injected version to win, got %q", got)
+	}
+}
+
+func TestResolveVersionUsesModuleVersion(t *testing.T) {
+	got := resolveVersion("", "v1.0.0")
+	if got != "1.0.0" {
+		t.Fatalf("expected normalized module version, got %q", got)
+	}
+}
+
+func TestResolveVersionUsesDevelopmentFallback(t *testing.T) {
+	cases := []struct {
+		name          string
+		injected      string
+		moduleVersion string
+		want          string
+	}{
+		{name: "empty metadata", injected: "", moduleVersion: "", want: "dev"},
+		{name: "development module metadata", injected: "", moduleVersion: "(devel)", want: "dev"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveVersion(tc.injected, tc.moduleVersion)
+			if got != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
+
 func TestRootCommandShowsVersionWhenFlagSet(t *testing.T) {
+	originalVersion := version
+	version = "1.2.3"
+	defer func() { version = originalVersion }()
+
 	original := launchTUI
 	defer func() { launchTUI = original }()
 
@@ -52,7 +90,7 @@ func TestRootCommandShowsVersionWhenFlagSet(t *testing.T) {
 		t.Fatal("expected version output, got empty")
 	}
 	assertContains(t, out.String(), "devlog")
-	assertContains(t, out.String(), "version: "+version)
+	assertContains(t, out.String(), "version: 1.2.3")
 }
 
 func TestRootCommandRuntimeErrorDoesNotPrintUsage(t *testing.T) {

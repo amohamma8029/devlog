@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amo/devlog/internal/config"
+	"github.com/amohamma8029/devlog/internal/config"
 )
 
 func TestParseYesNoDefault(t *testing.T) {

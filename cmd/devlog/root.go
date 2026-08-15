@@ -2,14 +2,35 @@ package main
 
 import (
 	"fmt"
+	"runtime/debug"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
 
-const version = "0.1.0"
+var version string
 
 func Execute() error {
 	return newRootCommand().Execute()
+}
+
+func displayedVersion() string {
+	moduleVersion := ""
+	if info, ok := debug.ReadBuildInfo(); ok {
+		moduleVersion = info.Main.Version
+	}
+	return resolveVersion(version, moduleVersion)
+}
+
+func resolveVersion(injectedVersion, moduleVersion string) string {
+	candidate := injectedVersion
+	if candidate == "" {
+		candidate = moduleVersion
+	}
+	if candidate == "" || candidate == "(devel)" {
+		return "dev"
+	}
+	return strings.TrimPrefix(candidate, "v")
 }
 
 func newRootCommand() *cobra.Command {
@@ -28,7 +49,7 @@ check status to see where things stand, and close when done. Sessions are
 stored as Markdown files under .devlog/sessions/.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if showVersion {
-				_, err := fmt.Fprint(cmd.OutOrStdout(), renderCLIConfirmation("devlog", cliField{"version", version}))
+				_, err := fmt.Fprint(cmd.OutOrStdout(), renderCLIConfirmation("devlog", cliField{"version", displayedVersion()}))
 				return err
 			}
 

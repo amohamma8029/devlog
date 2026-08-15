@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	internalgit "github.com/amo/devlog/internal/git"
-	sessionstore "github.com/amo/devlog/internal/store"
-	"github.com/amo/devlog/internal/todo"
+	internalgit "github.com/amohamma8029/devlog/internal/git"
+	sessionstore "github.com/amohamma8029/devlog/internal/store"
+	"github.com/amohamma8029/devlog/internal/todo"
 	"github.com/spf13/cobra"
 )
 

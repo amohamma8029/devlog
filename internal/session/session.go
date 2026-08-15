@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/amo/devlog/internal/store"
+	"github.com/amohamma8029/devlog/internal/store"
 )
 
 var errNoActiveSession = errors.New(`no active session is in progress. Run "devlog open <message>" to start one.`)
