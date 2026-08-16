@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>devlog</id>
+    <version>1.0.0</version>
+    <title>devlog</title>
+    <authors>Ayman Mohammad, Vincent Tat</authors>
+    <owners>Ayman Mohammad</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectUrl>https://github.com/amohamma8029/devlog</projectUrl>
+    <projectSourceUrl>https://github.com/amohamma8029/devlog</projectSourceUrl>
+    <packageSourceUrl>https://github.com/amohamma8029/devlog/tree/main/packaging/chocolatey</packageSourceUrl>
+    <licenseUrl>https://github.com/amohamma8029/devlog/blob/main/LICENSE</licenseUrl>
+    <docsUrl>https://github.com/amohamma8029/devlog</docsUrl>
+    <description>devlog records structured coding session journals inside a git repository. Install without Go and keep context, blockers, and handoffs for solo development or async coding partners. This package is validation source: the install hashes must be replaced from the public release before submission.</description>
+    <summary>Record structured coding session journals inside git repos.</summary>
+    <tags>devlog journal log session cli git</tags>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
