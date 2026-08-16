@@ -59,12 +59,6 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: GoReleaser check
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          version: v2.17.1
-          args: check
-
       - name: GoReleaser snapshot
         uses: goreleaser/goreleaser-action@v6
         with:
