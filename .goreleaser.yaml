@@ -3,7 +3,8 @@ version: 2
 project_name: devlog
 
 builds:
-  - main: ./cmd/devlog
+  - id: devlog
+    main: ./cmd/devlog
     binary: devlog
     env:
       - CGO_ENABLED=0
@@ -19,7 +20,8 @@ builds:
       - -X main.version={{ .Version }}
 
 archives:
-  - name_template: devlog_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+  - id: devlog
+    name_template: devlog_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     formats:
       - tar.gz
     format_overrides:
@@ -32,3 +34,51 @@ checksum:
 
 release:
   draft: false
+  github:
+    owner: amohamma8029
+    name: devlog
+
+nfpms:
+  - id: devlog-packages
+    ids:
+      - devlog
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/bin
+    homepage: https://github.com/amohamma8029/devlog
+    description: Record structured coding session journals inside git repos.
+    maintainer: Ayman Mohammad <amohamma8029@users.noreply.github.com>
+    license: MIT
+    release: 1
+    file_name_template: devlog_{{ .Version }}_linux_{{ .Arch }}.{{ .Format }}
+
+brews:
+  - name: devlog
+    ids:
+      - devlog
+    homepage: https://github.com/amohamma8029/devlog
+    description: Record structured coding session journals inside git repos.
+    license: MIT
+    skip_upload: auto
+    directory: Formula
+    test: |
+      system "#{bin}/devlog", "--version"
+    repository:
+      owner: amohamma8029
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+
+scoops:
+  - name: devlog
+    ids:
+      - devlog
+    homepage: https://github.com/amohamma8029/devlog
+    description: Record structured coding session journals inside git repos.
+    license: MIT
+    skip_upload: auto
+    repository:
+      owner: amohamma8029
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
