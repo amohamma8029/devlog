@@ -4,7 +4,7 @@
 
 A CLI/TUI tool for structured session journals inside git repos. Record context, notes, blockers, and handoffs as you work so a partner, human or AI, can pick up exactly where you left off.
 
-![devlog demo](docs/assets/demo.gif)
+<p><img src="docs/assets/demo.gif" width="600" alt="devlog demo"></p>
 
 ## Why devlog?
 
