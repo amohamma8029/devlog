@@ -104,6 +104,73 @@ See [docs/compatibility.md](./docs/compatibility.md) for supported platforms, re
 
 See [AGENTS.md](./AGENTS.md) for the full project conventions, build commands, test instructions, and architecture boundaries.
 
+<<<<<<< HEAD
 ## License
 
 [MIT](./LICENSE)
+=======
+## Agent skills
+
+devlog ships a skill that teaches coding agents (Claude Code, opencode, Cursor) the full devlog session lifecycle — pick up context, open a session, log notes and blockers, generate a handoff, and present it in the final reply. The agent never closes sessions; the human reviews and closes them.
+
+### Install with the CLI
+
+```bash
+# One tool
+devlog skill install claude
+devlog skill install opencode
+devlog skill install cursor
+
+# All three at once
+devlog skill install all
+
+# Overwrite an existing install
+devlog skill install claude --force
+
+# Remove
+devlog skill uninstall claude
+devlog skill uninstall all
+```
+
+The command writes `SKILL.md` into the tool's skill directory:
+
+| Tool | Path |
+|------|------|
+| Claude Code | `~/.claude/skills/devlog/SKILL.md` |
+| opencode | `~/.config/opencode/skills/devlog/SKILL.md` |
+| Cursor | `~/.cursor/skills/devlog/SKILL.md` |
+
+Restart the tool after installing — skills load at startup.
+
+### Install manually
+
+If `devlog skill install` isn't available (no binary, sandboxed environment), copy the embedded skill file into the tool's skill directory by hand.
+
+The skill source lives at [`internal/skill/SKILL.md`](./internal/skill/SKILL.md) in this repo. It is the single source of truth — the `devlog skill install` command embeds this exact file via `go:embed`.
+
+1. Create the skill directory for your tool:
+   ```bash
+   # Claude Code
+   mkdir -p ~/.claude/skills/devlog
+
+   # opencode
+   mkdir -p ~/.config/opencode/skills/devlog
+
+   # Cursor
+   mkdir -p ~/.cursor/skills/devlog
+   ```
+
+2. Copy the file into it:
+   ```bash
+   # From a clone of this repo
+   cp internal/skill/SKILL.md ~/.claude/skills/devlog/SKILL.md
+
+   # Or download just the file (replace <branch> with main or a tag)
+   curl -fsSL https://raw.githubusercontent.com/amohmma8029/devlog/<branch>/internal/skill/SKILL.md \
+     -o ~/.claude/skills/devlog/SKILL.md
+   ```
+
+3. Restart the tool.
+
+The file must be named `SKILL.md` (uppercase) and live in a `devlog/` folder under the tool's skill root. Both are required — opencode and Claude Code filter out skills without matching folder/file names.
+>>>>>>> 9748985 (feat(skill): refine skill content from eval rounds and add install docs)
