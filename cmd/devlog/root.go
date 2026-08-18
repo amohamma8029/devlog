@@ -76,6 +76,7 @@ stored as Markdown files under .devlog/sessions/.`,
 	cmd.AddCommand(newConfigCommand())
 	cmd.AddCommand(newEditCommand())
 	cmd.AddCommand(newTodoCommand())
+	cmd.AddCommand(newSkillCommand())
 
 	return cmd
 }

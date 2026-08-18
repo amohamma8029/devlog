@@ -86,6 +86,7 @@ var rootHelpGroups = []struct {
 	{"Session workflow", []string{"open", "note", "block", "status", "close"}},
 	{"Review", []string{"list", "handoff"}},
 	{"Tasks", []string{"todo"}},
+	{"Agent integration", []string{"skill"}},
 }
 
 func renderCLIConfirmation(title string, fields ...cliField) string {
