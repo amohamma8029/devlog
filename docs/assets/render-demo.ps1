@@ -2034,7 +2034,7 @@ function Invoke-ProbeFailurePaths {
 function Invoke-Render {
     param([string]$Flat)
     $gif = Join-Path $AssetsDir "demo.gif"
-    $filter = "[0:v]fps=50,scale=960:900,split[z1][z2];[z1]palettegen=stats_mode=diff:reserve_transparent=0[p];[z2][p]paletteuse=dither=bayer:bayer_scale=5"
+    $filter = "[0:v]fps=50,scale=960:900,split[z1][z2];[z1]palettegen=stats_mode=diff[p];[z2][p]paletteuse=dither=bayer:bayer_scale=5"
     $renderErr = & $ffmpegPath -y -v error -i $Flat -filter_complex $filter -loop 0 $gif 2>&1
     if ($LASTEXITCODE -ne 0) { throw "gif render failed: $renderErr" }
     Register-Path $gif
@@ -2244,7 +2244,7 @@ function Invoke-Main {
             Invoke-MediaChecks $gif $png
             Invoke-LinkCheck
             Get-PostStateChecks
-            Remove-Recorded
+            Remove-Recorded -KeepFlat
             Write-Step "render complete"
         }
     }
