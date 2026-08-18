@@ -15,7 +15,7 @@ func TestSkillContentIsNonEmpty(t *testing.T) {
 }
 
 func TestSkillContentHasFrontmatter(t *testing.T) {
-	content := SkillContent()
+	content := strings.ReplaceAll(SkillContent(), "\r\n", "\n")
 	if !strings.HasPrefix(content, "---\n") {
 		t.Fatal("SkillContent() must start with YAML frontmatter (---)")
 	}
