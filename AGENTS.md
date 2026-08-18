@@ -27,6 +27,7 @@ internal/store/      — File I/O for .devlog/sessions/*.md (YAML front-matter +
 internal/handoff/    — Summary artifact generation from session data
 internal/git/        — Repo root detection, branch name, author identity from git config
 internal/tui/        — Bubble Tea interactive interface
+internal/skill/      — Agent skill installation (embeds SKILL.md, writes to tool skill directories)
 
 ## CODE STYLE
 # Conventions — concrete rules beat vague descriptions
@@ -96,7 +97,7 @@ Never push directly to main. Feature branch merges to main only when end-to-end 
 
 # Never
 - Auto-commit, auto-stage, or run any git mutation (add, commit, push, etc.)
-- Read from or write to files outside the repo root, except `~/.config/devlog/config.yml` for global config
+- Read from or write to files outside the repo root, except `~/.config/devlog/config.yml` for global config and `~/.claude/skills/devlog/`, `~/.config/opencode/skills/devlog/`, `~/.cursor/skills/devlog/` for `devlog skill install`
 - Hardcode author identity or paths
 - Modify generated binary artifacts by hand
 
