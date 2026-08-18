@@ -1,0 +1,221 @@
+name: Release Preflight
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: GoReleaser snapshot
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: v2.17.1
+          args: release --snapshot --clean
+
+      - name: Upload snapshot dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshot-dist
+          path: dist
+          retention-days: 1
+
+  artifact-inventory:
+    needs: snapshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download snapshot dist
+        uses: actions/download-artifact@v4
+        with:
+          name: snapshot-dist
+          path: dist
+
+      - name: Verify artifact inventory and checksums
+        run: bash scripts/preflight/verify-artifacts.sh dist
+
+  archive-matrix:
+    needs: snapshot
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            ext: tar.gz
+          - os: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            ext: tar.gz
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            ext: tar.gz
+            # macOS 13 runners are EOL (Dec 2025); amd64 archives run on the
+            # arm64 runner via Rosetta 2, which GitHub arm64 runners ship with.
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            ext: tar.gz
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            ext: zip
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download snapshot dist
+        uses: actions/download-artifact@v4
+        with:
+          name: snapshot-dist
+          path: dist
+
+      - name: Extract archive and run documented workflow (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=$(find dist -maxdepth 1 -name "devlog_*_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.ext }}" | head -n1)
+          test -n "$archive"
+          mkdir -p run
+          tar -xzf "$archive" -C run
+          bash scripts/preflight/run-documented-workflow.sh "run/devlog"
+
+      - name: Extract archive and run documented workflow (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Get-ChildItem -LiteralPath dist -Filter "devlog_*_${{ matrix.goos }}_${{ matrix.goarch }}.${{ matrix.ext }}" | Select-Object -First 1
+          if (-not $archive) { throw 'archive not found in dist' }
+          Expand-Archive -LiteralPath $archive.FullName -DestinationPath run
+          pwsh scripts/preflight/run-documented-workflow.ps1 -Binary (Join-Path (Resolve-Path run).Path 'devlog.exe')
+
+  linux-package-matrix:
+    needs: snapshot
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goarch: amd64
+            format: deb
+            image: ubuntu-latest
+          - os: ubuntu-24.04-arm
+            goarch: arm64
+            format: deb
+            image: ubuntu-latest
+          - os: ubuntu-latest
+            goarch: amd64
+            format: rpm
+            image: fedora:latest
+          - os: ubuntu-24.04-arm
+            goarch: arm64
+            format: rpm
+            image: fedora:latest
+          - os: ubuntu-latest
+            goarch: amd64
+            format: apk
+            image: alpine:3.20
+          - os: ubuntu-24.04-arm
+            goarch: arm64
+            format: apk
+            image: alpine:3.20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download snapshot dist
+        uses: actions/download-artifact@v4
+        with:
+          name: snapshot-dist
+          path: dist
+
+      - name: Install .deb and run documented workflow
+        if: matrix.format == 'deb'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo dpkg -i dist/devlog_*_linux_${{ matrix.goarch }}.deb
+          bash scripts/preflight/run-documented-workflow.sh /usr/bin/devlog
+
+      - name: Install .rpm in fedora container and run documented workflow
+        if: matrix.format == 'rpm'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD/dist:/dist:ro" \
+            -v "$PWD/scripts:/scripts:ro" \
+            ${{ matrix.image }} \
+            bash -c 'dnf install -y -q git /dist/devlog_*_linux_${{ matrix.goarch }}.rpm && bash /scripts/preflight/run-documented-workflow.sh /usr/bin/devlog'
+
+      - name: Install .apk in alpine container and run documented workflow
+        if: matrix.format == 'apk'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$PWD/dist:/dist:ro" \
+            -v "$PWD/scripts:/scripts:ro" \
+            ${{ matrix.image }} \
+            sh -c 'apk add --no-cache git bash && apk add --allow-untrusted --no-cache /dist/devlog_*_linux_${{ matrix.goarch }}.apk && bash /scripts/preflight/run-documented-workflow.sh /usr/bin/devlog'
+
+  powershell-installer:
+    needs: snapshot
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download snapshot dist
+        uses: actions/download-artifact@v4
+        with:
+          name: snapshot-dist
+          path: dist
+
+      - name: Extract snapshot archive and run documented workflow
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Get-ChildItem -LiteralPath dist -Filter 'devlog_*_windows_amd64.zip' | Select-Object -First 1
+          if (-not $archive) { throw 'archive not found in dist' }
+          Expand-Archive -LiteralPath $archive.FullName -DestinationPath run
+          pwsh scripts/preflight/run-documented-workflow.ps1 -Binary (Join-Path (Resolve-Path run).Path 'devlog.exe') -RunInstallerHarness
+
+      - name: Live installer run against loopback fixture
+        shell: pwsh
+        run: pwsh scripts/preflight/install-live-run.ps1
