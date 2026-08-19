@@ -104,7 +104,6 @@ See [docs/compatibility.md](./docs/compatibility.md) for supported platforms, re
 
 See [AGENTS.md](./AGENTS.md) for the full project conventions, build commands, test instructions, and architecture boundaries.
 
-<<<<<<< HEAD
 ## License
 
 [MIT](./LICENSE)
@@ -173,4 +172,3 @@ The skill source lives at [`internal/skill/SKILL.md`](./internal/skill/SKILL.md)
 3. Restart the tool.
 
 The file must be named `SKILL.md` (uppercase) and live in a `devlog/` folder under the tool's skill root. Both are required — opencode and Claude Code filter out skills without matching folder/file names.
->>>>>>> 9748985 (feat(skill): refine skill content from eval rounds and add install docs)
