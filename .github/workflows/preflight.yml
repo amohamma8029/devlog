@@ -214,8 +214,12 @@ jobs:
           $archive = Get-ChildItem -LiteralPath dist -Filter 'devlog_*_windows_amd64.zip' | Select-Object -First 1
           if (-not $archive) { throw 'archive not found in dist' }
           Expand-Archive -LiteralPath $archive.FullName -DestinationPath run
-          pwsh scripts/preflight/run-documented-workflow.ps1 -Binary (Join-Path (Resolve-Path run).Path 'devlog.exe') -RunInstallerHarness
+          pwsh scripts/preflight/run-documented-workflow.ps1 -Binary (Join-Path (Resolve-Path run).Path 'devlog.exe') -RunInstallerHarness -RunUninstallerHarness
 
       - name: Live installer run against loopback fixture
         shell: pwsh
         run: pwsh scripts/preflight/install-live-run.ps1
+
+      - name: Live uninstaller run against loopback fixture
+        shell: pwsh
+        run: pwsh scripts/preflight/uninstall-live-run.ps1

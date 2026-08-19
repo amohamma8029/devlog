@@ -12,7 +12,8 @@ jobs). Not shipped; not part of the devlog binary.
 param(
     [Parameter(Mandatory)]
     [string]$Binary,
-    [switch]$RunInstallerHarness
+    [switch]$RunInstallerHarness,
+    [switch]$RunUninstallerHarness
 )
 
 $ErrorActionPreference = 'Stop'
@@ -87,12 +88,26 @@ if ($RunInstallerHarness) {
     Step "installer harness (30 scenarios)"
     $harness = Join-Path (Split-Path -Parent $PSScriptRoot) 'install.tests.ps1'
     $pwshPath = (Get-Process -Id $PID).Path
-    $proc = Start-Process -FilePath $pwshPath -ArgumentList @('-NoProfile', '-File', $harness) -Wait -PassThru
+    $argString = '-NoProfile -File "' + $harness + '"'
+    $proc = Start-Process -FilePath $pwshPath -ArgumentList $argString -Wait -PassThru
     if ($proc.ExitCode -ne 0) {
         Write-Host 'FAIL: installer harness reported failures'
         exit 1
     }
     Write-Host 'OK: installer harness passed'
+}
+
+if ($RunUninstallerHarness) {
+    Step "uninstaller harness (20 scenarios)"
+    $harness = Join-Path (Split-Path -Parent $PSScriptRoot) 'uninstall.tests.ps1'
+    $pwshPath = (Get-Process -Id $PID).Path
+    $argString = '-NoProfile -File "' + $harness + '"'
+    $proc = Start-Process -FilePath $pwshPath -ArgumentList $argString -Wait -PassThru
+    if ($proc.ExitCode -ne 0) {
+        Write-Host 'FAIL: uninstaller harness reported failures'
+        exit 1
+    }
+    Write-Host 'OK: uninstaller harness passed'
 }
 
 Write-Host 'PASS: documented workflow verified'
