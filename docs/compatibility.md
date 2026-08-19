@@ -26,6 +26,17 @@ Sessions stored under `.devlog/sessions/` are plain Markdown files with YAML fro
 
 `devlog --version` prints the release version without a leading `v` (for example `1.0.0`). Development builds print `dev`.
 
+## Uninstall
+
+- Windows PowerShell installer: run the matching uninstall script (`irm https://raw.githubusercontent.com/amohamma8029/devlog/main/scripts/uninstall.ps1 | iex`). It removes the binary, install-owned backup files, the empty install directories, and the user PATH entry.
+- Homebrew: `brew uninstall devlog`.
+- Scoop: `scoop uninstall devlog`.
+- Linux packages: `apt remove devlog`, `dnf remove devlog`, or `apk del devlog` depending on the original package.
+- Chocolatey: `choco uninstall devlog` (package source is prepared; not yet published).
+- `go install`: remove `$GOPATH/bin/devlog` (or `$(go env GOPATH)/bin/devlog`) manually.
+- Direct download: delete the extracted `devlog` or `devlog.exe` binary.
+- Agent skills: `devlog skill uninstall <tool|all>`.
+
 ## Not supported
 
 - npm/pnpm, MSI, MSIX, Snap, Flatpak, hosted APT/RPM repositories, AUR, and Nixpkgs are not provided.

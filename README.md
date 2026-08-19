@@ -43,6 +43,14 @@ irm https://raw.githubusercontent.com/amohamma8029/devlog/main/scripts/install.p
 
 The installer verifies the download against the release checksums, installs to `%LOCALAPPDATA%\Programs\devlog\bin`, and adds it to your user PATH. Pin a version with `-Version 1.0.0` or skip PATH changes with `-NoModifyPath`.
 
+### Uninstall (PowerShell installer)
+
+```powershell
+irm https://raw.githubusercontent.com/amohamma8029/devlog/main/scripts/uninstall.ps1 | iex
+```
+
+Removes `devlog.exe`, any `devlog.exe.backup-*` files, the empty `Programs\devlog\bin` and `Programs\devlog` directories if nothing else is in them, and the install directory's entry from your user PATH. Safe to run more than once.
+
 WinGet (available after the first public release):
 
 ```powershell
