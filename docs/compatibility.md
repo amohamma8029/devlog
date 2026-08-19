@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | macOS | `amd64`, `arm64` | Homebrew, direct archive, `go install` |
 | Linux | `amd64`, `arm64` | Homebrew, `.deb`/`.rpm`/`.apk` packages, direct archive, `go install` |
-| Windows | `amd64`, `arm64` | PowerShell installer, Scoop, direct archive, `go install`; WinGet after the first public release |
+| Windows | `amd64`, `arm64` | PowerShell installer, Scoop, Chocolatey, WinGet, direct archive, `go install` |
 
 ## Requirements
 
@@ -32,7 +32,7 @@ Sessions stored under `.devlog/sessions/` are plain Markdown files with YAML fro
 - Homebrew: `brew uninstall devlog`.
 - Scoop: `scoop uninstall devlog`.
 - Linux packages: `apt remove devlog`, `dnf remove devlog`, or `apk del devlog` depending on the original package.
-- Chocolatey: `choco uninstall devlog` (package source is prepared; not yet published).
+- Chocolatey: `choco uninstall devlog`.
 - `go install`: remove `$GOPATH/bin/devlog` (or `$(go env GOPATH)/bin/devlog`) manually.
 - Direct download: delete the extracted `devlog` or `devlog.exe` binary.
 - Agent skills: `devlog skill uninstall <tool|all>`.
@@ -40,5 +40,3 @@ Sessions stored under `.devlog/sessions/` are plain Markdown files with YAML fro
 ## Not supported
 
 - npm/pnpm, MSI, MSIX, Snap, Flatpak, hosted APT/RPM repositories, AUR, and Nixpkgs are not provided.
-- Chocolatey is not yet published; package source is prepared for a future moderated submission.
-- WinGet is available after the first public release.

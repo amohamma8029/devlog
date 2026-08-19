@@ -12,7 +12,7 @@
     <packageSourceUrl>https://github.com/amohamma8029/devlog/tree/main/packaging/chocolatey</packageSourceUrl>
     <licenseUrl>https://github.com/amohamma8029/devlog/blob/main/LICENSE</licenseUrl>
     <docsUrl>https://github.com/amohamma8029/devlog</docsUrl>
-    <description>devlog records structured coding session journals inside a git repository. Install without Go and keep context, blockers, and handoffs for solo development or async coding partners. This package is validation source: the install hashes must be replaced from the public release before submission.</description>
+    <description>devlog records structured coding session journals inside a git repository. Install without Go and keep context, blockers, and handoffs for every coding session.</description>
     <summary>Record structured coding session journals inside git repos.</summary>
     <tags>devlog journal log session cli git</tags>
   </metadata>

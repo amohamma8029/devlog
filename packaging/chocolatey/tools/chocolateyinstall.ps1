@@ -4,10 +4,10 @@ $toolsDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $version = '1.0.0'
 
 $url64 = "https://github.com/amohamma8029/devlog/releases/download/v$version/devlog_${version}_windows_amd64.zip"
-$checksum64 = 'REPLACE_WITH_PUBLIC_RELEASE_SHA256_AMD64'
+$checksum64 = '6cc69862211c1d6b10ae8bd4ae82d23ec7fbb73a36b53b761cd54fdbd9059c34'
 
 $url64arm64 = "https://github.com/amohamma8029/devlog/releases/download/v$version/devlog_${version}_windows_arm64.zip"
-$checksum64arm64 = 'REPLACE_WITH_PUBLIC_RELEASE_SHA256_ARM64'
+$checksum64arm64 = '93b5a9979b9ed6114bd14d768b24d88f769a3e94e91800312ffb8791981c0208'
 
 if ($checksum64 -like 'REPLACE_*' -or $checksum64arm64 -like 'REPLACE_*') {
     throw "devlog package: release SHA-256 placeholders must be replaced with the public v$version checksums before submission"

@@ -17,6 +17,12 @@
 # GoReleaser output
 dist/
 
+# Chocolatey package output
+*.nupkg
+
+# wingetcreate local output
+manifests/
+
 # Dependency directories
 vendor/
 

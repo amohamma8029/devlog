@@ -51,10 +51,16 @@ irm https://raw.githubusercontent.com/amohamma8029/devlog/main/scripts/uninstall
 
 Removes `devlog.exe`, any `devlog.exe.backup-*` files, the empty `Programs\devlog\bin` and `Programs\devlog` directories if nothing else is in them, and the install directory's entry from your user PATH. Safe to run more than once.
 
-WinGet (available after the first public release):
+WinGet:
 
 ```powershell
 winget install amohamma8029.devlog
+```
+
+Chocolatey:
+
+```powershell
+choco install devlog
 ```
 
 Scoop:
