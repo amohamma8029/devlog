@@ -114,14 +114,6 @@ devlog reads an optional global config file at `~/.config/devlog/config.yml` for
 
 See [docs/compatibility.md](./docs/compatibility.md) for supported platforms, requirements, and what is not supported.
 
-## Contributing
-
-See [AGENTS.md](./AGENTS.md) for the full project conventions, build commands, test instructions, and architecture boundaries.
-
-## License
-
-[MIT](./LICENSE)
-=======
 ## Agent skills
 
 devlog ships a skill that teaches coding agents (Claude Code, opencode, Cursor) the full devlog session lifecycle — pick up context, open a session, log notes and blockers, generate a handoff, and present it in the final reply. The agent never closes sessions; the human reviews and closes them.
@@ -186,3 +178,11 @@ The skill source lives at [`internal/skill/SKILL.md`](./internal/skill/SKILL.md)
 3. Restart the tool.
 
 The file must be named `SKILL.md` (uppercase) and live in a `devlog/` folder under the tool's skill root. Both are required — opencode and Claude Code filter out skills without matching folder/file names.
+
+## Contributing
+
+See [AGENTS.md](./AGENTS.md) for the full project conventions, build commands, test instructions, and architecture boundaries.
+
+## License
+
+[MIT](./LICENSE)
