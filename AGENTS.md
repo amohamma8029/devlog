@@ -13,8 +13,10 @@ blockers, and handoffs. One global devlog per repo. Never auto-commits.
 ## COMMANDS (put these first — agents reference them constantly)
 mise install                             # install pinned Go version (if using mise)
 go build -o devlog.exe ./cmd/devlog       # compile
-go test ./...                              # run after EVERY change; stop on first failure
-go test ./... -v                           # verbose output for debugging
+go test ./... -count=1                   # run after EVERY change; stop on first failure
+go test ./... -count=1 -v                # verbose output for debugging
+
+Use `-count=1` to rerun tests instead of reusing cached results, matching CI.
 
 ## Stack
 Go 1.22+, Cobra (CLI), Bubble Tea + Bubbles + Lipgloss + Glamour (TUI).
@@ -85,7 +87,7 @@ Never push directly to main. Feature branch merges to main only when end-to-end 
 # Three-tier format: always / ask first / never
 
 # Always
-- Run go test ./... after every change; stop immediately if any test fails
+- Run go test ./... -count=1 after every change; stop immediately if any test fails
 - Return explicit errors; never swallow them
 - Keep store/ append-only during a session; never rewrite the full file for a single event
 
